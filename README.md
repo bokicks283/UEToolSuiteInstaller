@@ -24,6 +24,8 @@ The installer overwrites managed tool-suite paths by design and backs up replace
 
 Backups mirror the original relative paths, so a backed-up `Scripts/Unreal/UnrealSync.ps1` is restored by copying it from the matching timestamp folder back to `Scripts/Unreal/UnrealSync.ps1`. Root `.gitattributes` and `.gitignore` are backed up before their managed blocks are inserted or refreshed.
 
+When a managed payload directory already exists in the target repo, the installer merges payload files into that directory instead of deleting the whole directory first. Target-only files such as `Docs/Codex/Project-Context.md`, local docs pages, or project-specific test scripts are preserved. Files that are also present in `payload/` are replaced and backed up before replacement.
+
 ## What It Installs
 
 - Git hooks and hook helpers under `.githooks/` and `Scripts/git-hooks/`

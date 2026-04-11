@@ -186,6 +186,18 @@ try {
   $gitIgnorePath = Join-Path $targetRepo ".gitignore"
   $existingGitIgnore = Get-Content -LiteralPath $gitIgnorePath -Raw
   Write-Utf8NoBomFile -Path $gitIgnorePath -Content ("local-custom-ignore/`n`n" + $existingGitIgnore)
+  Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Docs\Pipeline\README.md") -Content "stale project pipeline readme`n"
+  Remove-Item -LiteralPath (Join-Path $targetRepo "website\src\css") -Recurse -Force
+  Write-Utf8NoBomFile -Path (Join-Path $targetRepo "website\src\css") -Content "stale file blocking managed directory`n"
+  $projectSpecificFiles = @(
+    [pscustomobject]@{ RelativePath = "Docs\Codex\Project-Context.md"; Content = "project-specific codex context should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\Pipeline\Project-Pipeline-Notes.md"; Content = "project-specific pipeline notes should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\DocsSite\Local-DocsSite-Notes.md"; Content = "project-specific docs site notes should survive`n" },
+    [pscustomobject]@{ RelativePath = "website\src\pages\local-project-page.tsx"; Content = "project-specific docs page should survive`n" }
+  )
+  foreach ($projectSpecificFile in $projectSpecificFiles) {
+    Write-Utf8NoBomFile -Path (Join-Path $targetRepo $projectSpecificFile.RelativePath) -Content $projectSpecificFile.Content
+  }
   $updateResult = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2 update exits cleanly" ($updateResult.Code -eq 0) "exit=0" "exit=$($updateResult.Code)"
   Assert-PathMissing "case2 legacy installer removed" (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1")
@@ -194,6 +206,27 @@ try {
   Assert-FileContains "case2 git ignore preserves local lines" $gitIgnorePath "local-custom-ignore/"
   $gitIgnoreBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq ".gitignore" })
   Assert-Condition "case2 backup created for managed git ignore" ($gitIgnoreBackupMatches.Count -gt 0) "backup count=$($gitIgnoreBackupMatches.Count)" "backup missing"
+  foreach ($projectSpecificFile in $projectSpecificFiles) {
+    Assert-FileContains "case2 preserved target-only $($projectSpecificFile.RelativePath)" (Join-Path $targetRepo $projectSpecificFile.RelativePath) $projectSpecificFile.Content.Trim()
+  }
+  Assert-Condition "case2 replaced file conflict with managed directory" (Test-Path -LiteralPath (Join-Path $targetRepo "website\src\css") -PathType Container) "directory restored" "directory not restored"
+  Assert-PathExists "case2 restored payload file under conflict directory" (Join-Path $targetRepo "website\src\css\custom.css")
+  Assert-FileContains "case2 refreshed managed docs file inside existing directory" (Join-Path $targetRepo "Docs\Pipeline\README.md") "# Daily Workflow"
+  $pipelineReadmeBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*Docs*Pipeline*README.md" })
+  Assert-Condition "case2 backup created for managed file inside existing directory" ($pipelineReadmeBackupMatches.Count -gt 0) "backup count=$($pipelineReadmeBackupMatches.Count)" "backup missing"
+
+  Step "Case 2b: update merges managed test directory without removing target-only files"
+  $managedDirectoryRepo = New-TargetRepo "managed directory merge target"
+  $managedDirectoryInstallResult = Invoke-Installer -TargetRoot $managedDirectoryRepo -ExtraArgs @()
+  Assert-Condition "case2b initial install exits cleanly" ($managedDirectoryInstallResult.Code -eq 0) "exit=0" "exit=$($managedDirectoryInstallResult.Code)"
+  Write-Utf8NoBomFile -Path (Join-Path $managedDirectoryRepo "Scripts\Tests\ProjectSpecific-Test.ps1") -Content "project-specific test should survive`n"
+  Write-Utf8NoBomFile -Path (Join-Path $managedDirectoryRepo "Scripts\Tests\TestManifest.ps1") -Content "stale test manifest`n"
+  $managedDirectoryUpdateResult = Invoke-Installer -TargetRoot $managedDirectoryRepo -ExtraArgs @()
+  Assert-Condition "case2b update exits cleanly" ($managedDirectoryUpdateResult.Code -eq 0) "exit=0" "exit=$($managedDirectoryUpdateResult.Code)"
+  Assert-FileContains "case2b preserved target-only test file" (Join-Path $managedDirectoryRepo "Scripts\Tests\ProjectSpecific-Test.ps1") "project-specific test should survive"
+  Assert-FileContains "case2b refreshed managed test file" (Join-Path $managedDirectoryRepo "Scripts\Tests\TestManifest.ps1") "function Get-ProjectTestManifest"
+  $testManifestBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $managedDirectoryRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*Scripts*Tests*TestManifest.ps1" })
+  Assert-Condition "case2b backup created for managed test file" ($testManifestBackupMatches.Count -gt 0) "backup count=$($testManifestBackupMatches.Count)" "backup missing"
 
   Step "Case 3: installer can run target Init-Repo"
   $initRepo = New-TargetRepo "run init target"

@@ -257,6 +257,61 @@ function Copy-ManagedItem {
     throw "Refusing to create directory outside target repo root: $destinationParent"
   }
 
+  $sourceIsDirectory = Test-Path -LiteralPath $source -PathType Container
+  $destinationExists = Test-Path -LiteralPath $destination
+  $destinationIsDirectory = Test-Path -LiteralPath $destination -PathType Container
+
+  if ($sourceIsDirectory -and $destinationExists -and $destinationIsDirectory) {
+    $sourceDirectories = @(Get-ChildItem -LiteralPath $source -Recurse -Directory -Force)
+    foreach ($sourceDirectory in $sourceDirectories) {
+      $childRelativePath = [System.IO.Path]::GetRelativePath($source, $sourceDirectory.FullName)
+      $targetDirectory = Join-Path $destination $childRelativePath
+      if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetDirectory)) {
+        throw "Refusing to create directory outside target repo root: $targetDirectory"
+      }
+      if ((Test-Path -LiteralPath $targetDirectory) -and -not (Test-Path -LiteralPath $targetDirectory -PathType Container)) {
+        $backupRelativePath = Join-Path $RelativePath $childRelativePath
+        Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $backupRelativePath -ExistingPath $targetDirectory -BackupRoot $BackupRoot
+        if ($PSCmdlet.ShouldProcess($targetDirectory, "Replace conflicting file with managed directory")) {
+          Remove-Item -LiteralPath $targetDirectory -Force
+        }
+      }
+      if ($PSCmdlet.ShouldProcess($targetDirectory, "Ensure managed directory")) {
+        New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
+      }
+    }
+
+    $sourceFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force)
+    foreach ($sourceFile in $sourceFiles) {
+      $childRelativePath = [System.IO.Path]::GetRelativePath($source, $sourceFile.FullName)
+      $targetFile = Join-Path $destination $childRelativePath
+      if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetFile)) {
+        throw "Refusing to copy outside target repo root: $targetFile"
+      }
+
+      $targetParent = Split-Path -Path $targetFile -Parent
+      if ($targetParent -and $PSCmdlet.ShouldProcess($targetParent, "Ensure destination directory")) {
+        New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+      }
+
+      if (Test-Path -LiteralPath $targetFile) {
+        $backupRelativePath = Join-Path $RelativePath $childRelativePath
+        Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $backupRelativePath -ExistingPath $targetFile -BackupRoot $BackupRoot
+        if (Test-Path -LiteralPath $targetFile -PathType Container) {
+          if ($PSCmdlet.ShouldProcess($targetFile, "Replace conflicting directory with managed file")) {
+            Remove-Item -LiteralPath $targetFile -Recurse -Force
+          }
+        }
+      }
+
+      if ($PSCmdlet.ShouldProcess($targetFile, "Install $RelativePath managed file")) {
+        Copy-Item -LiteralPath $sourceFile.FullName -Destination $targetFile -Force
+      }
+    }
+
+    return $true
+  }
+
   if (Test-Path -LiteralPath $destination) {
     Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $RelativePath -ExistingPath $destination -BackupRoot $BackupRoot
     if ($PSCmdlet.ShouldProcess($destination, "Replace managed UE tool suite path")) {
