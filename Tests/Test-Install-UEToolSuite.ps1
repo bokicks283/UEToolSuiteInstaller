@@ -60,6 +60,16 @@ function Assert-PathMissing([string]$Name, [string]$Path) {
   Assert-Condition $Name (-not (Test-Path -LiteralPath $Path)) "absent" "unexpected path: $Path"
 }
 
+function Assert-FileContains([string]$Name, [string]$Path, [string]$ExpectedText) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    Fail $Name "missing: $Path"
+    return
+  }
+
+  $content = Get-Content -LiteralPath $Path -Raw
+  Assert-Condition $Name ($content.Contains($ExpectedText)) "found expected text" "expected text missing from $Path"
+}
+
 function Write-Utf8NoBomFile {
   param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Content)
   $parent = Split-Path -Path $Path -Parent
@@ -141,6 +151,8 @@ try {
   $result = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case1 installer exits cleanly" ($result.Code -eq 0) "exit=0" "exit=$($result.Code)"
   foreach ($relativePath in @(
+      ".gitattributes",
+      ".gitignore",
       ".githooks\post-checkout",
       "Scripts\Init-Repo.ps1",
       "Scripts\Unreal\UnrealSync.ps1",
@@ -149,10 +161,15 @@ try {
       "Docs\Pipeline\README.md",
       "Docs\DocsSite\Docusaurus-Setup.md",
       "website\package.json",
-      "website\docusaurus.config.ts"
+      "website\docusaurus.config.ts",
+      "website\.gitignore",
+      "website\static\.nojekyll"
     )) {
     Assert-PathExists "case1 installed $relativePath" (Join-Path $targetRepo $relativePath)
   }
+  Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
+  Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
+  Assert-FileContains "case1 installed binary guard uasset rule" (Join-Path $targetRepo ".gitattributes") "*.uasset filter=lfs diff=lfs merge=binary -text"
 
   foreach ($relativePath in @(
       "Scripts\Install-UEProjectTools.ps1",
@@ -166,14 +183,22 @@ try {
   Step "Case 2: update removes legacy installer and writes backup"
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1") -Content "legacy installer`n"
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Unreal\UnrealSync.ps1") -Content "legacy sync`n"
+  $gitIgnorePath = Join-Path $targetRepo ".gitignore"
+  $existingGitIgnore = Get-Content -LiteralPath $gitIgnorePath -Raw
+  Write-Utf8NoBomFile -Path $gitIgnorePath -Content ("local-custom-ignore/`n`n" + $existingGitIgnore)
   $updateResult = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2 update exits cleanly" ($updateResult.Code -eq 0) "exit=0" "exit=$($updateResult.Code)"
   Assert-PathMissing "case2 legacy installer removed" (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1")
   $backupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UnrealSync.ps1" })
   Assert-Condition "case2 backup created for replaced tool" ($backupMatches.Count -gt 0) "backup count=$($backupMatches.Count)" "backup missing"
+  Assert-FileContains "case2 git ignore preserves local lines" $gitIgnorePath "local-custom-ignore/"
+  $gitIgnoreBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq ".gitignore" })
+  Assert-Condition "case2 backup created for managed git ignore" ($gitIgnoreBackupMatches.Count -gt 0) "backup count=$($gitIgnoreBackupMatches.Count)" "backup missing"
 
   Step "Case 3: installer can run target Init-Repo"
   $initRepo = New-TargetRepo "run init target"
+  & git -C $initRepo remote add origin "git@github.com:AcmeTools/PortableSample.git" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "git remote add failed for target repo: $initRepo" }
   $initResult = Invoke-Installer -TargetRoot $initRepo -ExtraArgs @(
     "-SkipTests",
     "-RunInit",
@@ -187,6 +212,39 @@ try {
   Assert-Condition "case3 init ran" ($initResult.Output -like "*Repo initialization complete.*") "init completed" "init output missing completion"
   $hooksPath = (& git -C $initRepo config --local --get core.hooksPath 2>$null | Select-Object -First 1)
   Assert-Condition "case3 hooks path configured" ($hooksPath -eq ".githooks") "hooksPath=.githooks" "hooksPath=$hooksPath"
+  Assert-FileContains "case3 docusaurus organization metadata set" (Join-Path $initRepo "website\docusaurus.config.ts") "organizationName: 'AcmeTools'"
+  Assert-FileContains "case3 docusaurus project metadata set" (Join-Path $initRepo "website\docusaurus.config.ts") "projectName: 'PortableSample'"
+
+  Step "Case 4: SkipDocs omits Docs payload without omitting website payload"
+  $skipDocsRepo = New-TargetRepo "skip docs target"
+  $skipDocsResult = Invoke-Installer -TargetRoot $skipDocsRepo -ExtraArgs @("-SkipTests", "-SkipDocs")
+  Assert-Condition "case4 skip docs exits cleanly" ($skipDocsResult.Code -eq 0) "exit=0" "exit=$($skipDocsResult.Code)"
+  Assert-PathMissing "case4 Docs README skipped" (Join-Path $skipDocsRepo "Docs\README.md")
+  Assert-PathExists "case4 website retained" (Join-Path $skipDocsRepo "website\package.json")
+
+  Step "Case 5: SkipWebsite omits website payload while keeping docs tooling"
+  $skipWebsiteRepo = New-TargetRepo "skip website target"
+  $skipWebsiteResult = Invoke-Installer -TargetRoot $skipWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipWebsite")
+  Assert-Condition "case5 skip website exits cleanly" ($skipWebsiteResult.Code -eq 0) "exit=0" "exit=$($skipWebsiteResult.Code)"
+  Assert-PathMissing "case5 website skipped" (Join-Path $skipWebsiteRepo "website\package.json")
+  Assert-PathExists "case5 docs tooling retained" (Join-Path $skipWebsiteRepo "Scripts\Docs\DocsTools.ps1")
+  Assert-PathExists "case5 docs retained" (Join-Path $skipWebsiteRepo "Docs\README.md")
+
+  Step "Case 6: NoBackup replaces managed paths without writing backup output"
+  $noBackupRepo = New-TargetRepo "no backup target"
+  Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo ".gitattributes") -Content "custom attributes`n"
+  Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo "Scripts\Unreal\UnrealSync.ps1") -Content "legacy sync`n"
+  $noBackupResult = Invoke-Installer -TargetRoot $noBackupRepo -ExtraArgs @("-SkipTests", "-NoBackup")
+  Assert-Condition "case6 no backup exits cleanly" ($noBackupResult.Code -eq 0) "exit=0" "exit=$($noBackupResult.Code)"
+  Assert-PathMissing "case6 backup root not created" (Join-Path $noBackupRepo ".ue-tools-installer-backups")
+  Assert-FileContains "case6 git attributes preserves local lines" (Join-Path $noBackupRepo ".gitattributes") "custom attributes"
+
+  Step "Case 7: NoLegacyCleanup preserves old in-project installer path"
+  $noLegacyCleanupRepo = New-TargetRepo "no legacy cleanup target"
+  Write-Utf8NoBomFile -Path (Join-Path $noLegacyCleanupRepo "Scripts\Install-UEProjectTools.ps1") -Content "legacy installer`n"
+  $noLegacyCleanupResult = Invoke-Installer -TargetRoot $noLegacyCleanupRepo -ExtraArgs @("-SkipTests", "-NoLegacyCleanup")
+  Assert-Condition "case7 no legacy cleanup exits cleanly" ($noLegacyCleanupResult.Code -eq 0) "exit=0" "exit=$($noLegacyCleanupResult.Code)"
+  Assert-PathExists "case7 legacy installer preserved" (Join-Path $noLegacyCleanupRepo "Scripts\Install-UEProjectTools.ps1")
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

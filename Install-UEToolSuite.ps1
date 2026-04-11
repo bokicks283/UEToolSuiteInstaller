@@ -123,6 +123,110 @@ function Copy-ToBackup {
   Copy-Item -LiteralPath $ExistingPath -Destination $backupPath -Recurse -Force
 }
 
+function Write-Utf8NoBomFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
+  )
+
+  $parent = Split-Path -Path $Path -Parent
+  if ($parent) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  }
+
+  [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Get-ManagedTextBlockMarkers {
+  param([Parameter(Mandatory)][string]$RelativePath)
+
+  switch ($RelativePath) {
+    ".gitattributes" {
+      return [pscustomobject]@{
+        Start = "# >>> ue tool suite git attributes >>>"
+        End   = "# <<< ue tool suite git attributes <<<"
+      }
+    }
+    ".gitignore" {
+      return [pscustomobject]@{
+        Start = "# >>> ue tool suite git ignore >>>"
+        End   = "# <<< ue tool suite git ignore <<<"
+      }
+    }
+    default {
+      throw "No managed text block markers are defined for: $RelativePath"
+    }
+  }
+}
+
+function Update-ManagedTextFile {
+  param(
+    [Parameter(Mandatory)][string]$SourceRoot,
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$BackupRoot
+  )
+
+  $source = Join-Path $SourceRoot $RelativePath
+  $destination = Join-Path $TargetRoot $RelativePath
+
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    throw "Required managed text payload missing: $source"
+  }
+
+  if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $destination)) {
+    throw "Refusing to update managed text file outside target repo root: $destination"
+  }
+
+  $sourceText = Get-Content -LiteralPath $source -Raw
+  $markers = Get-ManagedTextBlockMarkers -RelativePath $RelativePath
+  if ($sourceText -notlike "*$($markers.Start)*" -or $sourceText -notlike "*$($markers.End)*") {
+    throw "Managed text payload is missing expected marker block: $RelativePath"
+  }
+
+  $destinationParent = Split-Path -Path $destination -Parent
+  if (-not (Test-Path -LiteralPath $destination)) {
+    if ($destinationParent -and $PSCmdlet.ShouldProcess($destinationParent, "Ensure destination directory")) {
+      New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
+    }
+    if ($PSCmdlet.ShouldProcess($destination, "Install managed text file $RelativePath")) {
+      Copy-Item -LiteralPath $source -Destination $destination -Force
+    }
+    return $true
+  }
+
+  $targetText = Get-Content -LiteralPath $destination -Raw
+  $sourceBlock = $sourceText.TrimEnd("`r", "`n") + "`n"
+  $blockPattern = "(?ms)^" + [regex]::Escape($markers.Start) + "\r?\n.*?^" + [regex]::Escape($markers.End) + "\r?\n?"
+
+  if ([regex]::IsMatch($targetText, $blockPattern)) {
+    $updatedText = [regex]::Replace($targetText, $blockPattern, [System.Text.RegularExpressions.MatchEvaluator] { param($match) $sourceBlock }, 1)
+  }
+  else {
+    $separator = if ([string]::IsNullOrWhiteSpace($targetText)) {
+      ""
+    }
+    elseif ($targetText.EndsWith("`n")) {
+      "`n"
+    }
+    else {
+      "`n`n"
+    }
+    $updatedText = $targetText + $separator + $sourceBlock
+  }
+
+  if ($updatedText -eq $targetText) {
+    return $true
+  }
+
+  Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $RelativePath -ExistingPath $destination -BackupRoot $BackupRoot
+  if ($PSCmdlet.ShouldProcess($destination, "Update managed text block in $RelativePath")) {
+    Write-Utf8NoBomFile -Path $destination -Content $updatedText
+  }
+
+  return $true
+}
+
 function Copy-ManagedItem {
   param(
     [Parameter(Mandatory)][string]$SourceRoot,
@@ -217,6 +321,11 @@ $managedItems = @(
   "Scripts/Unreal/UnrealSync.ps1"
 )
 
+$managedTextItems = @(
+  ".gitattributes",
+  ".gitignore"
+)
+
 if (-not $SkipArtSourceTools) { $managedItems += "Scripts/Unreal/New-ArtSourcePath.ps1" }
 if (-not $SkipCodexTools) { $managedItems += "Scripts/Codex" }
 if (-not $SkipTests) { $managedItems += "Scripts/Tests" }
@@ -245,6 +354,12 @@ elseif (-not $SkipDocs) {
 }
 
 $installed = New-Object System.Collections.Generic.List[string]
+foreach ($item in $managedTextItems) {
+  if (Update-ManagedTextFile -SourceRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot -RelativePath $item -BackupRoot $backupRoot) {
+    [void]$installed.Add($item)
+  }
+}
+
 foreach ($item in @($managedItems | Sort-Object -Unique)) {
   if (Copy-ManagedItem -SourceRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot -RelativePath $item -BackupRoot $backupRoot -Optional) {
     [void]$installed.Add($item)

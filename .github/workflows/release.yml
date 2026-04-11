@@ -1,0 +1,89 @@
+name: Release Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+      WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Run installer tests
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Test-Install-UEToolSuite.ps1
+
+      - name: Decode signing certificate
+        if: ${{ env.WINDOWS_CODESIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+          "WINDOWS_CODESIGN_PFX_PATH=$certPath" >> $env:GITHUB_ENV
+
+      - name: Publish signed installer
+        if: ${{ env.WINDOWS_CODESIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: >
+          pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass
+          -File Scripts/Publish-InstallerExe.ps1
+          -Version "${{ steps.version.outputs.value }}"
+          -CertificatePath "$env:WINDOWS_CODESIGN_PFX_PATH"
+          -CertificatePassword "$env:WINDOWS_CODESIGN_PFX_PASSWORD"
+
+      - name: Publish unsigned installer
+        if: ${{ env.WINDOWS_CODESIGN_PFX_BASE64 == '' }}
+        shell: pwsh
+        run: >
+          pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass
+          -File Scripts/Publish-InstallerExe.ps1
+          -Version "${{ steps.version.outputs.value }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UEToolSuiteInstaller-${{ steps.version.outputs.value }}-win-x64
+          path: dist/UEToolSuiteInstaller-${{ steps.version.outputs.value }}-win-x64.exe
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "dist/UEToolSuiteInstaller-${{ steps.version.outputs.value }}-win-x64.exe" `
+            --title "UE Tool Suite Installer ${{ steps.version.outputs.value }}" `
+            --notes "Download and run the Windows installer. PowerShell 7 is required on the target machine."
