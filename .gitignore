@@ -1,5 +1,8 @@
 .ue-tools-installer-backups/
 Tests/*Results/
+dist/
+src/**/bin/
+src/**/obj/
 payload/website/.docusaurus/
 payload/website/build/
 payload/website/node_modules/

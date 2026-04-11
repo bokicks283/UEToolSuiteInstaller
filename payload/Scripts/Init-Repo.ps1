@@ -119,6 +119,15 @@ function Invoke-CheckedTool {
   }
 }
 
+function Write-Utf8NoBomFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
+  )
+
+  [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 function Get-GitHubRepoSlugFromRemoteUrl {
   param([string]$RemoteUrl)
 
@@ -132,6 +141,68 @@ function Get-GitHubRepoSlugFromRemoteUrl {
   }
 
   return $null
+}
+
+function ConvertTo-TypeScriptSingleQuotedString {
+  param([Parameter(Mandatory)][string]$Value)
+
+  return "'" + (($Value -replace "\\", "\\") -replace "'", "\'") + "'"
+}
+
+function Set-TypeScriptStringProperty {
+  param(
+    [Parameter(Mandatory)][string]$Text,
+    [Parameter(Mandatory)][string]$PropertyName,
+    [Parameter(Mandatory)][string]$Value
+  )
+
+  $quotedValue = ConvertTo-TypeScriptSingleQuotedString -Value $Value
+  $pattern = "(?m)^(\s*" + [regex]::Escape($PropertyName) + "\s*:\s*)(['""]).*?\2(,?\s*)$"
+  if (-not [regex]::IsMatch($Text, $pattern)) {
+    return $Text
+  }
+
+  return [regex]::Replace(
+    $Text,
+    $pattern,
+    [System.Text.RegularExpressions.MatchEvaluator] {
+      param($match)
+      return $match.Groups[1].Value + $quotedValue + $match.Groups[3].Value
+    },
+    1
+  )
+}
+
+function Update-DocusaurusGitHubMetadata {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [AllowNull()][string]$RepoSlug
+  )
+
+  $configPath = Join-Path $ResolvedRepoRoot "website\docusaurus.config.ts"
+  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    Add-ToolReadiness -Tool "docs site metadata" -Status "SKIP" -Detail "website/docusaurus.config.ts is not installed."
+    return
+  }
+
+  if ([string]::IsNullOrWhiteSpace($RepoSlug) -or $RepoSlug -notmatch '^(?<owner>[^/]+)/(?<name>[^/]+)$') {
+    Add-ToolReadiness -Tool "docs site metadata" -Status "SKIP" -Detail "origin does not point to a GitHub owner/repo slug."
+    return
+  }
+
+  $owner = $Matches.owner
+  $repoName = $Matches.name
+  $configText = Get-Content -LiteralPath $configPath -Raw
+  $updatedText = Set-TypeScriptStringProperty -Text $configText -PropertyName "organizationName" -Value $owner
+  $updatedText = Set-TypeScriptStringProperty -Text $updatedText -PropertyName "projectName" -Value $repoName
+
+  if ($updatedText -eq $configText) {
+    Add-ToolReadiness -Tool "docs site metadata" -Status "WARN" -Detail "Could not find organizationName/projectName in website/docusaurus.config.ts."
+    return
+  }
+
+  Write-Utf8NoBomFile -Path $configPath -Content $updatedText
+  Add-ToolReadiness -Tool "docs site metadata" -Status "OK" -Detail "Set Docusaurus GitHub owner/repo metadata to $owner/$repoName."
 }
 
 function Resolve-InitRepoRoot {
@@ -371,9 +442,10 @@ Ok "Git config applied:"
 & git config --local --get advice.mergeConflict | ForEach-Object { Write-Host "  advice.mergeConflict=$_" }
 Add-ToolReadiness -Tool "git config" -Status "OK" -Detail "Hooks path, pull, LFS-safe line ending, and conflict advice settings applied."
 
+$originUrl = ((git remote get-url origin 2>$null) | Select-Object -First 1)
+$repoSlug = Get-GitHubRepoSlugFromRemoteUrl -RemoteUrl $originUrl
+
 if (Get-Command gh -ErrorAction SilentlyContinue) {
-  $originUrl = ((git remote get-url origin 2>$null) | Select-Object -First 1)
-  $repoSlug = Get-GitHubRepoSlugFromRemoteUrl -RemoteUrl $originUrl
   if (-not [string]::IsNullOrWhiteSpace($repoSlug)) {
     Info "Configuring GitHub CLI (gh) defaults for this repo (best-effort)..."
     & gh repo set-default $repoSlug
@@ -392,6 +464,8 @@ if (Get-Command gh -ErrorAction SilentlyContinue) {
 else {
   Add-ToolReadiness -Tool "gh" -Status "SKIP" -Detail "GitHub CLI is not installed."
 }
+
+Update-DocusaurusGitHubMetadata -ResolvedRepoRoot $repoRoot -RepoSlug $repoSlug
 
 # --- Ensure hook scripts exist ---
 $requiredHooks = @(
