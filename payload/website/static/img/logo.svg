@@ -1,0 +1,30 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">UE project logo</title>
+  <desc id="desc">A white ghost mark with dark eyes and a deep red moon accent.</desc>
+  <defs>
+    <linearGradient id="moonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cf5467" />
+      <stop offset="100%" stop-color="#70111f" />
+    </linearGradient>
+    <linearGradient id="ghostFill" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#ece8e6" />
+    </linearGradient>
+  </defs>
+  <circle cx="82" cy="34" r="24" fill="url(#moonGlow)" opacity="0.88" />
+  <path
+    d="M64 22c-19.61 0-35.5 15.89-35.5 35.5v38.21c0 2.98 3.48 4.58 5.74 2.65l8.12-6.94 8.85 8.09c1.54 1.4 3.91 1.4 5.45 0l7.34-6.72 7.36 6.72c1.53 1.4 3.9 1.4 5.44 0l8.86-8.09 8.12 6.94c2.26 1.93 5.74.33 5.74-2.65V57.5C99.5 37.89 83.61 22 64 22Z"
+    fill="url(#ghostFill)"
+  />
+  <path
+    d="M64 22c-19.61 0-35.5 15.89-35.5 35.5v38.21c0 2.98 3.48 4.58 5.74 2.65l8.12-6.94 8.85 8.09c1.54 1.4 3.91 1.4 5.45 0l7.34-6.72 7.36 6.72c1.53 1.4 3.9 1.4 5.44 0l8.86-8.09 8.12 6.94c2.26 1.93 5.74.33 5.74-2.65V57.5C99.5 37.89 83.61 22 64 22Z"
+    fill="none"
+    stroke="#121214"
+    stroke-width="5"
+    stroke-linejoin="round"
+  />
+  <circle cx="52" cy="55" r="5.5" fill="#111214" />
+  <circle cx="76" cy="55" r="5.5" fill="#111214" />
+  <path d="M52 74c3.22 4.02 7.17 6.03 11.84 6.03 4.65 0 8.7-2.01 12.16-6.03" fill="none" stroke="#7b1321" stroke-width="4.5" stroke-linecap="round" />
+  <path d="M44 31c5.74-4.21 12.23-6.31 19.46-6.31 8.24 0 15.36 2.44 21.37 7.3" fill="none" stroke="#7b1321" stroke-width="4" stroke-linecap="round" opacity="0.85" />
+</svg>

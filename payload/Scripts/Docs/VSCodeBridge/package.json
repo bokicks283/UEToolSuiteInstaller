@@ -1,0 +1,23 @@
+{
+  "name": "docs-tools-bridge",
+  "displayName": "UE Project Docs Tools Bridge",
+  "description": "Optional VS Code bridge for UE project docs-tools automation.",
+  "version": "0.0.1",
+  "publisher": "ueproject",
+  "engines": {
+    "vscode": "^1.77.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:ueproject.docsBridge.processPendingRequests"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "ueproject.docsBridge.processPendingRequests",
+        "title": "UE Project Docs Bridge: Process Pending Requests"
+      }
+    ]
+  }
+}

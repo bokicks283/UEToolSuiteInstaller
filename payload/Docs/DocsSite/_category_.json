@@ -1,0 +1,9 @@
+{
+  "label": "Docs Site",
+  "position": 8,
+  "link": {
+    "type": "generated-index",
+    "title": "Docs Site",
+    "slug": "/docs-site"
+  }
+}

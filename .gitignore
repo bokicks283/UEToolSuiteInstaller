@@ -1,0 +1,6 @@
+.ue-tools-installer-backups/
+Tests/*Results/
+payload/website/.docusaurus/
+payload/website/build/
+payload/website/node_modules/
+*.log
