@@ -1,0 +1,52 @@
+{
+  "manifestVersion": 1,
+  "payloadVersion": "1.0.0",
+  "managedTextItems": [
+    ".gitattributes",
+    ".gitignore"
+  ],
+  "managedItems": {
+    "base": [
+      ".githooks",
+      "Scripts/Init-Repo.ps1",
+      "Scripts/README.md",
+      "Scripts/ue-tools.ps1",
+      "Scripts/git-hooks",
+      "Scripts/git-tools",
+      "Scripts/UETools",
+      "Scripts/Unreal/ProjectContext.ps1",
+      "Scripts/Unreal/ProjectShellAliases.ps1",
+      "Scripts/Unreal/UESyncShellAliases.ps1",
+      "Scripts/Unreal/UnrealSync.ps1"
+    ],
+    "artTools": [
+      "Scripts/Unreal/New-ArtSourcePath.ps1"
+    ],
+    "codexTools": [
+      "Scripts/Codex"
+    ],
+    "tests": [
+      "Scripts/Tests"
+    ],
+    "docs": [
+      "Docs/README.md",
+      "Docs/Setup.md",
+      "Docs/Testing.md",
+      "Docs/Codex",
+      "Docs/DocsSite",
+      "Docs/Pipeline"
+    ],
+    "codingStandards": [
+      "Docs/CodingStandards"
+    ],
+    "docsTools": [
+      "Scripts/Docs"
+    ],
+    "website": [
+      "website"
+    ]
+  },
+  "legacyCleanupPaths": [
+    "Scripts/Install-UEProjectTools.ps1"
+  ]
+}
