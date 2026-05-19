@@ -34,6 +34,7 @@ function Test-IsExcludedMarkdownPath {
   $excludedPrefixes = @(
     ".git/",
     ".codex-local/",
+    ".ue-tools-installer-backups/",
     "Binaries/",
     "DerivedDataCache/",
     "Intermediate/",

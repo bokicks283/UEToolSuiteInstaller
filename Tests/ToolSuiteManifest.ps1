@@ -55,6 +55,16 @@ function Get-UEToolSuiteTestManifest {
       -ResultDirectory "Tests/Test-Install-UEToolSuiteResults")
 
     (New-UEToolSuiteTestEntry `
+      -Id "upgrade-compatibility" `
+      -Name "Upgrade Compatibility" `
+      -Path "Tests/Test-UpgradeCompatibility.ps1" `
+      -Category "upgrade" `
+      -Description "Validates stable direct entrypoints and profile aliases before and after an update without reinstalling shell aliases." `
+      -SupportsNoCleanup $true `
+      -SupportsFailFast $true `
+      -ResultDirectory "Tests/Test-UpgradeCompatibilityResults")
+
+    (New-UEToolSuiteTestEntry `
       -Id "hooks" `
       -Name "Hook Plumbing" `
       -Path "Scripts/git-hooks/Test-Hooks.ps1" `
