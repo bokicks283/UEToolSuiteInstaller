@@ -176,14 +176,17 @@ function Install-TestProfileAliases {
   )
 
   $aliasScript = Join-Path $TargetRoot "Scripts\Unreal\ProjectShellAliases.ps1"
+  $bootstrapPath = Join-Path (Split-Path -Parent $ProfilePath) "UEToolsBootstrap.ps1"
   $escapedAliasScript = $aliasScript.Replace("'", "''")
   $escapedProfile = $ProfilePath.Replace("'", "''")
-  $command = ". '$escapedAliasScript'; Install-ProjectShellAliases -ProfilePath '$escapedProfile' | ConvertTo-Json -Depth 5"
+  $escapedBootstrapPath = $bootstrapPath.Replace("'", "''")
+  $command = ". '$escapedAliasScript'; Install-ProjectShellAliases -ProfilePath '$escapedProfile' -BootstrapScriptPath '$escapedBootstrapPath' | ConvertTo-Json -Depth 5"
 
   $result = Invoke-CapturedPwsh -Arguments @("-NoLogo", "-NoProfile", "-Command", $command) -WorkingDirectory $TargetRoot
   Assert-Condition -Name "profile alias install exits cleanly" -Condition ($result.Code -eq 0) -PassDetail "exit=0" -FailDetail "exit=$($result.Code)"
   Assert-TextContains -Name "profile alias metadata includes ue-tools" -Text $result.Output -Needle "ue-tools"
   Assert-TextContains -Name "profile alias metadata includes codex-prompt" -Text $result.Output -Needle "codex-prompt"
+  Assert-Condition -Name "profile alias bootstrap file created" -Condition (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) -PassDetail "bootstrap present" -FailDetail "bootstrap missing: $bootstrapPath"
 }
 
 function Invoke-ProfileAliasSmoke {

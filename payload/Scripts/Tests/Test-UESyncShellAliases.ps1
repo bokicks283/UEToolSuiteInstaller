@@ -184,6 +184,7 @@ try {
   if (-not (Test-Path -LiteralPath $helperPath)) {
     throw "Helper script not found: $helperPath"
   }
+  $bootstrapPath = New-ScratchPath "UEToolsBootstrap.ps1"
   . $helperPath
   $artToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "New-ArtSourcePath.ps1"
   $docsToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "..\Docs\DocsTools.ps1"
@@ -258,21 +259,25 @@ try {
 
   Step "Case 3: Install writes bootstrap snippet (no giant function strings)"
   $profileNew = New-ScratchPath "profile-new.ps1"
-  $installNew = Install-ProjectShellAliases -ProfilePath $profileNew -AliasScriptPath $helperPath
+  $installNew = Install-ProjectShellAliases -ProfilePath $profileNew -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   $markers = Get-ProjectAliasBootstrapMarkers
   $newContent = Get-Content -LiteralPath $profileNew -Raw
+  $bootstrapContent = Get-Content -LiteralPath $bootstrapPath -Raw
 
   Assert-Condition "case3 profile created" (Test-Path -LiteralPath $profileNew) "profile file exists"
+  Assert-Condition "case3 bootstrap created" (Test-Path -LiteralPath $bootstrapPath) "bootstrap file exists"
   Assert-TextContains "case3 start marker present" $newContent $markers.StartMarker
   Assert-TextContains "case3 end marker present" $newContent $markers.EndMarker
   Assert-Condition "case3 one start marker" ((Count-Matches $newContent ([regex]::Escape($markers.StartMarker))) -eq 1) "start marker count=1"
   Assert-Condition "case3 one end marker" ((Count-Matches $newContent ([regex]::Escape($markers.EndMarker))) -eq 1) "end marker count=1"
-  Assert-TextContains "case3 snippet registers aliases" $newContent "Register-ProjectShellAliases"
-  Assert-TextContains "case3 snippet references helper path" $newContent $helperPath
+  Assert-TextContains "case3 snippet references bootstrap path" $newContent $bootstrapPath
+  Assert-TextNotContains "case3 snippet does not pin helper path" $newContent $helperPath
   Assert-TextNotContains "case3 no inline ue function definition" $newContent "function Invoke-UETools"
   Assert-TextNotContains "case3 no inline art function definition" $newContent "function Invoke-ArtTools"
   Assert-TextNotContains "case3 no inline codex tools function definition" $newContent "function Invoke-CodexTools"
   Assert-TextNotContains "case3 no inline codex prompt function definition" $newContent "function Invoke-CodexPrompt"
+  Assert-TextContains "case3 bootstrap resolves repo at command time" $bootstrapContent "Resolve-UEToolSuiteCurrentRepoRoot"
+  Assert-TextContains "case3 bootstrap loads repo helper script" $bootstrapContent "Scripts\Unreal\ProjectShellAliases.ps1"
   Assert-Condition "case3 metadata includes ue-tools" ($installNew.Aliases -contains "ue-tools") "metadata contains ue-tools"
   if ($artToolsAvailable) {
     Assert-Condition "case3 metadata includes art-tools" ($installNew.Aliases -contains "art-tools") "metadata contains art-tools"
@@ -296,9 +301,12 @@ try {
 
   Step "Case 4: Installer is idempotent"
   $beforeSecondInstall = Get-Content -LiteralPath $profileNew -Raw
-  $null = Install-ProjectShellAliases -ProfilePath $profileNew -AliasScriptPath $helperPath
+  $beforeSecondBootstrapInstall = Get-Content -LiteralPath $bootstrapPath -Raw
+  $null = Install-ProjectShellAliases -ProfilePath $profileNew -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   $afterSecondInstall = Get-Content -LiteralPath $profileNew -Raw
+  $afterSecondBootstrapInstall = Get-Content -LiteralPath $bootstrapPath -Raw
   Assert-Condition "case4 profile unchanged on second install" ($beforeSecondInstall -ceq $afterSecondInstall) "profile content is unchanged"
+  Assert-Condition "case4 bootstrap unchanged on second install" ($beforeSecondBootstrapInstall -ceq $afterSecondBootstrapInstall) "bootstrap content is unchanged"
 
   Step "Case 5: Legacy marker migration preserves non-managed profile content"
   $profileLegacy = New-ScratchPath "profile-legacy.ps1"
@@ -323,7 +331,7 @@ try {
   ) -join "`r`n"
   Write-TextFileLf -Path $profileLegacy -Content $legacyContent
 
-  $null = Install-ProjectShellAliases -ProfilePath $profileLegacy -AliasScriptPath $helperPath
+  $null = Install-ProjectShellAliases -ProfilePath $profileLegacy -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   $migratedContent = Get-Content -LiteralPath $profileLegacy -Raw
   $outsideAfter = Remove-ManagedBlock -Text $migratedContent -StartMarker $markers.StartMarker -EndMarker $markers.EndMarker
 
@@ -337,14 +345,12 @@ try {
   Assert-TextContains "case5 top preserved" $outsideAfter "KEEP_TOP = '1'"
   Assert-TextContains "case5 bottom preserved" $outsideAfter "KEEP_BOTTOM = '1'"
 
-  Step "Case 6: ue-tools help works after profile bootstrap"
+  Step "Case 6: ue-tools alias help works after profile bootstrap"
   Reset-LoadedAliases
   . $profileNew
-  $helpDirect = @(& { Invoke-UETools help } 2>&1 6>&1)
+  Assert-Condition "case6 ue-tools alias registered" ($null -ne (Get-Alias -Name "ue-tools" -ErrorAction SilentlyContinue)) "ue-tools alias exists"
   $helpAlias = @(& { ue-tools help } 2>&1 6>&1)
-  $helpDirectText = ($helpDirect | ForEach-Object { "$_" }) -join "`n"
   $helpAliasText = ($helpAlias | ForEach-Object { "$_" }) -join "`n"
-  Assert-TextContains "case6 direct help output" $helpDirectText "ue-tools <command> [options]"
   Assert-TextContains "case6 alias help output" $helpAliasText "Commands:"
 
   Step "Case 7: art-tools help works after profile bootstrap"
@@ -386,7 +392,7 @@ try {
   $unknownThrew = $false
   $unknownMsg = ""
   try {
-    Invoke-UETools banana | Out-Null
+    ue-tools banana | Out-Null
   }
   catch {
     $unknownThrew = $true
@@ -407,7 +413,7 @@ try {
     $threw = $false
     $msg = ""
     try {
-      Invoke-UETools build -NoBuild | Out-Null
+      ue-tools build -NoBuild | Out-Null
     }
     catch {
       $threw = $true
@@ -425,6 +431,7 @@ try {
   $forwardUnrealDir = Join-Path $forwardRepo "Scripts\Unreal"
   New-Item -ItemType Directory -Force -Path $forwardUnrealDir | Out-Null
   & git -C $forwardRepo init | Out-Null
+  Copy-Item -LiteralPath $helperPath -Destination (Join-Path $forwardUnrealDir "ProjectShellAliases.ps1") -Force
 
   $forwardScript = Join-Path $forwardUnrealDir "UnrealSync.ps1"
   $forwardResult = Join-Path $forwardUnrealDir "last-run.json"
@@ -460,7 +467,7 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
     Reset-LoadedAliases
     . $profileNew
 
-    Invoke-UETools build -CleanGenerated -NoBuild -NoRegen -DryRun -Config Debug -Platform Win64 | Out-Null
+    ue-tools build -CleanGenerated -NoBuild -NoRegen -DryRun -Config Debug -Platform Win64 | Out-Null
     Assert-Condition "case10 build wrote result file" (Test-Path -LiteralPath $forwardResult) "last-run.json written"
     $payload = Get-Content -LiteralPath $forwardResult -Raw | ConvertFrom-Json
     Assert-Condition "case10 Force forwarded" ([bool]$payload.Force) "Force=true"
@@ -480,8 +487,10 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
 
   Step "Case 11: art-tools errors clearly when target script is missing"
   $missingArtRepo = New-ScratchPath "missing-art-repo"
-  New-Item -ItemType Directory -Force -Path $missingArtRepo | Out-Null
+  $missingArtUnrealDir = Join-Path $missingArtRepo "Scripts\Unreal"
+  New-Item -ItemType Directory -Force -Path $missingArtUnrealDir | Out-Null
   & git -C $missingArtRepo init | Out-Null
+  Copy-Item -LiteralPath $helperPath -Destination (Join-Path $missingArtUnrealDir "ProjectShellAliases.ps1") -Force
 
   Push-Location $missingArtRepo
   try {
@@ -491,7 +500,7 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
     $threw = $false
     $msg = ""
     try {
-      Invoke-ArtTools | Out-Null
+      art-tools | Out-Null
     }
     catch {
       $threw = $true
@@ -527,13 +536,13 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
 
   Step "Case 13: Legacy install wrapper remains available"
   $profileCompat = New-ScratchPath "profile-compat.ps1"
-  $legacyInstall = Install-UEToolsShellAliases -ProfilePath $profileCompat -AliasScriptPath $helperPath
+  $legacyInstall = Install-UEToolsShellAliases -ProfilePath $profileCompat -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   Assert-Condition "case13 wrapper returns ue-tools alias" ($legacyInstall.Aliases -contains "ue-tools") "Install-UEToolsShellAliases returns ue-tools metadata"
   Assert-Condition "case13 wrapper preserves function name" ($legacyInstall.FunctionName -eq "Invoke-UETools") "FunctionName=Invoke-UETools"
 
   Step "Case 14: Docs alias install wrapper remains available"
   $profileDocs = New-ScratchPath "profile-docs.ps1"
-  $docsInstall = Install-DocsToolsShellAliases -ProfilePath $profileDocs -AliasScriptPath $helperPath
+  $docsInstall = Install-DocsToolsShellAliases -ProfilePath $profileDocs -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   if ($docsToolsAvailable) {
     Assert-Condition "case14 wrapper returns docs-tools alias" ($docsInstall.Aliases -contains "docs-tools") "Install-DocsToolsShellAliases returns docs-tools metadata"
     Assert-Condition "case14 wrapper preserves function name" ($docsInstall.FunctionName -eq "Invoke-DocsTools") "FunctionName=Invoke-DocsTools"
@@ -544,7 +553,7 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
 
   Step "Case 15: Codex alias install wrapper remains available"
   $profileCodex = New-ScratchPath "profile-codex.ps1"
-  $codexInstall = Install-CodexToolsShellAliases -ProfilePath $profileCodex -AliasScriptPath $helperPath
+  $codexInstall = Install-CodexToolsShellAliases -ProfilePath $profileCodex -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   if ($codexToolsAvailable) {
     Assert-Condition "case15 wrapper returns codex-tools alias" ($codexInstall.Aliases -contains "codex-tools") "Install-CodexToolsShellAliases returns codex-tools metadata"
     Assert-Condition "case15 wrapper preserves function name" ($codexInstall.FunctionName -eq "Invoke-CodexTools") "FunctionName=Invoke-CodexTools"

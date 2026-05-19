@@ -639,18 +639,138 @@ function Register-ProjectShellAliases {
   }
 }
 
-function Get-ProjectShellAliasBootstrapSnippet {
-  param([Parameter(Mandatory)][string]$AliasScriptPath)
+function ConvertTo-SingleQuotedPowerShellLiteral {
+  param([Parameter(Mandatory)][string]$Value)
 
-  $escapedPath = $AliasScriptPath.Replace("'", "''")
+  return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function Get-DefaultProjectAliasBootstrapScriptPath {
+  $localAppData = $env:LOCALAPPDATA
+  if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    $localAppData = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::LocalApplicationData)
+  }
+  if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    throw "Could not resolve LOCALAPPDATA for UE tool suite shell bootstrap."
+  }
+
+  return (Join-Path $localAppData "UEToolSuite\Shell\UEToolsBootstrap.ps1")
+}
+
+function Resolve-ProjectAliasBootstrapScriptPath {
+  param([string]$BootstrapScriptPath)
+
+  $candidate = $BootstrapScriptPath
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    $candidate = Get-DefaultProjectAliasBootstrapScriptPath
+  }
+
+  if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+    $candidate = [System.IO.Path]::GetFullPath($candidate)
+  }
+
+  return $candidate
+}
+
+function Get-ProjectShellAliasBootstrapScriptContent {
+  param([Parameter(Mandatory)][object[]]$AliasGroups)
+
+  $aliasMappings = New-Object System.Collections.Generic.List[object]
+  foreach ($group in @($AliasGroups)) {
+    foreach ($aliasName in @($group.Aliases)) {
+      [void]$aliasMappings.Add([pscustomobject]@{
+          AliasName = [string]$aliasName
+          FunctionName = [string]$group.FunctionName
+        })
+    }
+  }
+
+  $dedupedMappings = @($aliasMappings | Group-Object AliasName | ForEach-Object { $_.Group[0] } | Sort-Object AliasName)
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add('$ErrorActionPreference = "Stop"')
+  [void]$lines.Add("")
+  [void]$lines.Add("function Resolve-UEToolSuiteCurrentRepoRoot {")
+  [void]$lines.Add('  $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)')
+  [void]$lines.Add('  if ([string]::IsNullOrWhiteSpace($repoRoot)) {')
+  [void]$lines.Add('    throw "UE tool aliases must be run from inside a git repository."')
+  [void]$lines.Add('  }')
+  [void]$lines.Add("")
+  [void]$lines.Add('  return $repoRoot.Trim()')
+  [void]$lines.Add("}")
+  [void]$lines.Add("")
+  [void]$lines.Add("function Invoke-UEToolSuiteRepoAliasCommand {")
+  [void]$lines.Add("  param(")
+  [void]$lines.Add("    [Parameter(Mandatory)][string]`$FunctionName,")
+  [void]$lines.Add("    [string[]]`$CommandArgs = @()")
+  [void]$lines.Add("  )")
+  [void]$lines.Add("")
+  [void]$lines.Add("  `$repoRoot = Resolve-UEToolSuiteCurrentRepoRoot")
+  [void]$lines.Add("  `$helperPath = Join-Path `$repoRoot 'Scripts\Unreal\ProjectShellAliases.ps1'")
+  [void]$lines.Add("  if (-not (Test-Path -LiteralPath `$helperPath -PathType Leaf)) {")
+  [void]$lines.Add('    throw "UE project alias helper not found: `$helperPath"')
+  [void]$lines.Add("  }")
+  [void]$lines.Add("")
+  [void]$lines.Add("  . `$helperPath")
+  [void]$lines.Add("  if (-not (Get-Command -Name `$FunctionName -ErrorAction SilentlyContinue)) {")
+  [void]$lines.Add('    throw "Alias target function not found in `$helperPath: `$FunctionName"')
+  [void]$lines.Add("  }")
+  [void]$lines.Add("")
+  [void]$lines.Add("  function Convert-UEToolSuiteCommandToken {")
+  [void]$lines.Add("    param([AllowNull()][AllowEmptyString()][string]`$Value)")
+  [void]$lines.Add("")
+  [void]$lines.Add("    if (`$null -eq `$Value) { return ""''"" }")
+  [void]$lines.Add("    if (`$Value.Length -eq 0) { return ""''"" }")
+  [void]$lines.Add("    if (`$Value -match '^-{1,2}[A-Za-z0-9][A-Za-z0-9-]*$') { return `$Value }")
+  [void]$lines.Add("    if (`$Value -match '^/[A-Za-z0-9][A-Za-z0-9-]*$') { return `$Value }")
+  [void]$lines.Add("    if (`$Value -match '^[A-Za-z0-9_./:\\-]+$') { return `$Value }")
+  [void]$lines.Add("")
+  [void]$lines.Add('    return "''" + $Value.Replace("''", "''''") + "''"')
+  [void]$lines.Add("  }")
+  [void]$lines.Add("")
+  [void]$lines.Add("  `$quotedArgs = @()")
+  [void]$lines.Add("  foreach (`$commandArg in @(`$CommandArgs)) {")
+  [void]$lines.Add("    `$quotedArgs += Convert-UEToolSuiteCommandToken -Value ([string]`$commandArg)")
+  [void]$lines.Add("  }")
+  [void]$lines.Add("")
+  [void]$lines.Add("  `$commandText = `$FunctionName")
+  [void]$lines.Add("  if (`$quotedArgs.Count -gt 0) {")
+  [void]$lines.Add("    `$commandText += ' ' + (`$quotedArgs -join ' ')")
+  [void]$lines.Add("  }")
+  [void]$lines.Add("")
+  [void]$lines.Add("  Invoke-Expression `$commandText")
+  [void]$lines.Add("}")
+  [void]$lines.Add("")
+
+  foreach ($mapping in $dedupedMappings) {
+    $wrapperName = "Invoke-UEToolSuiteAlias_" + ([string]$mapping.AliasName -replace "[^A-Za-z0-9_]", "_")
+    $functionNameLiteral = ConvertTo-SingleQuotedPowerShellLiteral -Value ([string]$mapping.FunctionName)
+    $aliasNameLiteral = ConvertTo-SingleQuotedPowerShellLiteral -Value ([string]$mapping.AliasName)
+
+    [void]$lines.Add("function $wrapperName {")
+    [void]$lines.Add("  param(")
+    [void]$lines.Add("    [Parameter(ValueFromRemainingArguments = `$true)]")
+    [void]$lines.Add("    [string[]]`$CommandArgs")
+    [void]$lines.Add("  )")
+    [void]$lines.Add("  Invoke-UEToolSuiteRepoAliasCommand -FunctionName $functionNameLiteral -CommandArgs `$CommandArgs")
+    [void]$lines.Add("}")
+    [void]$lines.Add("Set-Alias -Name $aliasNameLiteral -Value $wrapperName -Scope Global -Force")
+    [void]$lines.Add("")
+  }
+
+  return ($lines -join "`r`n")
+}
+
+function Get-ProjectShellAliasBootstrapSnippet {
+  param([Parameter(Mandatory)][string]$BootstrapScriptPath)
+
+  $escapedPath = $BootstrapScriptPath.Replace("'", "''")
 @"
-`$projectAliasScriptPath = '$escapedPath'
-if (Test-Path -LiteralPath `$projectAliasScriptPath) {
-  . `$projectAliasScriptPath
-  Register-ProjectShellAliases | Out-Null
+`$ueToolSuiteBootstrapPath = '$escapedPath'
+if (Test-Path -LiteralPath `$ueToolSuiteBootstrapPath) {
+  . `$ueToolSuiteBootstrapPath
 }
 else {
-  Write-Warning "UE project alias script not found: `$projectAliasScriptPath"
+  Write-Warning "UE tool suite bootstrap script not found: `$ueToolSuiteBootstrapPath"
 }
 "@
 }
@@ -658,13 +778,30 @@ else {
 function Install-ProjectShellAliases {
   param(
     [string]$ProfilePath,
-    [string]$AliasScriptPath
+    [string]$AliasScriptPath,
+    [string]$BootstrapScriptPath
   )
 
   $resolvedProfilePath = Resolve-ProfilePathForAliases -ProfilePath $ProfilePath
   $resolvedAliasScriptPath = Resolve-ProjectAliasScriptPath -AliasScriptPath $AliasScriptPath
+  $resolvedBootstrapScriptPath = Resolve-ProjectAliasBootstrapScriptPath -BootstrapScriptPath $BootstrapScriptPath
+  $registered = Register-ProjectShellAliases
+  $bootstrapContent = Get-ProjectShellAliasBootstrapScriptContent -AliasGroups $registered.AliasGroups
+  $bootstrapParent = Split-Path -Path $resolvedBootstrapScriptPath -Parent
+  if ($bootstrapParent -and -not (Test-Path -LiteralPath $bootstrapParent)) {
+    New-Item -ItemType Directory -Path $bootstrapParent -Force | Out-Null
+  }
+
+  $existingBootstrap = ""
+  if (Test-Path -LiteralPath $resolvedBootstrapScriptPath -PathType Leaf) {
+    $existingBootstrap = Get-Content -LiteralPath $resolvedBootstrapScriptPath -Raw
+  }
+  if ($existingBootstrap -cne $bootstrapContent) {
+    Write-Utf8NoBomFile -Path $resolvedBootstrapScriptPath -Content $bootstrapContent
+  }
+
   $markers = Get-ProjectAliasBootstrapMarkers
-  $snippet = Get-ProjectShellAliasBootstrapSnippet -AliasScriptPath $resolvedAliasScriptPath
+  $snippet = Get-ProjectShellAliasBootstrapSnippet -BootstrapScriptPath $resolvedBootstrapScriptPath
 
   foreach ($legacy in @(Get-ProjectAliasLegacyMarkers)) {
     Remove-ProfileSnippet `
@@ -679,11 +816,10 @@ function Install-ProjectShellAliases {
     -EndMarker $markers.EndMarker `
     -SnippetBody $snippet
 
-  $registered = Register-ProjectShellAliases
-
   [pscustomobject]@{
     ProfilePath = $resolvedProfilePath
     AliasScriptPath = $resolvedAliasScriptPath
+    BootstrapScriptPath = $resolvedBootstrapScriptPath
     StartMarker = $markers.StartMarker
     EndMarker = $markers.EndMarker
     AliasGroups = $registered.AliasGroups
@@ -694,15 +830,17 @@ function Install-ProjectShellAliases {
 function Install-UEToolsShellAliases {
   param(
     [string]$ProfilePath,
-    [string]$AliasScriptPath
+    [string]$AliasScriptPath,
+    [string]$BootstrapScriptPath
   )
 
-  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath
+  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath
   $group = @($result.AliasGroups | Where-Object { $_.Id -eq "ue-tools" } | Select-Object -First 1)
 
   [pscustomobject]@{
     ProfilePath = $result.ProfilePath
     AliasScriptPath = $result.AliasScriptPath
+    BootstrapScriptPath = $result.BootstrapScriptPath
     FunctionName = if ($group.Count -gt 0) { $group[0].FunctionName } else { "Invoke-UETools" }
     Aliases = if ($group.Count -gt 0) { @($group[0].Aliases) } else { @("ue-tools") }
     StartMarker = $result.StartMarker
@@ -713,15 +851,17 @@ function Install-UEToolsShellAliases {
 function Install-ArtToolsShellAliases {
   param(
     [string]$ProfilePath,
-    [string]$AliasScriptPath
+    [string]$AliasScriptPath,
+    [string]$BootstrapScriptPath
   )
 
-  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath
+  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath
   $group = @($result.AliasGroups | Where-Object { $_.Id -eq "art-tools" } | Select-Object -First 1)
 
   [pscustomobject]@{
     ProfilePath = $result.ProfilePath
     AliasScriptPath = $result.AliasScriptPath
+    BootstrapScriptPath = $result.BootstrapScriptPath
     FunctionName = if ($group.Count -gt 0) { $group[0].FunctionName } else { $null }
     Aliases = if ($group.Count -gt 0) { @($group[0].Aliases) } else { @() }
     StartMarker = $result.StartMarker
@@ -732,15 +872,17 @@ function Install-ArtToolsShellAliases {
 function Install-DocsToolsShellAliases {
   param(
     [string]$ProfilePath,
-    [string]$AliasScriptPath
+    [string]$AliasScriptPath,
+    [string]$BootstrapScriptPath
   )
 
-  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath
+  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath
   $group = @($result.AliasGroups | Where-Object { $_.Id -eq "docs-tools" } | Select-Object -First 1)
 
   [pscustomobject]@{
     ProfilePath = $result.ProfilePath
     AliasScriptPath = $result.AliasScriptPath
+    BootstrapScriptPath = $result.BootstrapScriptPath
     FunctionName = if ($group.Count -gt 0) { $group[0].FunctionName } else { $null }
     Aliases = if ($group.Count -gt 0) { @($group[0].Aliases) } else { @() }
     StartMarker = $result.StartMarker
@@ -751,15 +893,17 @@ function Install-DocsToolsShellAliases {
 function Install-CodexToolsShellAliases {
   param(
     [string]$ProfilePath,
-    [string]$AliasScriptPath
+    [string]$AliasScriptPath,
+    [string]$BootstrapScriptPath
   )
 
-  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath
+  $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath
   $group = @($result.AliasGroups | Where-Object { $_.Id -eq "codex-tools" } | Select-Object -First 1)
 
   [pscustomobject]@{
     ProfilePath = $result.ProfilePath
     AliasScriptPath = $result.AliasScriptPath
+    BootstrapScriptPath = $result.BootstrapScriptPath
     FunctionName = if ($group.Count -gt 0) { $group[0].FunctionName } else { $null }
     Aliases = if ($group.Count -gt 0) { @($group[0].Aliases) } else { @() }
     StartMarker = $result.StartMarker
