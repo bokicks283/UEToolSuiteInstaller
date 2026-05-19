@@ -69,7 +69,7 @@ function Get-ProjectTestManifest {
 
     (New-TestManifestEntry `
       -Id "codex-startup-prompt" `
-      -Name "Codex Startup Prompt" `
+      -Name "AI Startup Prompt" `
       -Path "Scripts/Tests/Test-CodexStartupPrompt.ps1" `
       -Category "codex" `
       -Description "Validates the AI startup prompt builder output and local private-context handling." `

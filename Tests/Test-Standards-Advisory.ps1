@@ -26,33 +26,8 @@ $script:SkipCount = 0
 Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function Get-PowerShellPaths {
-  $paths = New-Object System.Collections.Generic.List[string]
-  $roots = @(
-    "Install-UEToolSuite.ps1",
-    "Scripts",
-    "Tests",
-    "payload\Scripts"
-  )
-
-  foreach ($root in $roots) {
-    $full = Join-Path $repoRoot $root
-    if (-not (Test-Path -LiteralPath $full)) { continue }
-    if (Test-Path -LiteralPath $full -PathType Leaf) {
-      $paths.Add((Resolve-Path -LiteralPath $full).Path) | Out-Null
-      continue
-    }
-
-    $files = Get-ChildItem -LiteralPath $full -Recurse -File -ErrorAction SilentlyContinue |
-      Where-Object {
-        $_.Extension -in @(".ps1", ".psm1", ".psd1") -and
-        $_.FullName -notmatch "\\(bin|obj|dist)\\"
-      }
-    foreach ($file in $files) {
-      $paths.Add($file.FullName) | Out-Null
-    }
-  }
-
-  return @($paths | Sort-Object -Unique)
+  $roots = @("Install-UEToolSuite.ps1", "Scripts", "Tests", "payload\Scripts")
+  return @(Get-FilteredFilePaths -Roots $roots -Extensions @(".ps1", ".psm1", ".psd1"))
 }
 
 function Get-ShellScriptPaths {
@@ -66,8 +41,39 @@ function Get-ShellScriptPaths {
     if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
     $files = Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
       Where-Object {
-        $_.Extension -eq ".sh" -or
-        $_.Name -in @("post-checkout", "post-merge", "post-commit", "post-rewrite", "pre-commit", "pre-push")
+        $_.FullName -notmatch "\\(\.git|node_modules|bin|obj|dist|build|\.ue-tools-installer-backups)\\" -and
+        (
+          $_.Extension -eq ".sh" -or
+          $_.Name -in @("post-checkout", "post-merge", "post-commit", "post-rewrite", "pre-commit", "pre-push")
+        )
+      }
+    foreach ($file in $files) {
+      $paths.Add($file.FullName) | Out-Null
+    }
+  }
+
+  return @($paths | Sort-Object -Unique)
+}
+
+function Get-FilteredFilePaths {
+  param(
+    [Parameter(Mandatory)][string[]]$Roots,
+    [Parameter(Mandatory)][string[]]$Extensions
+  )
+
+  $paths = New-Object System.Collections.Generic.List[string]
+  foreach ($root in $Roots) {
+    $full = Join-Path $repoRoot $root
+    if (-not (Test-Path -LiteralPath $full)) { continue }
+    if (Test-Path -LiteralPath $full -PathType Leaf) {
+      $paths.Add((Resolve-Path -LiteralPath $full).Path) | Out-Null
+      continue
+    }
+
+    $files = Get-ChildItem -LiteralPath $full -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object {
+        $_.Extension -in $Extensions -and
+        $_.FullName -notmatch "\\(\.git|node_modules|bin|obj|dist|build|\.ue-tools-installer-backups)\\"
       }
     foreach ($file in $files) {
       $paths.Add($file.FullName) | Out-Null
@@ -100,6 +106,11 @@ try {
         Pass "PSScriptAnalyzer" "No findings."
       }
       else {
+        $groupedBySeverity = @($findings | Group-Object Severity | Sort-Object Name)
+        foreach ($severityGroup in $groupedBySeverity) {
+          Write-Log ("   Severity {0}: {1}" -f $severityGroup.Name, $severityGroup.Count) Yellow
+        }
+
         $severityOrder = @{ Error = 0; Warning = 1; Information = 2; ParseError = 3 }
         $sorted = @(
           $findings | Sort-Object `
@@ -127,6 +138,7 @@ try {
     Warn "shellcheck" "shellcheck not found; skipping advisory check."
   }
   else {
+    Write-Log ("Using shellcheck: {0}" -f $shellcheckCommand.Source) DarkGray
     $shellFiles = @(Get-ShellScriptPaths)
     if ($shellFiles.Count -lt 1) {
       Skip "shellcheck" "No shell scripts matched scan roots."

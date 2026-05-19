@@ -49,6 +49,7 @@ Current public command surface is intentionally stable:
 - `ai-prompt`
 
 Compatibility aliases remain available: `codex-tools`, `codex-prompt`.
+Deprecation policy: keep compatibility aliases until one full release cycle passes with tests proving `ai-tools`/`ai-prompt` behavior parity in install, upgrade, and profile bootstrap flows.
 
 Command specs and registry live in:
 - `payload/Scripts/UETools/UEToolSuite.Core.psm1`
