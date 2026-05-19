@@ -509,6 +509,18 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
     Assert-Condition "case15 wrapper omits ai-tools when unavailable" ($codexInstall.Aliases.Count -eq 0) "no ai-tools aliases returned"
   }
 
+  Step "Case 16: AI alias install wrapper remains available"
+  $profileAi = New-ScratchPath "profile-ai.ps1"
+  $aiInstall = Install-AIToolsShellAliases -ProfilePath $profileAi -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
+  if ($aiToolsAvailable) {
+    Assert-Condition "case16 wrapper returns ai-tools alias" ($aiInstall.Aliases -contains "ai-tools") "Install-AIToolsShellAliases returns ai-tools metadata"
+    Assert-Condition "case16 wrapper preserves function name" ($aiInstall.FunctionName -eq "Invoke-AITools") "FunctionName=Invoke-AITools"
+    Assert-Condition "case16 wrapper metadata includes codex compat alias" ($aiInstall.Aliases -contains "codex-tools") "compat alias included"
+  }
+  else {
+    Assert-Condition "case16 wrapper omits ai-tools when unavailable" ($aiInstall.Aliases.Count -eq 0) "no ai-tools aliases returned"
+  }
+
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1} WARN={2} SKIP={3}" -f $script:PassCount, $script:FailCount, $script:WarnCount, $script:SkipCount) Cyan
   if ($script:FailCount -eq 0) {

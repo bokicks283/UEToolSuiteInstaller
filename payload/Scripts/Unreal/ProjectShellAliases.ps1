@@ -244,6 +244,138 @@ function Get-CodexToolsCommandSpecFromRegistry {
   return (Get-AIToolsCommandSpecFromRegistry)
 }
 
+function New-FallbackUEToolsCommandSpec {
+  [pscustomobject]@{
+    CommandName = "ue-tools"
+    DefaultCommand = "help"
+    OptionPrefixedDefaultCommand = "build"
+    BuildScriptRelativePath = "Scripts\Unreal\UnrealSync.ps1"
+    BuildScriptNotFoundPrefix = "UnrealSync script not found"
+    HelpLines = @(
+      "UE tools wrapper for repository Unreal helpers."
+      "Usage:"
+      "  ue-tools <command> [options]"
+      "Commands:"
+      "  help                 Show this help text."
+      "  build [sync options] Run Scripts\Unreal\UnrealSync.ps1 with -Force."
+      "Examples:"
+      "  ue-tools help"
+      "  ue-tools build -DryRun"
+      "  ue-tools build -NoBuild -Config Debug"
+      "Notes:"
+      "  - If the first argument starts with '-' or '/', 'build' is assumed."
+      "  - Additional commands can be added under this command group later."
+    )
+    BuildHelpLines = @(
+      "Usage: ue-tools build [UnrealSync.ps1 options]"
+      "Examples:"
+      "  ue-tools build -DryRun"
+      "  ue-tools build -NoBuild -NoRegen"
+      "  ue-tools build -Config Debug -Platform Win64"
+      "Notes:"
+      "  - Wrapper always passes -Force to UnrealSync.ps1."
+    )
+  }
+}
+
+function New-FallbackArtToolsCommandSpec {
+  [pscustomobject]@{
+    CommandName = "art-tools"
+    ScriptRelativePath = "Scripts\Unreal\New-ArtSourcePath.ps1"
+    ScriptNotFoundPrefix = "ArtSource path script not found"
+    HelpLines = @(
+      "Art tools wrapper for ArtSource helpers."
+      "Usage:"
+      "  art-tools [New-ArtSourcePath.ps1 options]"
+      "Examples:"
+      "  art-tools"
+      "  art-tools -RepoRoot C:\Path\To\Repo"
+      "Notes:"
+      "  - Runs Scripts\Unreal\New-ArtSourcePath.ps1."
+    )
+  }
+}
+
+function New-FallbackDocsToolsCommandSpec {
+  [pscustomobject]@{
+    CommandName = "docs-tools"
+    ScriptRelativePath = "Scripts\Docs\DocsTools.ps1"
+    ScriptNotFoundPrefix = "Docs tools script not found"
+  }
+}
+
+function New-FallbackAIPromptCommandSpec {
+  [pscustomobject]@{
+    CommandName = "ai-prompt"
+    ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
+    ScriptNotFoundPrefix = "AI startup prompt script not found"
+    HelpLines = @(
+      "AI startup prompt builder for this repository."
+      "Usage:"
+      "  ai-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
+      "Examples:"
+      "  ai-prompt"
+      "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
+      "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
+      "Notes:"
+      "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
+    )
+  }
+}
+
+function New-FallbackAIToolsCommandSpec {
+  [pscustomobject]@{
+    CommandName = "ai-tools"
+    DefaultCommand = "help"
+    OptionPrefixedDefaultCommand = "prompt"
+    PromptSubcommandName = "prompt"
+    HelpLines = @(
+      "AI tools wrapper for repository AI helpers."
+      "Usage:"
+      "  ai-tools <command> [options]"
+      "Commands:"
+      "  help                   Show this help text."
+      "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      "Examples:"
+      "  ai-tools help"
+      "  ai-tools prompt -Task `"Fix hook docs`""
+      "  ai-tools prompt -IncludePrivate -CopyToClipboard"
+      "Notes:"
+      "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
+    )
+  }
+}
+
+function Get-ResolvedUEToolsCommandSpec {
+  $spec = Get-UEToolsCommandSpecFromRegistry
+  if ($null -ne $spec) { return $spec }
+  return (New-FallbackUEToolsCommandSpec)
+}
+
+function Get-ResolvedArtToolsCommandSpec {
+  $spec = Get-ArtToolsCommandSpecFromRegistry
+  if ($null -ne $spec) { return $spec }
+  return (New-FallbackArtToolsCommandSpec)
+}
+
+function Get-ResolvedDocsToolsCommandSpec {
+  $spec = Get-DocsToolsCommandSpecFromRegistry
+  if ($null -ne $spec) { return $spec }
+  return (New-FallbackDocsToolsCommandSpec)
+}
+
+function Get-ResolvedAIPromptCommandSpec {
+  $spec = Get-AIPromptCommandSpecFromRegistry
+  if ($null -ne $spec) { return $spec }
+  return (New-FallbackAIPromptCommandSpec)
+}
+
+function Get-ResolvedAIToolsCommandSpec {
+  $spec = Get-AIToolsCommandSpecFromRegistry
+  if ($null -ne $spec) { return $spec }
+  return (New-FallbackAIToolsCommandSpec)
+}
+
 function Test-ProjectAliasRepoScriptAvailable {
   param([Parameter(Mandatory)][string]$RelativePath)
 
@@ -280,6 +412,49 @@ function Get-ProjectAliasLegacyMarkers {
   )
 }
 
+function Get-ProjectAliasFallbackRegistry {
+  return @(
+    [pscustomobject]@{
+      Id = "ue-tools"
+      FunctionName = "Invoke-UETools"
+      Aliases = @("ue-tools")
+      RequiredRelativePath = "Unreal\UnrealSync.ps1"
+    },
+    [pscustomobject]@{
+      Id = "art-tools"
+      FunctionName = "Invoke-ArtTools"
+      Aliases = @("art-tools")
+      RequiredRelativePath = "Unreal\New-ArtSourcePath.ps1"
+    },
+    [pscustomobject]@{
+      Id = "docs-tools"
+      FunctionName = "Invoke-DocsTools"
+      Aliases = @("docs-tools")
+      RequiredRelativePath = "Docs\DocsTools.ps1"
+    },
+    [pscustomobject]@{
+      Id = "ai-tools"
+      FunctionName = "Invoke-AITools"
+      Aliases = @("ai-tools", "codex-tools")
+      RequiredRelativePath = "Codex\Get-CodexStartupPrompt.ps1"
+    },
+    [pscustomobject]@{
+      Id = "ai-prompt"
+      FunctionName = "Invoke-AIPrompt"
+      Aliases = @("ai-prompt", "codex-prompt")
+      RequiredRelativePath = "Codex\Get-CodexStartupPrompt.ps1"
+    }
+  )
+}
+
+function Test-ProjectAliasFallbackDefinitionAvailable {
+  param([Parameter(Mandatory)]$Definition)
+
+  $scriptsRoot = Get-ProjectAliasScriptsRoot
+  $candidate = Join-Path $scriptsRoot $Definition.RequiredRelativePath
+  return (Test-Path -LiteralPath $candidate -PathType Leaf)
+}
+
 function Get-ProjectAliasDefinitions {
   $registryDefinitions = @(Get-ProjectAliasDefinitionsFromRegistry)
   if ($registryDefinitions.Count -gt 0) {
@@ -297,39 +472,15 @@ function Get-ProjectAliasDefinitions {
   # Fallback for older installed suites that do not have the shared registry module.
   $definitions = New-Object System.Collections.Generic.List[object]
 
-  [void]$definitions.Add([pscustomobject]@{
-      Id = "ue-tools"
-      FunctionName = "Invoke-UETools"
-      Aliases = @("ue-tools")
-    })
-
-  if (Test-ProjectAliasRepoScriptAvailable -RelativePath "New-ArtSourcePath.ps1") {
-    [void]$definitions.Add([pscustomobject]@{
-        Id = "art-tools"
-        FunctionName = "Invoke-ArtTools"
-        Aliases = @("art-tools")
-      })
-  }
-
-  if (Test-ProjectAliasRepoScriptAvailable -RelativePath "..\Docs\DocsTools.ps1") {
-    [void]$definitions.Add([pscustomobject]@{
-        Id = "docs-tools"
-        FunctionName = "Invoke-DocsTools"
-        Aliases = @("docs-tools")
-      })
-  }
-
-  if (Test-ProjectAliasRepoScriptAvailable -RelativePath "..\Codex\Get-CodexStartupPrompt.ps1") {
-    [void]$definitions.Add([pscustomobject]@{
-        Id = "ai-tools"
-        FunctionName = "Invoke-AITools"
-        Aliases = @("ai-tools", "codex-tools")
-      })
+  foreach ($definition in @(Get-ProjectAliasFallbackRegistry)) {
+    if (-not (Test-ProjectAliasFallbackDefinitionAvailable -Definition $definition)) {
+      continue
+    }
 
     [void]$definitions.Add([pscustomobject]@{
-        Id = "ai-prompt"
-        FunctionName = "Invoke-AIPrompt"
-        Aliases = @("ai-prompt", "codex-prompt")
+        Id = $definition.Id
+        FunctionName = $definition.FunctionName
+        Aliases = @($definition.Aliases)
       })
   }
 
@@ -386,49 +537,52 @@ function Resolve-RepoScriptOrThrow {
   return $scriptPath
 }
 
-function Invoke-UETools {
-  $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
-  $argsList = @($args)
-  $spec = Get-UEToolsCommandSpecFromRegistry
-  if ($null -eq $spec) {
-    $spec = [pscustomobject]@{
-      CommandName = "ue-tools"
-      DefaultCommand = "help"
-      OptionPrefixedDefaultCommand = "build"
-      BuildScriptRelativePath = "Scripts\Unreal\UnrealSync.ps1"
-      BuildScriptNotFoundPrefix = "UnrealSync script not found"
-      HelpLines = @(
-        "UE tools wrapper for repository Unreal helpers."
-        "Usage:"
-        "  ue-tools <command> [options]"
-        "Commands:"
-        "  help                 Show this help text."
-        "  build [sync options] Run Scripts\Unreal\UnrealSync.ps1 with -Force."
-        "Examples:"
-        "  ue-tools help"
-        "  ue-tools build -DryRun"
-        "  ue-tools build -NoBuild -Config Debug"
-        "Notes:"
-        "  - If the first argument starts with '-' or '/', 'build' is assumed."
-        "  - Additional commands can be added under this command group later."
-      )
-      BuildHelpLines = @(
-        "Usage: ue-tools build [UnrealSync.ps1 options]"
-        "Examples:"
-        "  ue-tools build -DryRun"
-        "  ue-tools build -NoBuild -NoRegen"
-        "  ue-tools build -Config Debug -Platform Win64"
-        "Notes:"
-        "  - Wrapper always passes -Force to UnrealSync.ps1."
-      )
-    }
-  }
+function Test-ProjectAliasHelpToken {
+  param([object]$Value)
 
-  function Test-HelpToken([object]$Value) {
-    if ($null -eq $Value) { return $false }
-    $token = ([string]$Value).ToLowerInvariant()
-    return ($helpTokens -contains $token)
+  if ($null -eq $Value) { return $false }
+  $token = ([string]$Value).ToLowerInvariant()
+  return @("help", "--help", "-help", "-h", "/?", "-?") -contains $token
+}
+
+function Resolve-ProjectCommandScriptContext {
+  param(
+    [Parameter(Mandatory)][string]$InvokerName,
+    [Parameter(Mandatory)][string]$ScriptRelativePath,
+    [Parameter(Mandatory)][string]$ScriptNotFoundPrefix
+  )
+
+  $repoRoot = Get-RepoRootOrThrow -InvokerName $InvokerName
+  $scriptPath = Resolve-RepoScriptOrThrow `
+    -RepoRoot $repoRoot `
+    -RelativePath $ScriptRelativePath `
+    -NotFoundMessagePrefix $ScriptNotFoundPrefix
+
+  return [pscustomobject]@{
+    RepoRoot = $repoRoot
+    ScriptPath = $scriptPath
   }
+}
+
+function Invoke-ProjectCommandScript {
+  param(
+    [Parameter(Mandatory)][string]$InvokerName,
+    [Parameter(Mandatory)][string]$ScriptRelativePath,
+    [Parameter(Mandatory)][string]$ScriptNotFoundPrefix,
+    [object[]]$ScriptArguments = @()
+  )
+
+  $context = Resolve-ProjectCommandScriptContext `
+    -InvokerName $InvokerName `
+    -ScriptRelativePath $ScriptRelativePath `
+    -ScriptNotFoundPrefix $ScriptNotFoundPrefix
+
+  & $context.ScriptPath @ScriptArguments
+}
+
+function Invoke-UETools {
+  $argsList = @($args)
+  $spec = Get-ResolvedUEToolsCommandSpec
 
   function Show-UEToolsHelp {
     @($spec.HelpLines) | Write-Output
@@ -443,7 +597,7 @@ function Invoke-UETools {
 
   if ($argsList.Count -gt 0) {
     $first = [string]$argsList[0]
-    if (Test-HelpToken $first) {
+    if (Test-ProjectAliasHelpToken $first) {
       $command = [string]$spec.DefaultCommand
       if ($argsList.Count -gt 1) {
         $commandArgs = @($argsList[1..($argsList.Count - 1)])
@@ -468,19 +622,18 @@ function Invoke-UETools {
     }
     "build" {
       foreach ($arg in $commandArgs) {
-        if (Test-HelpToken $arg) {
+        if (Test-ProjectAliasHelpToken $arg) {
           Show-UEToolsBuildHelp
           return
         }
       }
 
-      $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-UETools"
-      $syncScript = Resolve-RepoScriptOrThrow `
-        -RepoRoot $repoRoot `
-        -RelativePath $spec.BuildScriptRelativePath `
-        -NotFoundMessagePrefix $spec.BuildScriptNotFoundPrefix
+      $context = Resolve-ProjectCommandScriptContext `
+        -InvokerName "Invoke-UETools" `
+        -ScriptRelativePath $spec.BuildScriptRelativePath `
+        -ScriptNotFoundPrefix $spec.BuildScriptNotFoundPrefix
 
-      & $syncScript -RepoRoot $repoRoot -Force @commandArgs
+      & $context.ScriptPath -RepoRoot $context.RepoRoot -Force @commandArgs
       return
     }
     default {
@@ -490,64 +643,35 @@ function Invoke-UETools {
 }
 
 function Invoke-ArtTools {
-  $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
-  $spec = Get-ArtToolsCommandSpecFromRegistry
-  if ($null -eq $spec) {
-    $spec = [pscustomobject]@{
-      CommandName = "art-tools"
-      ScriptRelativePath = "Scripts\Unreal\New-ArtSourcePath.ps1"
-      ScriptNotFoundPrefix = "ArtSource path script not found"
-      HelpLines = @(
-        "Art tools wrapper for ArtSource helpers."
-        "Usage:"
-        "  art-tools [New-ArtSourcePath.ps1 options]"
-        "Examples:"
-        "  art-tools"
-        "  art-tools -RepoRoot C:\Path\To\Repo"
-        "Notes:"
-        "  - Runs Scripts\Unreal\New-ArtSourcePath.ps1."
-      )
-    }
-  }
+  $spec = Get-ResolvedArtToolsCommandSpec
 
   foreach ($arg in $argsList) {
-    if ($helpTokens -contains ([string]$arg).ToLowerInvariant()) {
+    if (Test-ProjectAliasHelpToken $arg) {
       @($spec.HelpLines) | Write-Output
       return
     }
   }
 
-  $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-ArtTools"
-  $artScript = Resolve-RepoScriptOrThrow `
-    -RepoRoot $repoRoot `
-    -RelativePath $spec.ScriptRelativePath `
-    -NotFoundMessagePrefix $spec.ScriptNotFoundPrefix
-
-  & $artScript @argsList
+  Invoke-ProjectCommandScript `
+    -InvokerName "Invoke-ArtTools" `
+    -ScriptRelativePath $spec.ScriptRelativePath `
+    -ScriptNotFoundPrefix $spec.ScriptNotFoundPrefix `
+    -ScriptArguments $argsList
 }
 
 function Invoke-DocsTools {
   $argsList = @($args)
-  $spec = Get-DocsToolsCommandSpecFromRegistry
-  if ($null -eq $spec) {
-    $spec = [pscustomobject]@{
-      CommandName = "docs-tools"
-      ScriptRelativePath = "Scripts\Docs\DocsTools.ps1"
-      ScriptNotFoundPrefix = "Docs tools script not found"
-    }
-  }
-
-  $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-DocsTools"
-  $docsScript = Resolve-RepoScriptOrThrow `
-    -RepoRoot $repoRoot `
-    -RelativePath $spec.ScriptRelativePath `
-    -NotFoundMessagePrefix $spec.ScriptNotFoundPrefix
+  $spec = Get-ResolvedDocsToolsCommandSpec
+  $context = Resolve-ProjectCommandScriptContext `
+    -InvokerName "Invoke-DocsTools" `
+    -ScriptRelativePath $spec.ScriptRelativePath `
+    -ScriptNotFoundPrefix $spec.ScriptNotFoundPrefix
 
   & {
-    . $docsScript
+    . $context.ScriptPath
     try {
-      $resolvedRepoRoot = Get-DocsToolsRepoRoot -ExplicitRepoRoot $repoRoot
+      $resolvedRepoRoot = Get-DocsToolsRepoRoot -ExplicitRepoRoot $context.RepoRoot
       $normalizedDocsArgs = Get-NormalizedArgumentList -Values $argsList
       Invoke-DocsToolsMain -ResolvedRepoRoot $resolvedRepoRoot -CommandArguments $normalizedDocsArgs
     }
@@ -558,89 +682,32 @@ function Invoke-DocsTools {
 }
 
 function Show-AIPromptHelp {
-  $spec = Get-AIPromptCommandSpecFromRegistry
-  if ($null -eq $spec) {
-    $spec = [pscustomobject]@{
-      CommandName = "ai-prompt"
-      ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
-      ScriptNotFoundPrefix = "AI startup prompt script not found"
-      HelpLines = @(
-        "AI startup prompt builder for this repository."
-        "Usage:"
-        "  ai-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
-        "Examples:"
-        "  ai-prompt"
-        "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
-        "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
-        "Notes:"
-        "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
-      )
-    }
-  }
+  $spec = Get-ResolvedAIPromptCommandSpec
 
   @($spec.HelpLines) | Write-Output
 }
 
 function Invoke-AIPrompt {
-  $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
-  $spec = Get-AIPromptCommandSpecFromRegistry
-  if ($null -eq $spec) {
-    $spec = [pscustomobject]@{
-      CommandName = "ai-prompt"
-      ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
-      ScriptNotFoundPrefix = "AI startup prompt script not found"
-    }
-  }
+  $spec = Get-ResolvedAIPromptCommandSpec
 
   foreach ($arg in $argsList) {
-    if ($helpTokens -contains ([string]$arg).ToLowerInvariant()) {
+    if (Test-ProjectAliasHelpToken $arg) {
       Show-AIPromptHelp
       return
     }
   }
 
-  $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-AIPrompt"
-  $promptScript = Resolve-RepoScriptOrThrow `
-    -RepoRoot $repoRoot `
-    -RelativePath $spec.ScriptRelativePath `
-    -NotFoundMessagePrefix $spec.ScriptNotFoundPrefix
-
-  & $promptScript @argsList
+  Invoke-ProjectCommandScript `
+    -InvokerName "Invoke-AIPrompt" `
+    -ScriptRelativePath $spec.ScriptRelativePath `
+    -ScriptNotFoundPrefix $spec.ScriptNotFoundPrefix `
+    -ScriptArguments $argsList
 }
 
 function Invoke-AITools {
-  $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
-  $spec = Get-AIToolsCommandSpecFromRegistry
-  if ($null -eq $spec) {
-    $spec = [pscustomobject]@{
-      CommandName = "ai-tools"
-      DefaultCommand = "help"
-      OptionPrefixedDefaultCommand = "prompt"
-      PromptSubcommandName = "prompt"
-      HelpLines = @(
-        "AI tools wrapper for repository AI helpers."
-        "Usage:"
-        "  ai-tools <command> [options]"
-        "Commands:"
-        "  help                   Show this help text."
-        "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
-        "Examples:"
-        "  ai-tools help"
-        "  ai-tools prompt -Task `"Fix hook docs`""
-        "  ai-tools prompt -IncludePrivate -CopyToClipboard"
-        "Notes:"
-        "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
-      )
-    }
-  }
-
-  function Test-HelpToken([object]$Value) {
-    if ($null -eq $Value) { return $false }
-    $token = ([string]$Value).ToLowerInvariant()
-    return ($helpTokens -contains $token)
-  }
+  $spec = Get-ResolvedAIToolsCommandSpec
 
   function Show-AIToolsHelp {
     @($spec.HelpLines) | Write-Output
@@ -651,7 +718,7 @@ function Invoke-AITools {
 
   if ($argsList.Count -gt 0) {
     $first = [string]$argsList[0]
-    if (Test-HelpToken $first) {
+    if (Test-ProjectAliasHelpToken $first) {
       $command = [string]$spec.DefaultCommand
       if ($argsList.Count -gt 1) {
         $commandArgs = @($argsList[1..($argsList.Count - 1)])
@@ -676,7 +743,7 @@ function Invoke-AITools {
     }
     ([string]$spec.PromptSubcommandName) {
       foreach ($arg in $commandArgs) {
-        if (Test-HelpToken $arg) {
+        if (Test-ProjectAliasHelpToken $arg) {
           Show-AIPromptHelp
           return
         }
