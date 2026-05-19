@@ -4,8 +4,42 @@ $script:ProjectShellAliasesScriptPath = if ($PSCommandPath) {
 else {
   $null
 }
-$script:UEToolSuiteCoreModuleImported = $false
-$script:UEToolSuiteCoreModuleImportAttempted = $false
+$runtimeHelperPath = Join-Path (Split-Path -Parent $PSScriptRoot) "UETools\UEToolSuite.Runtime.ps1"
+if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
+  . $runtimeHelperPath
+}
+else {
+  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
+    param([Parameter(Mandatory)][string]$ScriptsRoot)
+
+    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+      return $manifestPath
+    }
+
+    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
+    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+      return $modulePath
+    }
+
+    return $null
+  }
+
+  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
+    param(
+      [Parameter(Mandatory)][string]$ScriptsRoot,
+      [Parameter(Mandatory)][string]$StateKey
+    )
+
+    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
+    if ([string]::IsNullOrWhiteSpace($modulePath)) {
+      return $false
+    }
+
+    Import-Module -Name $modulePath -Force
+    return $true
+  }
+}
 
 function Write-Utf8NoBomFile {
   param(
@@ -142,38 +176,10 @@ function Get-ProjectAliasScriptsRoot {
   return (Split-Path -Path $scriptDir -Parent)
 }
 
-function Get-UEToolSuiteCoreModulePath {
-  $scriptsRoot = Get-ProjectAliasScriptsRoot
-  $manifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
-  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-    return $manifestPath
-  }
-
-  $modulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
-  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
-    return $modulePath
-  }
-
-  return $null
-}
-
 function Import-UEToolSuiteCoreModule {
-  if ($script:UEToolSuiteCoreModuleImported) {
-    return $true
-  }
-  if ($script:UEToolSuiteCoreModuleImportAttempted) {
-    return $false
-  }
-
-  $script:UEToolSuiteCoreModuleImportAttempted = $true
-  $modulePath = Get-UEToolSuiteCoreModulePath
-  if ([string]::IsNullOrWhiteSpace($modulePath)) {
-    return $false
-  }
-
-  Import-Module -Name $modulePath -Force
-  $script:UEToolSuiteCoreModuleImported = $true
-  return $true
+  $scriptsRoot = Get-ProjectAliasScriptsRoot
+  $stateKey = "project-shell-aliases::{0}" -f $scriptsRoot.ToLowerInvariant()
+  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $scriptsRoot -StateKey $stateKey)
 }
 
 function Get-ProjectAliasDefinitionsFromRegistry {

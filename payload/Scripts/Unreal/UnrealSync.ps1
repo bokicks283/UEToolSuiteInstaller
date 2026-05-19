@@ -38,41 +38,46 @@ if (-not (Test-Path -LiteralPath $projectContextHelper)) {
   throw "Project context helper not found: $projectContextHelper"
 }
 . $projectContextHelper
-$script:UEToolSuiteCoreModuleImported = $false
-$script:UEToolSuiteCoreModuleImportAttempted = $false
+$script:UnrealScriptsRoot = Split-Path -Parent $PSScriptRoot
+$runtimeHelperPath = Join-Path $script:UnrealScriptsRoot "UETools\UEToolSuite.Runtime.ps1"
+if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
+  . $runtimeHelperPath
+}
+else {
+  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
+    param([Parameter(Mandatory)][string]$ScriptsRoot)
 
-function Get-UEToolSuiteCoreModulePath {
-  $scriptsRoot = Split-Path -Parent $PSScriptRoot
-  $manifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
-  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-    return $manifestPath
+    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+      return $manifestPath
+    }
+
+    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
+    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+      return $modulePath
+    }
+
+    return $null
   }
 
-  $modulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
-  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
-    return $modulePath
-  }
+  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
+    param(
+      [Parameter(Mandatory)][string]$ScriptsRoot,
+      [Parameter(Mandatory)][string]$StateKey
+    )
 
-  return $null
+    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
+    if ([string]::IsNullOrWhiteSpace($modulePath)) {
+      return $false
+    }
+
+    Import-Module -Name $modulePath -Force
+    return $true
+  }
 }
 
 function Import-UEToolSuiteCoreModule {
-  if ($script:UEToolSuiteCoreModuleImported) {
-    return $true
-  }
-  if ($script:UEToolSuiteCoreModuleImportAttempted) {
-    return $false
-  }
-
-  $script:UEToolSuiteCoreModuleImportAttempted = $true
-  $modulePath = Get-UEToolSuiteCoreModulePath
-  if ([string]::IsNullOrWhiteSpace($modulePath)) {
-    return $false
-  }
-
-  Import-Module -Name $modulePath -Force
-  $script:UEToolSuiteCoreModuleImported = $true
-  return $true
+  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:UnrealScriptsRoot -StateKey "unreal-sync")
 }
 
 function Info($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Cyan }

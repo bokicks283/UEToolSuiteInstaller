@@ -7,41 +7,47 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$script:UEToolSuiteCoreModuleImported = $false
-$script:UEToolSuiteCoreModuleImportAttempted = $false
 
-function Get-UEToolSuiteCoreModulePath {
-  $scriptsRoot = Split-Path -Parent $PSScriptRoot
-  $manifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
-  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-    return $manifestPath
+$script:CodexToolsScriptsRoot = Split-Path -Parent $PSScriptRoot
+$runtimeHelperPath = Join-Path $script:CodexToolsScriptsRoot "UETools\UEToolSuite.Runtime.ps1"
+if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
+  . $runtimeHelperPath
+}
+else {
+  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
+    param([Parameter(Mandatory)][string]$ScriptsRoot)
+
+    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+      return $manifestPath
+    }
+
+    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
+    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+      return $modulePath
+    }
+
+    return $null
   }
 
-  $modulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
-  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
-    return $modulePath
-  }
+  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
+    param(
+      [Parameter(Mandatory)][string]$ScriptsRoot,
+      [Parameter(Mandatory)][string]$StateKey
+    )
 
-  return $null
+    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
+    if ([string]::IsNullOrWhiteSpace($modulePath)) {
+      return $false
+    }
+
+    Import-Module -Name $modulePath -Force
+    return $true
+  }
 }
 
 function Import-UEToolSuiteCoreModule {
-  if ($script:UEToolSuiteCoreModuleImported) {
-    return $true
-  }
-  if ($script:UEToolSuiteCoreModuleImportAttempted) {
-    return $false
-  }
-
-  $script:UEToolSuiteCoreModuleImportAttempted = $true
-  $modulePath = Get-UEToolSuiteCoreModulePath
-  if ([string]::IsNullOrWhiteSpace($modulePath)) {
-    return $false
-  }
-
-  Import-Module -Name $modulePath -Force
-  $script:UEToolSuiteCoreModuleImported = $true
-  return $true
+  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:CodexToolsScriptsRoot -StateKey "codex-startup-prompt")
 }
 
 function Resolve-RepoRoot {
