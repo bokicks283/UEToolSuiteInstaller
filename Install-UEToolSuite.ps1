@@ -368,6 +368,7 @@ $managedItems = @(
   ".githooks",
   "Scripts/Init-Repo.ps1",
   "Scripts/README.md",
+  "Scripts/ue-tools.ps1",
   "Scripts/git-hooks",
   "Scripts/git-tools",
   "Scripts/UETools",

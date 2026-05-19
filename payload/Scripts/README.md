@@ -8,6 +8,7 @@ This folder contains automation that keeps Git/LFS/Unreal workflows consistent f
 - `Scripts/Docs/`: Docusaurus authoring helpers and the optional VS Code bridge for docs automation.
 - `Scripts/git-hooks/`: shared hook utilities and setup scripts.
 - `Scripts/git-tools/`: conflict helper commands (`git ours`, `git theirs`, `git conflicts`).
+- `Scripts/UETools/`: shared command registry and compatibility wrappers for unified CLI entrypoints.
 - `Scripts/Unreal/`: Unreal sync/build helper scripts and ArtSource scaffolding tools.
 - `Scripts/Tests/`: script tests and structured test output folders.
 
@@ -15,6 +16,7 @@ Concrete examples:
 
 - `Scripts/Codex/Get-CodexStartupPrompt.ps1`
 - `Scripts/Docs/DocsTools.ps1`
+- `Scripts/ue-tools.ps1`
 - `Scripts/git-hooks/Enable-GitHooks.ps1`
 - `Scripts/git-tools/conflicts.ps1`
 - `Scripts/Unreal/UnrealSync.ps1`

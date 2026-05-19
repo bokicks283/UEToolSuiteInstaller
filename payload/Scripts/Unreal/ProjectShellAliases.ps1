@@ -148,6 +148,21 @@ function Get-ProjectAliasDefinitionsFromRegistry {
   return @(Get-UEToolSuiteCommandRegistry -ScriptsRoot $scriptsRoot)
 }
 
+function Get-UEToolsCommandSpecFromRegistry {
+  $modulePath = Get-UEToolSuiteCoreModulePath
+  if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+    return $null
+  }
+
+  Import-Module -Name $modulePath -Force
+  $specCommand = Get-Command -Name "Get-UEToolsCommandSpec" -ErrorAction SilentlyContinue
+  if (-not $specCommand) {
+    return $null
+  }
+
+  return (Get-UEToolsCommandSpec)
+}
+
 function Test-ProjectAliasRepoScriptAvailable {
   param([Parameter(Mandatory)][string]$RelativePath)
 
@@ -269,6 +284,40 @@ function Resolve-RepoScriptOrThrow {
 function Invoke-UETools {
   $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
+  $spec = Get-UEToolsCommandSpecFromRegistry
+  if ($null -eq $spec) {
+    $spec = [pscustomobject]@{
+      CommandName = "ue-tools"
+      DefaultCommand = "help"
+      OptionPrefixedDefaultCommand = "build"
+      BuildScriptRelativePath = "Scripts\Unreal\UnrealSync.ps1"
+      BuildScriptNotFoundPrefix = "UnrealSync script not found"
+      HelpLines = @(
+        "UE tools wrapper for repository Unreal helpers."
+        "Usage:"
+        "  ue-tools <command> [options]"
+        "Commands:"
+        "  help                 Show this help text."
+        "  build [sync options] Run Scripts\Unreal\UnrealSync.ps1 with -Force."
+        "Examples:"
+        "  ue-tools help"
+        "  ue-tools build -DryRun"
+        "  ue-tools build -NoBuild -Config Debug"
+        "Notes:"
+        "  - If the first argument starts with '-' or '/', 'build' is assumed."
+        "  - Additional commands can be added under this command group later."
+      )
+      BuildHelpLines = @(
+        "Usage: ue-tools build [UnrealSync.ps1 options]"
+        "Examples:"
+        "  ue-tools build -DryRun"
+        "  ue-tools build -NoBuild -NoRegen"
+        "  ue-tools build -Config Debug -Platform Win64"
+        "Notes:"
+        "  - Wrapper always passes -Force to UnrealSync.ps1."
+      )
+    }
+  }
 
   function Test-HelpToken([object]$Value) {
     if ($null -eq $Value) { return $false }
@@ -277,48 +326,26 @@ function Invoke-UETools {
   }
 
   function Show-UEToolsHelp {
-    @(
-      "UE tools wrapper for repository Unreal helpers."
-      "Usage:"
-      "  ue-tools <command> [options]"
-      "Commands:"
-      "  help                 Show this help text."
-      "  build [sync options] Run Scripts\Unreal\UnrealSync.ps1 with -Force."
-      "Examples:"
-      "  ue-tools help"
-      "  ue-tools build -DryRun"
-      "  ue-tools build -NoBuild -Config Debug"
-      "Notes:"
-      "  - If the first argument starts with '-' or '/', 'build' is assumed."
-      "  - Additional commands can be added under this command group later."
-    ) | Write-Output
+    @($spec.HelpLines) | Write-Output
   }
 
   function Show-UEToolsBuildHelp {
-    @(
-      "Usage: ue-tools build [UnrealSync.ps1 options]"
-      "Examples:"
-      "  ue-tools build -DryRun"
-      "  ue-tools build -NoBuild -NoRegen"
-      "  ue-tools build -Config Debug -Platform Win64"
-      "Notes:"
-      "  - Wrapper always passes -Force to UnrealSync.ps1."
-    ) | Write-Output
+    @($spec.BuildHelpLines) | Write-Output
   }
 
-  $command = "help"
+  $command = [string]$spec.DefaultCommand
   $commandArgs = @()
 
   if ($argsList.Count -gt 0) {
     $first = [string]$argsList[0]
     if (Test-HelpToken $first) {
-      $command = "help"
+      $command = [string]$spec.DefaultCommand
       if ($argsList.Count -gt 1) {
         $commandArgs = @($argsList[1..($argsList.Count - 1)])
       }
     }
     elseif ($first.StartsWith("-") -or $first.StartsWith("/")) {
-      $command = "build"
+      $command = [string]$spec.OptionPrefixedDefaultCommand
       $commandArgs = $argsList
     }
     else {
@@ -345,8 +372,8 @@ function Invoke-UETools {
       $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-UETools"
       $syncScript = Resolve-RepoScriptOrThrow `
         -RepoRoot $repoRoot `
-        -RelativePath "Scripts\Unreal\UnrealSync.ps1" `
-        -NotFoundMessagePrefix "UnrealSync script not found"
+        -RelativePath $spec.BuildScriptRelativePath `
+        -NotFoundMessagePrefix $spec.BuildScriptNotFoundPrefix
 
       & $syncScript -RepoRoot $repoRoot -Force @commandArgs
       return

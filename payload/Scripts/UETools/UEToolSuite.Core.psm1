@@ -79,4 +79,41 @@ function Get-UEToolSuiteCommandRegistry {
   )
 }
 
-Export-ModuleMember -Function Get-UEToolSuiteCommandRegistry
+function Get-UEToolsCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  [pscustomobject]@{
+    CommandName = "ue-tools"
+    DefaultCommand = "help"
+    OptionPrefixedDefaultCommand = "build"
+    BuildScriptRelativePath = "Scripts\Unreal\UnrealSync.ps1"
+    BuildScriptNotFoundPrefix = "UnrealSync script not found"
+    HelpLines = @(
+      "UE tools wrapper for repository Unreal helpers."
+      "Usage:"
+      "  ue-tools <command> [options]"
+      "Commands:"
+      "  help                 Show this help text."
+      "  build [sync options] Run Scripts\Unreal\UnrealSync.ps1 with -Force."
+      "Examples:"
+      "  ue-tools help"
+      "  ue-tools build -DryRun"
+      "  ue-tools build -NoBuild -Config Debug"
+      "Notes:"
+      "  - If the first argument starts with '-' or '/', 'build' is assumed."
+      "  - Additional commands can be added under this command group later."
+    )
+    BuildHelpLines = @(
+      "Usage: ue-tools build [UnrealSync.ps1 options]"
+      "Examples:"
+      "  ue-tools build -DryRun"
+      "  ue-tools build -NoBuild -NoRegen"
+      "  ue-tools build -Config Debug -Platform Win64"
+      "Notes:"
+      "  - Wrapper always passes -Force to UnrealSync.ps1."
+    )
+  }
+}
+
+Export-ModuleMember -Function Get-UEToolSuiteCommandRegistry, Get-UEToolsCommandSpec

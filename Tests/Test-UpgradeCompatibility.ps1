@@ -215,6 +215,18 @@ function Invoke-DirectEntrypointSmoke {
   param([Parameter(Mandatory)][string]$TargetRoot)
 
   Invoke-CompatibilityCommand `
+    -Name "direct ue-tools help" `
+    -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\ue-tools.ps1"), "-RepoRoot", $TargetRoot, "help") `
+    -ExpectedText "UE tools wrapper for repository Unreal helpers." `
+    -TargetRoot $TargetRoot
+
+  Invoke-CompatibilityCommand `
+    -Name "direct legacy ue-tools wrapper help" `
+    -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\UETools\ue-tools.ps1"), "-RepoRoot", $TargetRoot, "help") `
+    -ExpectedText "UE tools wrapper for repository Unreal helpers." `
+    -TargetRoot $TargetRoot
+
+  Invoke-CompatibilityCommand `
     -Name "direct UnrealSync dry-run" `
     -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\Unreal\UnrealSync.ps1"), "-RepoRoot", $TargetRoot, "-Force", "-NoBuild", "-NoRegen", "-DryRun") `
     -ExpectedText "DryRun enabled" `
