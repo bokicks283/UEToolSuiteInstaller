@@ -141,7 +141,7 @@ try {
       "Scripts\Install-UEProjectTools.ps1",
       "Docs\GameDesign\README.md",
       "Docs\ProjectStructure\Target-Structure.md",
-      "Docs\Codex\Project-Context.md"
+      "Docs\AI\Project-Context.md"
     )) {
     Assert-PathMissing "case1 skipped $relativePath" (Join-Path $targetRepo $relativePath)
   }
@@ -156,7 +156,7 @@ try {
   Remove-Item -LiteralPath (Join-Path $targetRepo "website\src\css") -Recurse -Force
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "website\src\css") -Content "stale file blocking managed directory`n"
   $projectSpecificFiles = @(
-    [pscustomobject]@{ RelativePath = "Docs\Codex\Project-Context.md"; Content = "project-specific codex context should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\AI\Project-Context.md"; Content = "project-specific ai context should survive`n" },
     [pscustomobject]@{ RelativePath = "Docs\Pipeline\Project-Pipeline-Notes.md"; Content = "project-specific pipeline notes should survive`n" },
     [pscustomobject]@{ RelativePath = "Docs\DocsSite\Local-DocsSite-Notes.md"; Content = "project-specific docs site notes should survive`n" },
     [pscustomobject]@{ RelativePath = "website\src\pages\local-project-page.tsx"; Content = "project-specific docs page should survive`n" }

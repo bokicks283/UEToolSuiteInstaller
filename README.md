@@ -36,7 +36,7 @@ By default, replaced managed content is backed up under:
 - `-SkipUnrealSync`
 - `-NoBuild`
 - `-NoRegen`
-- `-SkipDocs`, `-SkipWebsite`, `-SkipTests`, `-SkipCodexTools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
+- `-SkipDocs`, `-SkipWebsite`, `-SkipTests`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
 - `-NoBackup`
 - `-NoLegacyCleanup`
 

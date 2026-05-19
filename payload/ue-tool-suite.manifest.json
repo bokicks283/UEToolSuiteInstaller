@@ -22,8 +22,8 @@
     "artTools": [
       "Scripts/Unreal/New-ArtSourcePath.ps1"
     ],
-    "codexTools": [
-      "Scripts/Codex"
+    "aiTools": [
+      "Scripts/AI"
     ],
     "tests": [
       "Scripts/Tests"
@@ -32,7 +32,7 @@
       "Docs/README.md",
       "Docs/Setup.md",
       "Docs/Testing.md",
-      "Docs/Codex",
+      "Docs/AI",
       "Docs/DocsSite",
       "Docs/Pipeline"
     ],

@@ -75,8 +75,6 @@ function Reset-LoadedAliases {
   Remove-Item -LiteralPath Function:\Invoke-DocsTools -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Function:\Invoke-AITools -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Function:\Invoke-AIPrompt -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath Function:\Invoke-CodexTools -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath Function:\Invoke-CodexPrompt -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Function:\Invoke-UESync -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Function:\Invoke-CozyUESync -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Alias:\ue-tools -ErrorAction SilentlyContinue
@@ -84,8 +82,6 @@ function Reset-LoadedAliases {
   Remove-Item -LiteralPath Alias:\docs-tools -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Alias:\ai-tools -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Alias:\ai-prompt -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath Alias:\codex-tools -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath Alias:\codex-prompt -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Alias:\uesync -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath Alias:\ue-sync -ErrorAction SilentlyContinue
 }
@@ -130,7 +126,7 @@ try {
   . $helperPath
   $artToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "New-ArtSourcePath.ps1"
   $docsToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "..\Docs\DocsTools.ps1"
-  $aiToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "..\Codex\Get-CodexStartupPrompt.ps1"
+  $aiToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "..\AI\Get-AIStartupPrompt.ps1"
 
   Step "Case 1: Alias definition table is present and complete"
   $definitions = @(Get-ProjectAliasDefinitions)
@@ -191,8 +187,6 @@ try {
   if ($aiToolsAvailable) {
     Assert-Condition "case2 ai-tools alias maps to function" (((Get-Alias -Name "ai-tools").Definition) -eq "Invoke-AITools") "ai-tools -> Invoke-AITools"
     Assert-Condition "case2 ai-prompt alias maps to function" (((Get-Alias -Name "ai-prompt").Definition) -eq "Invoke-AIPrompt") "ai-prompt -> Invoke-AIPrompt"
-    Assert-Condition "case2 codex-tools compat alias maps to function" (((Get-Alias -Name "codex-tools").Definition) -eq "Invoke-AITools") "codex-tools -> Invoke-AITools"
-    Assert-Condition "case2 codex-prompt compat alias maps to function" (((Get-Alias -Name "codex-prompt").Definition) -eq "Invoke-AIPrompt") "codex-prompt -> Invoke-AIPrompt"
     Assert-Condition "case2 metadata includes ai-tools" ($registered.Aliases -contains "ai-tools") "metadata contains ai-tools"
     Assert-Condition "case2 metadata includes ai-prompt" ($registered.Aliases -contains "ai-prompt") "metadata contains ai-prompt"
   }
@@ -323,16 +317,13 @@ try {
   if ($aiToolsAvailable) {
     $aiToolsHelp = @(& { ai-tools help } 2>&1 6>&1)
     $aiPromptHelp = @(& { ai-prompt --help } 2>&1 6>&1)
-    $codexToolsCompatHelp = @(& { codex-tools help } 2>&1 6>&1)
     $aiToolsHelpText = ($aiToolsHelp | ForEach-Object { "$_" }) -join "`n"
     $aiPromptHelpText = ($aiPromptHelp | ForEach-Object { "$_" }) -join "`n"
-    $codexToolsCompatHelpText = ($codexToolsCompatHelp | ForEach-Object { "$_" }) -join "`n"
     Assert-TextContains "case7c ai-tools help line" $aiToolsHelpText "ai-tools <command> [options]"
     Assert-TextContains "case7c ai-prompt usage line" $aiPromptHelpText "ai-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
-    Assert-TextContains "case7c codex-tools compat line" $codexToolsCompatHelpText "ai-tools <command> [options]"
   }
   else {
-    Skip "case7c ai tools help" "Get-CodexStartupPrompt.ps1 is not present in this repo."
+    Skip "case7c ai tools help" "Get-AIStartupPrompt.ps1 is not present in this repo."
   }
 
   Step "Case 8: ue-tools unknown subcommand gives actionable error"
@@ -498,27 +489,15 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
     Assert-Condition "case14 wrapper omits docs-tools when unavailable" ($docsInstall.Aliases.Count -eq 0) "no docs-tools aliases returned"
   }
 
-  Step "Case 15: Codex alias install wrapper remains available"
-  $profileCodex = New-ScratchPath "profile-codex.ps1"
-  $codexInstall = Install-CodexToolsShellAliases -ProfilePath $profileCodex -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
-  if ($aiToolsAvailable) {
-    Assert-Condition "case15 wrapper returns ai-tools alias" ($codexInstall.Aliases -contains "ai-tools") "Install-CodexToolsShellAliases returns ai-tools metadata"
-    Assert-Condition "case15 wrapper preserves function name" ($codexInstall.FunctionName -eq "Invoke-AITools") "FunctionName=Invoke-AITools"
-  }
-  else {
-    Assert-Condition "case15 wrapper omits ai-tools when unavailable" ($codexInstall.Aliases.Count -eq 0) "no ai-tools aliases returned"
-  }
-
-  Step "Case 16: AI alias install wrapper remains available"
+  Step "Case 15: AI alias install wrapper remains available"
   $profileAi = New-ScratchPath "profile-ai.ps1"
   $aiInstall = Install-AIToolsShellAliases -ProfilePath $profileAi -AliasScriptPath $helperPath -BootstrapScriptPath $bootstrapPath
   if ($aiToolsAvailable) {
-    Assert-Condition "case16 wrapper returns ai-tools alias" ($aiInstall.Aliases -contains "ai-tools") "Install-AIToolsShellAliases returns ai-tools metadata"
-    Assert-Condition "case16 wrapper preserves function name" ($aiInstall.FunctionName -eq "Invoke-AITools") "FunctionName=Invoke-AITools"
-    Assert-Condition "case16 wrapper metadata includes codex compat alias" ($aiInstall.Aliases -contains "codex-tools") "compat alias included"
+    Assert-Condition "case15 wrapper returns ai-tools alias" ($aiInstall.Aliases -contains "ai-tools") "Install-AIToolsShellAliases returns ai-tools metadata"
+    Assert-Condition "case15 wrapper preserves function name" ($aiInstall.FunctionName -eq "Invoke-AITools") "FunctionName=Invoke-AITools"
   }
   else {
-    Assert-Condition "case16 wrapper omits ai-tools when unavailable" ($aiInstall.Aliases.Count -eq 0) "no ai-tools aliases returned"
+    Assert-Condition "case15 wrapper omits ai-tools when unavailable" ($aiInstall.Aliases.Count -eq 0) "no ai-tools aliases returned"
   }
 
   Step "Summary"

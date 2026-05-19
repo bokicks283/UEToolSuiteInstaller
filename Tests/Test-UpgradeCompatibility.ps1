@@ -123,7 +123,6 @@ function Install-TestProfileAliases {
   Assert-Condition -Name "profile alias install exits cleanly" -Condition ($result.Code -eq 0) -PassDetail "exit=0" -FailDetail "exit=$($result.Code)"
   Assert-TextContains -Name "profile alias metadata includes ue-tools" -Text $result.Output -Needle "ue-tools"
   Assert-TextContains -Name "profile alias metadata includes ai-prompt" -Text $result.Output -Needle "ai-prompt"
-  Assert-TextContains -Name "profile alias metadata includes codex-prompt compat alias" -Text $result.Output -Needle "codex-prompt"
   Assert-Condition -Name "profile alias bootstrap file created" -Condition (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) -PassDetail "bootstrap present" -FailDetail "bootstrap missing: $bootstrapPath"
 }
 
@@ -142,7 +141,6 @@ ue-tools help
 docs-tools help
 art-tools --help
 ai-prompt --help
-codex-prompt --help
 "@
 
   $result = Invoke-CapturedPwsh -Arguments @("-NoLogo", "-NoProfile", "-Command", $command) -WorkingDirectory $TargetRoot
@@ -151,7 +149,6 @@ codex-prompt --help
   Assert-TextContains -Name "profile alias docs-tools works" -Text $result.Output -Needle "UE project docs automation."
   Assert-TextContains -Name "profile alias art-tools works" -Text $result.Output -Needle "Art tools wrapper"
   Assert-TextContains -Name "profile alias ai-prompt works" -Text $result.Output -Needle "AI startup prompt builder"
-  Assert-TextContains -Name "profile alias codex-prompt compat works" -Text $result.Output -Needle "AI startup prompt builder"
 }
 
 function Invoke-DirectEntrypointSmoke {
@@ -182,8 +179,8 @@ function Invoke-DirectEntrypointSmoke {
     -TargetRoot $TargetRoot
 
   Invoke-CompatibilityCommand `
-    -Name "direct codex prompt" `
-    -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\Codex\Get-CodexStartupPrompt.ps1"), "-RepoRoot", $TargetRoot, "-Task", "Validate compatibility") `
+    -Name "direct ai prompt" `
+    -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\AI\Get-AIStartupPrompt.ps1"), "-RepoRoot", $TargetRoot, "-Task", "Validate compatibility") `
     -ExpectedText "Validate compatibility" `
     -TargetRoot $TargetRoot `
     -UnexpectedText @(".ue-tools-installer-backups/")
@@ -196,7 +193,7 @@ try {
 
   $targetRepo = New-TestUEProjectRepo -Root $scratchRoot -Name "PortableSample" -WithGit -WithDocsSite -WithArtSource -WithSourceModule
   Write-TestUtf8NoBomFile -Path (Join-Path $targetRepo "AGENTS.md") -Content "Read AGENTS.md first.`n"
-  Write-TestUtf8NoBomFile -Path (Join-Path $targetRepo ".codex-local\Private-Context.md") -Content "Local test-only private context.`n"
+  Write-TestUtf8NoBomFile -Path (Join-Path $targetRepo ".ai-local\Private-Context.md") -Content "Local test-only private context.`n"
 
   $installResult = Invoke-InstallerForUpgradeTest -TargetRoot $targetRepo -RunInit
   Assert-Condition -Name "initial install exits cleanly" -Condition ($installResult.Code -eq 0) -PassDetail "exit=0" -FailDetail "exit=$($installResult.Code)"

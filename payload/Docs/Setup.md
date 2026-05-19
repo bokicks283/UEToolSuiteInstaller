@@ -35,7 +35,7 @@ docs-tools start
 
 `Init-Repo.ps1` prepares installed optional tool prerequisites during first-run setup. When `website/package.json` is present, it verifies Node.js 20+ and npm, runs `npm install` if `website/node_modules` is missing, installs the optional docs VS Code bridge when the `code` CLI is available, and runs `docs-tools doctor`.
 
-After init installs project shell aliases, open a new PowerShell session or reload the profile path printed by the script before using commands like `ue-tools`, `art-tools`, `docs-tools`, or `ai-prompt` (`codex-prompt` remains a compatibility alias).
+After init installs project shell aliases, open a new PowerShell session or reload the profile path printed by the script before using commands like `ue-tools`, `art-tools`, `docs-tools`, or `ai-prompt`.
 
 The Docusaurus site is already set up in `website/`. You do not need to create a new site scaffold for this repo. See [Docusaurus Setup](./DocsSite/Docusaurus-Setup.md) for the edit/preview/build workflow.
 

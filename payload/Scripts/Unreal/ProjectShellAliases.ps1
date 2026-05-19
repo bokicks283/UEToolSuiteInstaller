@@ -227,21 +227,13 @@ function Get-DocsToolsCommandSpecFromRegistry {
 function Get-AIPromptCommandSpecFromRegistry {
   $spec = Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-AIPromptCommandSpec"
   if ($null -ne $spec) { return $spec }
-  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-CodexPromptCommandSpec")
+  return $null
 }
 
 function Get-AIToolsCommandSpecFromRegistry {
   $spec = Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-AIToolsCommandSpec"
   if ($null -ne $spec) { return $spec }
-  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-CodexToolsCommandSpec")
-}
-
-function Get-CodexPromptCommandSpecFromRegistry {
-  return (Get-AIPromptCommandSpecFromRegistry)
-}
-
-function Get-CodexToolsCommandSpecFromRegistry {
-  return (Get-AIToolsCommandSpecFromRegistry)
+  return $null
 }
 
 function New-FallbackUEToolsCommandSpec {
@@ -307,7 +299,7 @@ function New-FallbackDocsToolsCommandSpec {
 function New-FallbackAIPromptCommandSpec {
   [pscustomobject]@{
     CommandName = "ai-prompt"
-    ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
+    ScriptRelativePath = "Scripts\AI\Get-AIStartupPrompt.ps1"
     ScriptNotFoundPrefix = "AI startup prompt script not found"
     HelpLines = @(
       "AI startup prompt builder for this repository."
@@ -318,7 +310,7 @@ function New-FallbackAIPromptCommandSpec {
       "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
       "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
       "Notes:"
-      "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      "  - Runs Scripts\AI\Get-AIStartupPrompt.ps1."
     )
   }
 }
@@ -335,7 +327,7 @@ function New-FallbackAIToolsCommandSpec {
       "  ai-tools <command> [options]"
       "Commands:"
       "  help                   Show this help text."
-      "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      "  prompt [prompt args]   Run Scripts\AI\Get-AIStartupPrompt.ps1."
       "Examples:"
       "  ai-tools help"
       "  ai-tools prompt -Task `"Fix hook docs`""
@@ -435,14 +427,14 @@ function Get-ProjectAliasFallbackRegistry {
     [pscustomobject]@{
       Id = "ai-tools"
       FunctionName = "Invoke-AITools"
-      Aliases = @("ai-tools", "codex-tools")
-      RequiredRelativePath = "Codex\Get-CodexStartupPrompt.ps1"
+      Aliases = @("ai-tools")
+      RequiredRelativePath = "AI\Get-AIStartupPrompt.ps1"
     },
     [pscustomobject]@{
       Id = "ai-prompt"
       FunctionName = "Invoke-AIPrompt"
-      Aliases = @("ai-prompt", "codex-prompt")
-      RequiredRelativePath = "Codex\Get-CodexStartupPrompt.ps1"
+      Aliases = @("ai-prompt")
+      RequiredRelativePath = "AI\Get-AIStartupPrompt.ps1"
     }
   )
 }
@@ -758,10 +750,6 @@ function Invoke-AITools {
   }
 }
 
-function Show-CodexPromptHelp { Show-AIPromptHelp }
-function Invoke-CodexPrompt { Invoke-AIPrompt @args }
-function Invoke-CodexTools { Invoke-AITools @args }
-
 function Register-ProjectShellAliases {
   $definitions = Get-ProjectAliasDefinitions
   $groups = @()
@@ -1044,7 +1032,7 @@ function Install-DocsToolsShellAliases {
   }
 }
 
-function Install-CodexToolsShellAliases {
+function Install-AIToolsShellAliases {
   param(
     [string]$ProfilePath,
     [string]$AliasScriptPath,
@@ -1052,7 +1040,7 @@ function Install-CodexToolsShellAliases {
   )
 
   $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath
-  $group = @($result.AliasGroups | Where-Object { $_.Id -eq "ai-tools" -or $_.Id -eq "codex-tools" } | Select-Object -First 1)
+  $group = @($result.AliasGroups | Where-Object { $_.Id -eq "ai-tools" } | Select-Object -First 1)
 
   [pscustomobject]@{
     ProfilePath = $result.ProfilePath
@@ -1063,14 +1051,4 @@ function Install-CodexToolsShellAliases {
     StartMarker = $result.StartMarker
     EndMarker = $result.EndMarker
   }
-}
-
-function Install-AIToolsShellAliases {
-  param(
-    [string]$ProfilePath,
-    [string]$AliasScriptPath,
-    [string]$BootstrapScriptPath
-  )
-
-  return (Install-CodexToolsShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath)
 }

@@ -57,7 +57,7 @@ The installer copies managed paths from `payload/` into the selected UE project:
 - `Scripts/git-hooks/`
 - `Scripts/git-tools/`
 - `Scripts/Unreal/`
-- optional `Scripts/Codex/`
+- optional `Scripts/AI/`
 - optional `Scripts/Docs/`
 - optional `Scripts/Tests/`
 - generic `Docs/`
@@ -65,7 +65,7 @@ The installer copies managed paths from `payload/` into the selected UE project:
 
 Root `.gitattributes` and `.gitignore` are not replaced wholesale. The installer updates the tool-suite marker blocks and preserves project-specific content outside those blocks.
 
-Managed directories are merged in place when they already exist. The installer replaces payload-owned files under those directories and backs up the replaced files, but it does not delete target-only files that are not in `payload/`. This protects files such as `Docs/Codex/Project-Context.md`, local docs pages, and project-specific tests in repos that already have a similar tool layout.
+Managed directories are merged in place when they already exist. The installer replaces payload-owned files under those directories and backs up the replaced files, but it does not delete target-only files that are not in `payload/`. This protects files such as `Docs/AI/Project-Context.md`, local docs pages, and project-specific tests in repos that already have a similar tool layout.
 
 ## How This Repo Works
 

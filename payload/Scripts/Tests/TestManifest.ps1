@@ -68,13 +68,13 @@ function Get-ProjectTestManifest {
       -ResultDirectory "Scripts/Tests/Test-DocsToolsResults")
 
     (New-TestManifestEntry `
-      -Id "codex-startup-prompt" `
+      -Id "ai-startup-prompt" `
       -Name "AI Startup Prompt" `
-      -Path "Scripts/Tests/Test-CodexStartupPrompt.ps1" `
-      -Category "codex" `
+      -Path "Scripts/Tests/Test-AIStartupPrompt.ps1" `
+      -Category "ai" `
       -Description "Validates the AI startup prompt builder output and local private-context handling." `
       -SupportsFailFast $true `
-      -ResultDirectory "Scripts/Tests/Test-CodexStartupPromptResults")
+      -ResultDirectory "Scripts/Tests/Test-AIStartupPromptResults")
 
     (New-TestManifestEntry `
       -Id "ue-sync-regeneration" `

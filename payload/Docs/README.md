@@ -24,12 +24,12 @@ This repo uses the portable UE tool suite for Git hooks, Unreal sync, docs autom
 3. [Testing](./Testing.md)
 4. [Coding Standards](./CodingStandards/README.md)
 5. [Docusaurus Setup](./DocsSite/Docusaurus-Setup.md)
-6. [Codex Context](./Codex/README.md)
+6. [AI Context](./AI/README.md)
 
 ## High-Level Ownership
 
 - `Docs/`: source markdown and process docs
-- `AGENTS.md`: short repo-wide Codex routing instructions
+- `AGENTS.md`: short repo-wide AI routing instructions
 - `website/`: Docusaurus app used to preview and publish `Docs/`
 - `Scripts/`: automation, hooks, Unreal helpers, and test harnesses
 - `Plugins/`: project and third-party plugin roots

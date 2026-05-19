@@ -10,7 +10,7 @@ param(
   [switch]$SkipDocs,
   [switch]$SkipWebsite,
   [switch]$SkipTests,
-  [switch]$SkipCodexTools,
+  [switch]$SkipAITools,
   [switch]$SkipArtSourceTools,
   [switch]$SkipCodingStandardsTools,
   [switch]$SkipShellAliases,
@@ -112,7 +112,7 @@ function Read-UEToolSuitePayloadManifest {
     ManagedTextItems = ConvertTo-StringArray -Value $manifest.managedTextItems -Name "managedTextItems"
     ManagedBaseItems = $baseItems
     ManagedArtToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.artTools -Name "managedItems.artTools"
-    ManagedCodexToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.codexTools -Name "managedItems.codexTools"
+    ManagedAIToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.aiTools -Name "managedItems.aiTools"
     ManagedTestsItems = ConvertTo-StringArray -Value $manifest.managedItems.tests -Name "managedItems.tests"
     ManagedDocsItems = ConvertTo-StringArray -Value $manifest.managedItems.docs -Name "managedItems.docs"
     ManagedCodingStandardsItems = ConvertTo-StringArray -Value $manifest.managedItems.codingStandards -Name "managedItems.codingStandards"
@@ -444,8 +444,8 @@ if (-not $SkipArtSourceTools) {
     [void]$managedItems.Add($item)
   }
 }
-if (-not $SkipCodexTools) {
-  foreach ($item in @($payloadManifest.ManagedCodexToolsItems)) {
+if (-not $SkipAITools) {
+  foreach ($item in @($payloadManifest.ManagedAIToolsItems)) {
     [void]$managedItems.Add($item)
   }
 }

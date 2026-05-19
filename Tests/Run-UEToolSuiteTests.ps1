@@ -94,7 +94,7 @@ function New-InstalledToolSuiteFixture {
   $scratchRoot = New-TestScratchRoot -Prefix "ue tool suite installed fixture"
   $fixtureRepo = New-TestUEProjectRepo -Root $scratchRoot -Name "PortableSample" -WithGit -WithDocsSite -WithArtSource -WithSourceModule
   Write-TestUtf8NoBomFile -Path (Join-Path $fixtureRepo "AGENTS.md") -Content "Read AGENTS.md first.`n"
-  Write-TestUtf8NoBomFile -Path (Join-Path $fixtureRepo ".codex-local\Private-Context.md") -Content "Local test-only private context.`n"
+  Write-TestUtf8NoBomFile -Path (Join-Path $fixtureRepo ".ai-local\Private-Context.md") -Content "Local test-only private context.`n"
 
   $installerScript = Join-Path $repoRoot "Install-UEToolSuite.ps1"
   $installArgs = @(

@@ -67,7 +67,7 @@ Refresh coding-standard snapshot:
 - At least once per quarter while active development is ongoing.
 - At minimum, treat the snapshot as stale once it is older than six months and refresh it before relying on it as the current local reference.
 
-## Codex Usage
+## AI Usage
 
 - Agents should scrutinize `Docs/CodingStandards/` thoroughly before C++ or style-sensitive work.
 - Start with this file, then inspect `Docs/CodingStandards/UnrealCppStandard.md`.

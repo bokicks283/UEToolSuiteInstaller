@@ -11,9 +11,9 @@ if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
-$resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-CodexStartupPromptResults"
+$resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-AIStartupPromptResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
-$logPath = Join-Path $resultsDir "CodexStartupPromptTest-$stamp.log"
+$logPath = Join-Path $resultsDir "AIStartupPromptTest-$stamp.log"
 $testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
 if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
@@ -27,12 +27,12 @@ $script:SkipCount = 0
 Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 try {
-  Step "Codex Startup Prompt Tests ($stamp)"
+  Step "AI Startup Prompt Tests ($stamp)"
   Write-Log "Repo: $repoRoot" Cyan
   Write-Log "Log : $logPath" Cyan
 
-  $scriptPath = Join-Path $repoRoot "Scripts\Codex\Get-CodexStartupPrompt.ps1"
-  Assert-Condition "script exists" (Test-Path -LiteralPath $scriptPath) "Get-CodexStartupPrompt.ps1 found"
+  $scriptPath = Join-Path $repoRoot "Scripts\AI\Get-AIStartupPrompt.ps1"
+  Assert-Condition "script exists" (Test-Path -LiteralPath $scriptPath) "Get-AIStartupPrompt.ps1 found"
 
   Step "Case 1: Default prompt lists repo docs and coding-standard guidance"
   $defaultPrompt = (& $scriptPath -RepoRoot $repoRoot) -join "`n"
@@ -43,13 +43,13 @@ try {
   Assert-TextContains "case1 includes Scripts readme" $defaultPrompt "Scripts/README.md"
   Assert-TextContains "case1 includes snapshot line" $defaultPrompt "Current Unreal C++ standard snapshot:"
   Assert-TextContains "case1 includes coding standards scrutiny note" $defaultPrompt "If this task touches C++ or style-sensitive code, scrutinize Docs/CodingStandards/README.md"
-  Assert-TextNotContains "case1 excludes private context by default" $defaultPrompt ".codex-local/Private-Context.md"
+  Assert-TextNotContains "case1 excludes private context by default" $defaultPrompt ".ai-local/Private-Context.md"
 
   Step "Case 2: Task and private context are included on request"
   $taskPrompt = (& $scriptPath -RepoRoot $repoRoot -Task "Fix UnrealSync regeneration messaging" -IncludePrivate) -join "`n"
   Assert-TextContains "case2 includes task header" $taskPrompt "Task:"
   Assert-TextContains "case2 includes task text" $taskPrompt "Fix UnrealSync regeneration messaging"
-  Assert-TextContains "case2 includes private context line" $taskPrompt "Also use .codex-local/Private-Context.md for my local preferences."
+  Assert-TextContains "case2 includes private context line" $taskPrompt "Also use .ai-local/Private-Context.md for my local preferences."
 
   Step "Case 3: Fresh snapshot is reported as not stale"
   Assert-TextContains "case3 snapshot freshness line" $defaultPrompt "It is not older than six months."
@@ -58,10 +58,10 @@ try {
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1} WARN={2} SKIP={3}" -f $script:PassCount, $script:FailCount, $script:WarnCount, $script:SkipCount) Cyan
   if ($script:FailCount -eq 0) {
-    Write-Log "Codex startup prompt tests passed." Green
+    Write-Log "AI startup prompt tests passed." Green
   }
   else {
-    Write-Log "Codex startup prompt tests failed." Red
+    Write-Log "AI startup prompt tests failed." Red
     exit 1
   }
 }

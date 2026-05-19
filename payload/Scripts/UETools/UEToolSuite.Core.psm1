@@ -54,16 +54,16 @@ function Get-UEToolSuiteCommandRegistry {
       -Id "ai-tools" `
       -Domain "ai" `
       -FunctionName "Invoke-AITools" `
-      -Aliases @("ai-tools", "codex-tools") `
-      -RequiredRelativePath "Codex\Get-CodexStartupPrompt.ps1" `
+      -Aliases @("ai-tools") `
+      -RequiredRelativePath "AI\Get-AIStartupPrompt.ps1" `
       -Description "AI helper command wrapper.")
 
     (New-UEToolSuiteCommandDefinition `
       -Id "ai-prompt" `
       -Domain "ai" `
       -FunctionName "Invoke-AIPrompt" `
-      -Aliases @("ai-prompt", "codex-prompt") `
-      -RequiredRelativePath "Codex\Get-CodexStartupPrompt.ps1" `
+      -Aliases @("ai-prompt") `
+      -RequiredRelativePath "AI\Get-AIStartupPrompt.ps1" `
       -Description "AI startup prompt wrapper.")
   )
 
@@ -154,7 +154,7 @@ function Get-AIPromptCommandSpec {
 
   [pscustomobject]@{
     CommandName = "ai-prompt"
-    ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
+    ScriptRelativePath = "Scripts\AI\Get-AIStartupPrompt.ps1"
     ScriptNotFoundPrefix = "AI startup prompt script not found"
     HelpLines = @(
       "AI startup prompt builder for this repository."
@@ -165,7 +165,7 @@ function Get-AIPromptCommandSpec {
       "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
       "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
       "Notes:"
-      "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      "  - Runs Scripts\AI\Get-AIStartupPrompt.ps1."
     )
   }
 }
@@ -185,7 +185,7 @@ function Get-AIToolsCommandSpec {
       "  ai-tools <command> [options]"
       "Commands:"
       "  help                   Show this help text."
-      "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      "  prompt [prompt args]   Run Scripts\AI\Get-AIStartupPrompt.ps1."
       "Examples:"
       "  ai-tools help"
       "  ai-tools prompt -Task `"Fix hook docs`""
@@ -194,20 +194,6 @@ function Get-AIToolsCommandSpec {
       "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
     )
   }
-}
-
-function Get-CodexPromptCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  return (Get-AIPromptCommandSpec)
-}
-
-function Get-CodexToolsCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  return (Get-AIToolsCommandSpec)
 }
 
 function Write-UEToolSuiteUtf8NoBomFile {
@@ -300,8 +286,6 @@ Export-ModuleMember -Function `
   Get-DocsToolsCommandSpec, `
   Get-AIPromptCommandSpec, `
   Get-AIToolsCommandSpec, `
-  Get-CodexPromptCommandSpec, `
-  Get-CodexToolsCommandSpec, `
   Write-UEToolSuiteUtf8NoBomFile, `
   Resolve-UEToolSuiteRepoRoot, `
   Resolve-UEToolSuiteRepoPath, `

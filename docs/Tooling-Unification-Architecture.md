@@ -17,13 +17,11 @@ The following entrypoints should continue to work during the migration:
 - `ue-tools`
 - `docs-tools`
 - `art-tools`
-- `ai-tools` (with `codex-tools` compatibility alias)
-- `ai-prompt` (with `codex-prompt` compatibility alias)
+- `ai-tools`
+- `ai-prompt`
 - Direct PowerShell invocation of `Scripts/Unreal/UnrealSync.ps1`
 - Direct PowerShell invocation of `Scripts/Docs/DocsTools.ps1`
-- Direct PowerShell invocation of `Scripts/Codex/Get-CodexStartupPrompt.ps1`
-
-Primary names are `ai-tools` and `ai-prompt`. Keep `codex-tools` and `codex-prompt` as compatibility aliases until deprecation is explicitly planned and tested.
+- Direct PowerShell invocation of `Scripts/AI/Get-AIStartupPrompt.ps1`
 
 ## Installed Payload Shape
 
@@ -51,8 +49,8 @@ Scripts/
     New-ArtSourcePath.ps1
   Docs/
     DocsTools.ps1                      thin compatibility entrypoint
-  Codex/
-    Get-CodexStartupPrompt.ps1         thin compatibility entrypoint
+  AI/
+    Get-AIStartupPrompt.ps1         thin compatibility entrypoint
   git-hooks/
     hook-common.sh
     colors.sh
@@ -130,8 +128,8 @@ Before moving entrypoints or converting major scripts into modules, add tests fo
 - update from current `main`
 - update from `feat/unify-tools-legacy-cleanup` layout
 - profile bootstrap installed before an entrypoint move
-- `ai-tools` / `ai-prompt` primary behavior and `codex-tools` / `codex-prompt` compatibility
-- `-SkipCodexTools` compatibility
+- `ai-tools` / `ai-prompt` primary behavior
+- `-SkipAITools`
 - direct script invocation compatibility
 - docs tooling command routing
 - Unreal sync dry-run/no-build/no-regen routing

@@ -19,7 +19,7 @@ The master runner executes tests serially on purpose. Some tests create branches
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/git-hooks/Test-Hooks.ps1`
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-UESyncShellAliases.ps1`
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-DocsTools.ps1`
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-CodexStartupPrompt.ps1`
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-AIStartupPrompt.ps1`
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-UnrealSync-Regeneration.ps1`
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-UEProjectToolsInstaller.ps1`
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-InitRepoToolReadiness.ps1`
@@ -32,7 +32,7 @@ The master runner executes tests serially on purpose. Some tests create branches
 - `Test-Hooks.ps1`: validates committed hook plumbing, `core.hooksPath`, git helper aliases, and Git Bash sourcing.
 - `Test-UESyncShellAliases.ps1`: validates `ue-tools`, optional `art-tools`, profile bootstrap, and compatibility shims.
 - `Test-DocsTools.ps1`: validates `docs-tools` scaffolding, optional VS Code bridge install flow, TOC request queuing, and docs-site validation behavior.
-- `Test-CodexStartupPrompt.ps1`: validates the AI startup prompt builder output and local private-context handling.
+- `Test-AIStartupPrompt.ps1`: validates the AI startup prompt builder output and local private-context handling.
 - `Test-UnrealSync-Regeneration.ps1`: validates project-file regeneration, action-plan decisions, workspace artifact preservation, and engine-resolution fallback paths in isolation. One case intentionally forces an unresolved-engine failure and should still end in a green summary.
 - `Test-UEProjectToolsInstaller.ps1`: validates portable tooling installation into a scratch UE project repo.
 - `Test-InitRepoToolReadiness.ps1`: validates `Init-Repo.ps1` optional tool prerequisite setup and readiness reporting in a scratch UE project repo.

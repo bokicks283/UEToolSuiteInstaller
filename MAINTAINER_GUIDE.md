@@ -34,7 +34,7 @@ It also supports repeated updates, preserves project-local files where possible,
 
 `payload/ue-tool-suite.manifest.json` defines:
 - `managedTextItems`: marker-managed root text files (`.gitattributes`, `.gitignore`)
-- `managedItems` by category (base, docs, website, tests, codex, art tools, etc.)
+- `managedItems` by category (base, docs, website, tests, ai, art tools, etc.)
 - `legacyCleanupPaths` for old-path removals
 
 Installer behavior is data-driven from manifest categories plus install flags.
@@ -47,9 +47,6 @@ Current public command surface is intentionally stable:
 - `docs-tools`
 - `ai-tools`
 - `ai-prompt`
-
-Compatibility aliases remain available: `codex-tools`, `codex-prompt`.
-Deprecation policy: keep compatibility aliases until one full release cycle passes with tests proving `ai-tools`/`ai-prompt` behavior parity in install, upgrade, and profile bootstrap flows.
 
 Command specs and registry live in:
 - `payload/Scripts/UETools/UEToolSuite.Core.psm1`
@@ -72,7 +69,7 @@ Payload structure:
 - `payload/Scripts/UETools/`: shared command registry + module manifest + compatibility wrapper
 - `payload/Scripts/Unreal/`: UnrealSync + project context + alias/bootstrap logic + ArtSource tool
 - `payload/Scripts/Docs/DocsTools.ps1`: docs command system
-- `payload/Scripts/Codex/Get-CodexStartupPrompt.ps1`: AI prompt tool (stable script path)
+- `payload/Scripts/AI/Get-AIStartupPrompt.ps1`: AI prompt tool (stable script path)
 - `payload/Scripts/git-hooks/` + `.githooks/`: hook plumbing
 - `payload/Scripts/git-tools/`: `git ours`, `git theirs`, `git conflicts` support
 - `payload/Scripts/Tests/`: payload-level suites
@@ -125,7 +122,7 @@ Install scope toggles:
 - `-SkipDocs`
 - `-SkipWebsite`
 - `-SkipTests`
-- `-SkipCodexTools`
+- `-SkipAITools`
 - `-SkipArtSourceTools`
 - `-SkipCodingStandardsTools`
 
@@ -228,14 +225,14 @@ Primary command groups:
 - `install-bridge`
 - pass-through: `build`, `clear`, `deploy`, `serve`, `swizzle`, `write-translations`, `write-heading-ids`, `typecheck`, `docusaurus`
 
-### F) Codex helpers
+### F) AI helpers
 
 Script:
-- `Scripts/Codex/Get-CodexStartupPrompt.ps1`
+- `Scripts/AI/Get-AIStartupPrompt.ps1`
 
 Wrapper commands:
 - `ai-prompt`
-- `ai-tools prompt` (`codex-tools prompt` compatibility alias)
+- `ai-tools prompt`
 
 Responsibilities:
 - Build startup prompt text from repo markdown context
@@ -316,7 +313,7 @@ User-facing commands should stay thin:
 - resolve repo + target script
 - delegate domain behavior
 
-Domain behavior stays in domain scripts/modules (Unreal/Docs/Codex/Git).
+Domain behavior stays in domain scripts/modules (Unreal/Docs/AI/Git).
 
 ### Manifest-first installer changes
 
@@ -346,7 +343,7 @@ Defined in `Tests/ToolSuiteManifest.ps1`:
   - hooks
   - shell aliases
   - docs tools
-  - codex startup prompt
+  - ai startup prompt
   - UE sync regeneration
   - init repo readiness
   - artsource path
@@ -423,7 +420,7 @@ docs-tools check
 docs-tools start --port 3001
 ```
 
-Run Codex prompt helper:
+Run AI prompt helper:
 ```powershell
 ai-prompt -Task "Investigate UnrealSync regression" -IncludePrivate -CopyToClipboard
 ```

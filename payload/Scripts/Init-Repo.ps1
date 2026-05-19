@@ -671,10 +671,9 @@ else {
       Write-Host "  usage: docs-tools help" -ForegroundColor Green
       Write-Host "  usage: docs-tools new-page Workflow Daily-Flow -Title `"Daily Flow`"" -ForegroundColor Green
     }
-    if ($aliasInstall.Aliases -contains "ai-tools" -or $aliasInstall.Aliases -contains "codex-tools") {
+    if ($aliasInstall.Aliases -contains "ai-tools") {
       Write-Host "  usage: ai-tools help" -ForegroundColor Green
       Write-Host "  usage: ai-prompt -Task `"Fix UnrealSync tests`"" -ForegroundColor Green
-      Write-Host "  (compat: codex-tools / codex-prompt still supported)" -ForegroundColor DarkGray
     }
     Warn "Open a new PowerShell session (or run: . `"$($aliasInstall.ProfilePath)`") to load aliases."
     Add-ToolReadiness -Tool "PowerShell aliases" -Status "OK" -Detail "Installed aliases: $(@($aliasInstall.Aliases) -join ', ')."
@@ -755,6 +754,6 @@ if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\Unreal\New-ArtSourcePat
 if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\Docs\DocsTools.ps1")) {
   Write-Host "  - Run docs tools manually with: docs-tools help" -ForegroundColor Cyan
 }
-if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\Codex\Get-CodexStartupPrompt.ps1")) {
+if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\AI\Get-AIStartupPrompt.ps1")) {
   Write-Host "  - Build an AI startup prompt with: ai-prompt -IncludePrivate" -ForegroundColor Cyan
 }

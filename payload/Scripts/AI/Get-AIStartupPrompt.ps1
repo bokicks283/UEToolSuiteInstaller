@@ -8,8 +8,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$script:CodexToolsScriptsRoot = Split-Path -Parent $PSScriptRoot
-$runtimeHelperPath = Join-Path $script:CodexToolsScriptsRoot "UETools\UEToolSuite.Runtime.ps1"
+$script:AIToolsScriptsRoot = Split-Path -Parent $PSScriptRoot
+$runtimeHelperPath = Join-Path $script:AIToolsScriptsRoot "UETools\UEToolSuite.Runtime.ps1"
 if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
   . $runtimeHelperPath
 }
@@ -47,7 +47,7 @@ else {
 }
 
 function Import-UEToolSuiteCoreModule {
-  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:CodexToolsScriptsRoot -StateKey "codex-startup-prompt")
+  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:AIToolsScriptsRoot -StateKey "ai-startup-prompt")
 }
 
 function Resolve-RepoRoot {
@@ -55,13 +55,13 @@ function Resolve-RepoRoot {
 
   $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
   if ($runtimeResolver) {
-    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:CodexToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-CodexStartupPrompt.ps1" -AllowFilePath)
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:AIToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-AIStartupPrompt.ps1" -AllowFilePath)
   }
 
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
     if ($resolver) {
-      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-CodexStartupPrompt.ps1")
+      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-AIStartupPrompt.ps1")
     }
   }
 
@@ -76,7 +76,7 @@ function Resolve-RepoRoot {
 
   $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
   if ([string]::IsNullOrWhiteSpace($repoRoot)) {
-    throw "Get-CodexStartupPrompt.ps1 must be run from inside a git repository or passed -RepoRoot."
+    throw "Get-AIStartupPrompt.ps1 must be run from inside a git repository or passed -RepoRoot."
   }
 
   return $repoRoot.Trim()
@@ -87,7 +87,7 @@ function Test-IsExcludedMarkdownPath {
 
   $excludedPrefixes = @(
     ".git/",
-    ".codex-local/",
+    ".ai-local/",
     ".ue-tools-installer-backups/",
     "Binaries/",
     "DerivedDataCache/",
@@ -174,7 +174,7 @@ function Get-CodingStandardsSnapshotInfo {
 $resolvedRepoRoot = Resolve-RepoRoot -ExplicitRepoRoot $RepoRoot
 $repoMarkdownPaths = @(Get-RepoMarkdownPaths -ResolvedRepoRoot $resolvedRepoRoot)
 $snapshotInfo = Get-CodingStandardsSnapshotInfo -ResolvedRepoRoot $resolvedRepoRoot
-$privateContextPath = ".codex-local/Private-Context.md"
+$privateContextPath = ".ai-local/Private-Context.md"
 $privateContextExists = Test-Path -LiteralPath (Join-Path $resolvedRepoRoot $privateContextPath)
 
 if ($IncludePrivate -and -not $privateContextExists) {
@@ -228,14 +228,14 @@ if (-not [string]::IsNullOrWhiteSpace($Task)) {
 
 if ($IncludePrivate -and $privateContextExists) {
   $lines.Add("") | Out-Null
-  $lines.Add("Also use .codex-local/Private-Context.md for my local preferences.") | Out-Null
+  $lines.Add("Also use .ai-local/Private-Context.md for my local preferences.") | Out-Null
 }
 
 $prompt = $lines -join "`r`n"
 
 if ($CopyToClipboard) {
   Set-Clipboard -Value $prompt
-  Write-Host "[Codex Prompt] Copied startup prompt to clipboard." -ForegroundColor Green
+  Write-Host "[AI Prompt] Copied startup prompt to clipboard." -ForegroundColor Green
 }
 
 Write-Output $prompt
