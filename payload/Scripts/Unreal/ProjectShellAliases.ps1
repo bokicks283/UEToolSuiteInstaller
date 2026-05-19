@@ -4,12 +4,22 @@ $script:ProjectShellAliasesScriptPath = if ($PSCommandPath) {
 else {
   $null
 }
+$script:UEToolSuiteCoreModuleImported = $false
+$script:UEToolSuiteCoreModuleImportAttempted = $false
 
 function Write-Utf8NoBomFile {
   param(
     [Parameter(Mandatory)][string]$Path,
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
+
+  if (Import-UEToolSuiteCoreModule) {
+    $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
+    if ($writer) {
+      Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content
+      return
+    }
+  }
 
   $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
   [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
@@ -134,16 +144,43 @@ function Get-ProjectAliasScriptsRoot {
 
 function Get-UEToolSuiteCoreModulePath {
   $scriptsRoot = Get-ProjectAliasScriptsRoot
-  return (Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1")
+  $manifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
+  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    return $manifestPath
+  }
+
+  $modulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
+  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+    return $modulePath
+  }
+
+  return $null
 }
 
-function Get-ProjectAliasDefinitionsFromRegistry {
+function Import-UEToolSuiteCoreModule {
+  if ($script:UEToolSuiteCoreModuleImported) {
+    return $true
+  }
+  if ($script:UEToolSuiteCoreModuleImportAttempted) {
+    return $false
+  }
+
+  $script:UEToolSuiteCoreModuleImportAttempted = $true
   $modulePath = Get-UEToolSuiteCoreModulePath
-  if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
-    return @()
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    return $false
   }
 
   Import-Module -Name $modulePath -Force
+  $script:UEToolSuiteCoreModuleImported = $true
+  return $true
+}
+
+function Get-ProjectAliasDefinitionsFromRegistry {
+  if (-not (Import-UEToolSuiteCoreModule)) {
+    return @()
+  }
+
   $scriptsRoot = Get-ProjectAliasScriptsRoot
   return @(Get-UEToolSuiteCommandRegistry -ScriptsRoot $scriptsRoot)
 }
@@ -151,12 +188,10 @@ function Get-ProjectAliasDefinitionsFromRegistry {
 function Get-ProjectAliasCommandSpecFromRegistry {
   param([Parameter(Mandatory)][string]$SpecFunctionName)
 
-  $modulePath = Get-UEToolSuiteCoreModulePath
-  if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+  if (-not (Import-UEToolSuiteCoreModule)) {
     return $null
   }
 
-  Import-Module -Name $modulePath -Force
   $specCommand = Get-Command -Name $SpecFunctionName -ErrorAction SilentlyContinue
   if (-not $specCommand) {
     return $null
@@ -280,6 +315,13 @@ function Get-ProjectAliasDefinitions {
 function Get-RepoRootOrThrow {
   param([Parameter(Mandatory)][string]$InvokerName)
 
+  if (Import-UEToolSuiteCoreModule) {
+    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
+    if ($resolver) {
+      return (Resolve-UEToolSuiteRepoRoot -InvocationName $InvokerName)
+    }
+  }
+
   $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
   if ([string]::IsNullOrWhiteSpace($repoRoot)) {
     throw "$InvokerName must be run from inside a git repository."
@@ -294,6 +336,13 @@ function Resolve-RepoScriptOrThrow {
     [Parameter(Mandatory)][string]$RelativePath,
     [Parameter(Mandatory)][string]$NotFoundMessagePrefix
   )
+
+  if (Import-UEToolSuiteCoreModule) {
+    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoPath" -ErrorAction SilentlyContinue
+    if ($resolver) {
+      return (Resolve-UEToolSuiteRepoPath -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType Leaf)
+    }
+  }
 
   $scriptPath = Join-Path $RepoRoot $RelativePath
   if (-not (Test-Path -LiteralPath $scriptPath)) {

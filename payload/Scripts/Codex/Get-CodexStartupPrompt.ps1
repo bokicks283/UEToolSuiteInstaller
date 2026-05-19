@@ -7,9 +7,52 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$script:UEToolSuiteCoreModuleImported = $false
+$script:UEToolSuiteCoreModuleImportAttempted = $false
+
+function Get-UEToolSuiteCoreModulePath {
+  $scriptsRoot = Split-Path -Parent $PSScriptRoot
+  $manifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
+  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    return $manifestPath
+  }
+
+  $modulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
+  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+    return $modulePath
+  }
+
+  return $null
+}
+
+function Import-UEToolSuiteCoreModule {
+  if ($script:UEToolSuiteCoreModuleImported) {
+    return $true
+  }
+  if ($script:UEToolSuiteCoreModuleImportAttempted) {
+    return $false
+  }
+
+  $script:UEToolSuiteCoreModuleImportAttempted = $true
+  $modulePath = Get-UEToolSuiteCoreModulePath
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    return $false
+  }
+
+  Import-Module -Name $modulePath -Force
+  $script:UEToolSuiteCoreModuleImported = $true
+  return $true
+}
 
 function Resolve-RepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  if (Import-UEToolSuiteCoreModule) {
+    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
+    if ($resolver) {
+      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-CodexStartupPrompt.ps1")
+    }
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
     $candidate = [System.IO.Path]::GetFullPath($ExplicitRepoRoot)

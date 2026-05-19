@@ -7,6 +7,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$script:UEToolSuiteCoreModuleImported = $false
+$script:UEToolSuiteCoreModuleImportAttempted = $false
 
 function Write-UEToolsError {
   param([Parameter(Mandatory)][string]$Message)
@@ -14,8 +16,48 @@ function Write-UEToolsError {
   Write-Host "Error: $Message" -ForegroundColor Red
 }
 
+function Get-UEToolSuiteCoreModulePath {
+  $manifestPath = Join-Path $PSScriptRoot "UETools\UETools.psd1"
+  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    return $manifestPath
+  }
+
+  $modulePath = Join-Path $PSScriptRoot "UETools\UEToolSuite.Core.psm1"
+  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+    return $modulePath
+  }
+
+  return $null
+}
+
+function Import-UEToolSuiteCoreModule {
+  if ($script:UEToolSuiteCoreModuleImported) {
+    return $true
+  }
+  if ($script:UEToolSuiteCoreModuleImportAttempted) {
+    return $false
+  }
+
+  $script:UEToolSuiteCoreModuleImportAttempted = $true
+  $modulePath = Get-UEToolSuiteCoreModulePath
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    return $false
+  }
+
+  Import-Module -Name $modulePath -Force
+  $script:UEToolSuiteCoreModuleImported = $true
+  return $true
+}
+
 function Resolve-UEToolsRepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  if (Import-UEToolSuiteCoreModule) {
+    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
+    if ($resolver) {
+      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools")
+    }
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
     $candidate = [System.IO.Path]::GetFullPath($ExplicitRepoRoot)

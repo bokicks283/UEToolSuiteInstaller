@@ -35,6 +35,41 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$script:UEToolSuiteCoreModuleImported = $false
+$script:UEToolSuiteCoreModuleImportAttempted = $false
+
+function Get-UEToolSuiteCoreModulePath {
+  $manifestPath = Join-Path $PSScriptRoot "UETools\UETools.psd1"
+  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    return $manifestPath
+  }
+
+  $modulePath = Join-Path $PSScriptRoot "UETools\UEToolSuite.Core.psm1"
+  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+    return $modulePath
+  }
+
+  return $null
+}
+
+function Import-UEToolSuiteCoreModule {
+  if ($script:UEToolSuiteCoreModuleImported) {
+    return $true
+  }
+  if ($script:UEToolSuiteCoreModuleImportAttempted) {
+    return $false
+  }
+
+  $script:UEToolSuiteCoreModuleImportAttempted = $true
+  $modulePath = Get-UEToolSuiteCoreModulePath
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    return $false
+  }
+
+  Import-Module -Name $modulePath -Force
+  $script:UEToolSuiteCoreModuleImported = $true
+  return $true
+}
 
 function Info($m) { Write-Host "[Init] $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "[Init] $m" -ForegroundColor Yellow }
@@ -125,6 +160,14 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
 
+  if (Import-UEToolSuiteCoreModule) {
+    $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
+    if ($writer) {
+      Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content
+      return
+    }
+  }
+
   [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
 }
 
@@ -207,6 +250,23 @@ function Update-DocusaurusGitHubMetadata {
 
 function Resolve-InitRepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  if (Import-UEToolSuiteCoreModule) {
+    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
+    if ($resolver) {
+      if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
+        return (Resolve-UEToolSuiteRepoRoot -InvocationName "Init-Repo")
+      }
+
+      $candidate = Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo"
+      $gitRootFromCandidate = ((git -C $candidate rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
+      if ([string]::IsNullOrWhiteSpace($gitRootFromCandidate)) {
+        throw "RepoRoot is not inside a git repository: $candidate"
+      }
+
+      return $gitRootFromCandidate.Trim()
+    }
+  }
 
   if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
     $gitRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)

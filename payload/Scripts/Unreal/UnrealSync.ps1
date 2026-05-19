@@ -38,6 +38,42 @@ if (-not (Test-Path -LiteralPath $projectContextHelper)) {
   throw "Project context helper not found: $projectContextHelper"
 }
 . $projectContextHelper
+$script:UEToolSuiteCoreModuleImported = $false
+$script:UEToolSuiteCoreModuleImportAttempted = $false
+
+function Get-UEToolSuiteCoreModulePath {
+  $scriptsRoot = Split-Path -Parent $PSScriptRoot
+  $manifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
+  if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+    return $manifestPath
+  }
+
+  $modulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
+  if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+    return $modulePath
+  }
+
+  return $null
+}
+
+function Import-UEToolSuiteCoreModule {
+  if ($script:UEToolSuiteCoreModuleImported) {
+    return $true
+  }
+  if ($script:UEToolSuiteCoreModuleImportAttempted) {
+    return $false
+  }
+
+  $script:UEToolSuiteCoreModuleImportAttempted = $true
+  $modulePath = Get-UEToolSuiteCoreModulePath
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    return $false
+  }
+
+  Import-Module -Name $modulePath -Force
+  $script:UEToolSuiteCoreModuleImported = $true
+  return $true
+}
 
 function Info($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Yellow }
@@ -584,6 +620,14 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][string]$Path,
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
+
+  if (Import-UEToolSuiteCoreModule) {
+    $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
+    if ($writer) {
+      Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content -EnsureParentDirectory
+      return
+    }
+  }
 
   $parent = Split-Path -Path $Path -Parent
   if ($parent -and -not (Test-Path -LiteralPath $parent)) {
