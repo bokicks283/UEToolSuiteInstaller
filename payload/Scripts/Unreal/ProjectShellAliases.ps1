@@ -148,19 +148,41 @@ function Get-ProjectAliasDefinitionsFromRegistry {
   return @(Get-UEToolSuiteCommandRegistry -ScriptsRoot $scriptsRoot)
 }
 
-function Get-UEToolsCommandSpecFromRegistry {
+function Get-ProjectAliasCommandSpecFromRegistry {
+  param([Parameter(Mandatory)][string]$SpecFunctionName)
+
   $modulePath = Get-UEToolSuiteCoreModulePath
   if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
     return $null
   }
 
   Import-Module -Name $modulePath -Force
-  $specCommand = Get-Command -Name "Get-UEToolsCommandSpec" -ErrorAction SilentlyContinue
+  $specCommand = Get-Command -Name $SpecFunctionName -ErrorAction SilentlyContinue
   if (-not $specCommand) {
     return $null
   }
 
-  return (Get-UEToolsCommandSpec)
+  return (& $SpecFunctionName)
+}
+
+function Get-UEToolsCommandSpecFromRegistry {
+  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-UEToolsCommandSpec")
+}
+
+function Get-ArtToolsCommandSpecFromRegistry {
+  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-ArtToolsCommandSpec")
+}
+
+function Get-DocsToolsCommandSpecFromRegistry {
+  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-DocsToolsCommandSpec")
+}
+
+function Get-CodexPromptCommandSpecFromRegistry {
+  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-CodexPromptCommandSpec")
+}
+
+function Get-CodexToolsCommandSpecFromRegistry {
+  return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-CodexToolsCommandSpec")
 }
 
 function Test-ProjectAliasRepoScriptAvailable {
@@ -387,10 +409,13 @@ function Invoke-UETools {
 function Invoke-ArtTools {
   $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
-
-  foreach ($arg in $argsList) {
-    if ($helpTokens -contains ([string]$arg).ToLowerInvariant()) {
-      @(
+  $spec = Get-ArtToolsCommandSpecFromRegistry
+  if ($null -eq $spec) {
+    $spec = [pscustomobject]@{
+      CommandName = "art-tools"
+      ScriptRelativePath = "Scripts\Unreal\New-ArtSourcePath.ps1"
+      ScriptNotFoundPrefix = "ArtSource path script not found"
+      HelpLines = @(
         "Art tools wrapper for ArtSource helpers."
         "Usage:"
         "  art-tools [New-ArtSourcePath.ps1 options]"
@@ -399,7 +424,13 @@ function Invoke-ArtTools {
         "  art-tools -RepoRoot C:\Path\To\Repo"
         "Notes:"
         "  - Runs Scripts\Unreal\New-ArtSourcePath.ps1."
-      ) | Write-Output
+      )
+    }
+  }
+
+  foreach ($arg in $argsList) {
+    if ($helpTokens -contains ([string]$arg).ToLowerInvariant()) {
+      @($spec.HelpLines) | Write-Output
       return
     }
   }
@@ -407,20 +438,28 @@ function Invoke-ArtTools {
   $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-ArtTools"
   $artScript = Resolve-RepoScriptOrThrow `
     -RepoRoot $repoRoot `
-    -RelativePath "Scripts\Unreal\New-ArtSourcePath.ps1" `
-    -NotFoundMessagePrefix "ArtSource path script not found"
+    -RelativePath $spec.ScriptRelativePath `
+    -NotFoundMessagePrefix $spec.ScriptNotFoundPrefix
 
   & $artScript @argsList
 }
 
 function Invoke-DocsTools {
   $argsList = @($args)
+  $spec = Get-DocsToolsCommandSpecFromRegistry
+  if ($null -eq $spec) {
+    $spec = [pscustomobject]@{
+      CommandName = "docs-tools"
+      ScriptRelativePath = "Scripts\Docs\DocsTools.ps1"
+      ScriptNotFoundPrefix = "Docs tools script not found"
+    }
+  }
 
   $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-DocsTools"
   $docsScript = Resolve-RepoScriptOrThrow `
     -RepoRoot $repoRoot `
-    -RelativePath "Scripts\Docs\DocsTools.ps1" `
-    -NotFoundMessagePrefix "Docs tools script not found"
+    -RelativePath $spec.ScriptRelativePath `
+    -NotFoundMessagePrefix $spec.ScriptNotFoundPrefix
 
   & {
     . $docsScript
@@ -436,22 +475,40 @@ function Invoke-DocsTools {
 }
 
 function Show-CodexPromptHelp {
-  @(
-    "Codex startup prompt builder for this repository."
-    "Usage:"
-    "  codex-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
-    "Examples:"
-    "  codex-prompt"
-    "  codex-prompt -Task `"Fix UnrealSync regeneration tests`""
-    "  codex-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
-    "Notes:"
-    "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
-  ) | Write-Output
+  $spec = Get-CodexPromptCommandSpecFromRegistry
+  if ($null -eq $spec) {
+    $spec = [pscustomobject]@{
+      CommandName = "codex-prompt"
+      ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
+      ScriptNotFoundPrefix = "Codex startup prompt script not found"
+      HelpLines = @(
+        "Codex startup prompt builder for this repository."
+        "Usage:"
+        "  codex-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
+        "Examples:"
+        "  codex-prompt"
+        "  codex-prompt -Task `"Fix UnrealSync regeneration tests`""
+        "  codex-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
+        "Notes:"
+        "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      )
+    }
+  }
+
+  @($spec.HelpLines) | Write-Output
 }
 
 function Invoke-CodexPrompt {
   $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
+  $spec = Get-CodexPromptCommandSpecFromRegistry
+  if ($null -eq $spec) {
+    $spec = [pscustomobject]@{
+      CommandName = "codex-prompt"
+      ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
+      ScriptNotFoundPrefix = "Codex startup prompt script not found"
+    }
+  }
 
   foreach ($arg in $argsList) {
     if ($helpTokens -contains ([string]$arg).ToLowerInvariant()) {
@@ -463,8 +520,8 @@ function Invoke-CodexPrompt {
   $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-CodexPrompt"
   $promptScript = Resolve-RepoScriptOrThrow `
     -RepoRoot $repoRoot `
-    -RelativePath "Scripts\Codex\Get-CodexStartupPrompt.ps1" `
-    -NotFoundMessagePrefix "Codex startup prompt script not found"
+    -RelativePath $spec.ScriptRelativePath `
+    -NotFoundMessagePrefix $spec.ScriptNotFoundPrefix
 
   & $promptScript @argsList
 }
@@ -472,6 +529,29 @@ function Invoke-CodexPrompt {
 function Invoke-CodexTools {
   $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
+  $spec = Get-CodexToolsCommandSpecFromRegistry
+  if ($null -eq $spec) {
+    $spec = [pscustomobject]@{
+      CommandName = "codex-tools"
+      DefaultCommand = "help"
+      OptionPrefixedDefaultCommand = "prompt"
+      PromptSubcommandName = "prompt"
+      HelpLines = @(
+        "Codex tools wrapper for repository Codex helpers."
+        "Usage:"
+        "  codex-tools <command> [options]"
+        "Commands:"
+        "  help                   Show this help text."
+        "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
+        "Examples:"
+        "  codex-tools help"
+        "  codex-tools prompt -Task `"Fix hook docs`""
+        "  codex-tools prompt -IncludePrivate -CopyToClipboard"
+        "Notes:"
+        "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
+      )
+    }
+  }
 
   function Test-HelpToken([object]$Value) {
     if ($null -eq $Value) { return $false }
@@ -480,35 +560,22 @@ function Invoke-CodexTools {
   }
 
   function Show-CodexToolsHelp {
-    @(
-      "Codex tools wrapper for repository Codex helpers."
-      "Usage:"
-      "  codex-tools <command> [options]"
-      "Commands:"
-      "  help                   Show this help text."
-      "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
-      "Examples:"
-      "  codex-tools help"
-      "  codex-tools prompt -Task `"Fix hook docs`""
-      "  codex-tools prompt -IncludePrivate -CopyToClipboard"
-      "Notes:"
-      "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
-    ) | Write-Output
+    @($spec.HelpLines) | Write-Output
   }
 
-  $command = "help"
+  $command = [string]$spec.DefaultCommand
   $commandArgs = @()
 
   if ($argsList.Count -gt 0) {
     $first = [string]$argsList[0]
     if (Test-HelpToken $first) {
-      $command = "help"
+      $command = [string]$spec.DefaultCommand
       if ($argsList.Count -gt 1) {
         $commandArgs = @($argsList[1..($argsList.Count - 1)])
       }
     }
     elseif ($first.StartsWith("-") -or $first.StartsWith("/")) {
-      $command = "prompt"
+      $command = [string]$spec.OptionPrefixedDefaultCommand
       $commandArgs = $argsList
     }
     else {
@@ -524,7 +591,7 @@ function Invoke-CodexTools {
       Show-CodexToolsHelp
       return
     }
-    "prompt" {
+    ([string]$spec.PromptSubcommandName) {
       foreach ($arg in $commandArgs) {
         if (Test-HelpToken $arg) {
           Show-CodexPromptHelp

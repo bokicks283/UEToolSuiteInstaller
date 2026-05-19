@@ -116,4 +116,90 @@ function Get-UEToolsCommandSpec {
   }
 }
 
-Export-ModuleMember -Function Get-UEToolSuiteCommandRegistry, Get-UEToolsCommandSpec
+function Get-ArtToolsCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  [pscustomobject]@{
+    CommandName = "art-tools"
+    ScriptRelativePath = "Scripts\Unreal\New-ArtSourcePath.ps1"
+    ScriptNotFoundPrefix = "ArtSource path script not found"
+    HelpLines = @(
+      "Art tools wrapper for ArtSource helpers."
+      "Usage:"
+      "  art-tools [New-ArtSourcePath.ps1 options]"
+      "Examples:"
+      "  art-tools"
+      "  art-tools -RepoRoot C:\Path\To\Repo"
+      "Notes:"
+      "  - Runs Scripts\Unreal\New-ArtSourcePath.ps1."
+    )
+  }
+}
+
+function Get-DocsToolsCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  [pscustomobject]@{
+    CommandName = "docs-tools"
+    ScriptRelativePath = "Scripts\Docs\DocsTools.ps1"
+    ScriptNotFoundPrefix = "Docs tools script not found"
+  }
+}
+
+function Get-CodexPromptCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  [pscustomobject]@{
+    CommandName = "codex-prompt"
+    ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
+    ScriptNotFoundPrefix = "Codex startup prompt script not found"
+    HelpLines = @(
+      "Codex startup prompt builder for this repository."
+      "Usage:"
+      "  codex-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
+      "Examples:"
+      "  codex-prompt"
+      "  codex-prompt -Task `"Fix UnrealSync regeneration tests`""
+      "  codex-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
+      "Notes:"
+      "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
+    )
+  }
+}
+
+function Get-CodexToolsCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  [pscustomobject]@{
+    CommandName = "codex-tools"
+    DefaultCommand = "help"
+    OptionPrefixedDefaultCommand = "prompt"
+    PromptSubcommandName = "prompt"
+    HelpLines = @(
+      "Codex tools wrapper for repository Codex helpers."
+      "Usage:"
+      "  codex-tools <command> [options]"
+      "Commands:"
+      "  help                   Show this help text."
+      "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
+      "Examples:"
+      "  codex-tools help"
+      "  codex-tools prompt -Task `"Fix hook docs`""
+      "  codex-tools prompt -IncludePrivate -CopyToClipboard"
+      "Notes:"
+      "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
+    )
+  }
+}
+
+Export-ModuleMember -Function `
+  Get-UEToolSuiteCommandRegistry, `
+  Get-UEToolsCommandSpec, `
+  Get-ArtToolsCommandSpec, `
+  Get-DocsToolsCommandSpec, `
+  Get-CodexPromptCommandSpec, `
+  Get-CodexToolsCommandSpec
