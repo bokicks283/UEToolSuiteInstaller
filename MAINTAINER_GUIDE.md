@@ -17,7 +17,7 @@ When you install into a UE5 repo, the suite provides:
 - Unreal sync/build automation
 - ArtSource scaffolding helpers
 - Docs tooling + optional docs bridge integration
-- Codex startup prompt helper
+- AI startup prompt helper
 - Optional payload test scripts
 
 It also supports repeated updates, preserves project-local files where possible, and keeps managed changes auditable through backup snapshots.
@@ -45,8 +45,10 @@ Current public command surface is intentionally stable:
 - `ue-tools`
 - `art-tools`
 - `docs-tools`
-- `codex-tools`
-- `codex-prompt`
+- `ai-tools`
+- `ai-prompt`
+
+Compatibility aliases remain available: `codex-tools`, `codex-prompt`.
 
 Command specs and registry live in:
 - `payload/Scripts/UETools/UEToolSuite.Core.psm1`
@@ -69,7 +71,7 @@ Payload structure:
 - `payload/Scripts/UETools/`: shared command registry + module manifest + compatibility wrapper
 - `payload/Scripts/Unreal/`: UnrealSync + project context + alias/bootstrap logic + ArtSource tool
 - `payload/Scripts/Docs/DocsTools.ps1`: docs command system
-- `payload/Scripts/Codex/Get-CodexStartupPrompt.ps1`: Codex prompt tool
+- `payload/Scripts/Codex/Get-CodexStartupPrompt.ps1`: AI prompt tool (stable script path)
 - `payload/Scripts/git-hooks/` + `.githooks/`: hook plumbing
 - `payload/Scripts/git-tools/`: `git ours`, `git theirs`, `git conflicts` support
 - `payload/Scripts/Tests/`: payload-level suites
@@ -231,8 +233,8 @@ Script:
 - `Scripts/Codex/Get-CodexStartupPrompt.ps1`
 
 Wrapper commands:
-- `codex-prompt`
-- `codex-tools prompt`
+- `ai-prompt`
+- `ai-tools prompt` (`codex-tools prompt` compatibility alias)
 
 Responsibilities:
 - Build startup prompt text from repo markdown context
@@ -422,7 +424,7 @@ docs-tools start --port 3001
 
 Run Codex prompt helper:
 ```powershell
-codex-prompt -Task "Investigate UnrealSync regression" -IncludePrivate -CopyToClipboard
+ai-prompt -Task "Investigate UnrealSync regression" -IncludePrivate -CopyToClipboard
 ```
 
 Run conflict helpers:
@@ -437,3 +439,4 @@ git conflicts continue --skip-editor
 - Full build/release guide: `docs/Usage-Build-Release-Guide.md`
 - Unification architecture: `docs/Tooling-Unification-Architecture.md`
 - Payload script guidance: `payload/Scripts/README.md`
+

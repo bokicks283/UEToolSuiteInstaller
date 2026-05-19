@@ -122,7 +122,8 @@ function Install-TestProfileAliases {
   $result = Invoke-CapturedPwsh -Arguments @("-NoLogo", "-NoProfile", "-Command", $command) -WorkingDirectory $TargetRoot
   Assert-Condition -Name "profile alias install exits cleanly" -Condition ($result.Code -eq 0) -PassDetail "exit=0" -FailDetail "exit=$($result.Code)"
   Assert-TextContains -Name "profile alias metadata includes ue-tools" -Text $result.Output -Needle "ue-tools"
-  Assert-TextContains -Name "profile alias metadata includes codex-prompt" -Text $result.Output -Needle "codex-prompt"
+  Assert-TextContains -Name "profile alias metadata includes ai-prompt" -Text $result.Output -Needle "ai-prompt"
+  Assert-TextContains -Name "profile alias metadata includes codex-prompt compat alias" -Text $result.Output -Needle "codex-prompt"
   Assert-Condition -Name "profile alias bootstrap file created" -Condition (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) -PassDetail "bootstrap present" -FailDetail "bootstrap missing: $bootstrapPath"
 }
 
@@ -140,6 +141,7 @@ Set-Location -LiteralPath '$escapedTarget'
 ue-tools help
 docs-tools help
 art-tools --help
+ai-prompt --help
 codex-prompt --help
 "@
 
@@ -148,7 +150,8 @@ codex-prompt --help
   Assert-TextContains -Name "profile alias ue-tools works" -Text $result.Output -Needle "UE tools wrapper"
   Assert-TextContains -Name "profile alias docs-tools works" -Text $result.Output -Needle "UE project docs automation."
   Assert-TextContains -Name "profile alias art-tools works" -Text $result.Output -Needle "Art tools wrapper"
-  Assert-TextContains -Name "profile alias codex-prompt works" -Text $result.Output -Needle "Codex startup prompt builder"
+  Assert-TextContains -Name "profile alias ai-prompt works" -Text $result.Output -Needle "AI startup prompt builder"
+  Assert-TextContains -Name "profile alias codex-prompt compat works" -Text $result.Output -Needle "AI startup prompt builder"
 }
 
 function Invoke-DirectEntrypointSmoke {

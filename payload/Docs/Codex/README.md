@@ -28,7 +28,7 @@ Use this section to give Codex stable repo context without relying on old chat t
 ## Starter Workflow
 
 1. Start a new Codex chat in the repo root.
-2. Generate a startup prompt with `codex-prompt` or `codex-tools prompt`.
+2. Generate a startup prompt with `ai-prompt` or `ai-tools prompt`.
 3. Let `AGENTS.md` drive the startup read order across the repo docs.
 4. Add a project-specific `Docs/Codex/Project-Context.md` when you want an explicit shared brief in the prompt.
 5. If you want local-only guidance included, also point Codex at `.codex-local/Private-Context.md`.
@@ -37,9 +37,9 @@ Use this section to give Codex stable repo context without relying on old chat t
 ## Command Examples
 
 ```powershell
-codex-tools help
-codex-tools prompt -Task "Fix UnrealSync regeneration output"
-codex-prompt -Task "Review coding standards docs" -IncludePrivate -CopyToClipboard
+ai-tools help
+ai-tools prompt -Task "Fix UnrealSync regeneration output"
+ai-prompt -Task "Review coding standards docs" -IncludePrivate -CopyToClipboard
 ```
 
 ## Automatic Loading Reality

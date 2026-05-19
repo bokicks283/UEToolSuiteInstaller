@@ -17,13 +17,13 @@ The following entrypoints should continue to work during the migration:
 - `ue-tools`
 - `docs-tools`
 - `art-tools`
-- `codex-tools`
-- `codex-prompt`
+- `ai-tools` (with `codex-tools` compatibility alias)
+- `ai-prompt` (with `codex-prompt` compatibility alias)
 - Direct PowerShell invocation of `Scripts/Unreal/UnrealSync.ps1`
 - Direct PowerShell invocation of `Scripts/Docs/DocsTools.ps1`
 - Direct PowerShell invocation of `Scripts/Codex/Get-CodexStartupPrompt.ps1`
 
-New names such as `ai-tools` or `ai-prompt` can be added later, but they must be aliases or wrappers first. Do not replace the Codex-facing names until tests prove a safe deprecation path.
+Primary names are `ai-tools` and `ai-prompt`. Keep `codex-tools` and `codex-prompt` as compatibility aliases until deprecation is explicitly planned and tested.
 
 ## Installed Payload Shape
 
@@ -130,7 +130,7 @@ Before moving entrypoints or converting major scripts into modules, add tests fo
 - update from current `main`
 - update from `feat/unify-tools-legacy-cleanup` layout
 - profile bootstrap installed before an entrypoint move
-- `codex-tools` and `codex-prompt` compatibility
+- `ai-tools` / `ai-prompt` primary behavior and `codex-tools` / `codex-prompt` compatibility
 - `-SkipCodexTools` compatibility
 - direct script invocation compatibility
 - docs tooling command routing

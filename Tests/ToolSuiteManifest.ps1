@@ -86,7 +86,7 @@ function Get-UEToolSuiteTestManifest {
       -Name "Shell Alias Compatibility" `
       -Path "Scripts/Tests/Test-UESyncShellAliases.ps1" `
       -Category "shell" `
-      -Description "Validates ue-tools, optional art-tools, docs-tools, codex-tools, and profile bootstrap behavior." `
+      -Description "Validates ue-tools, optional art-tools, docs-tools, ai-tools (plus codex compat aliases), and profile bootstrap behavior." `
       -RequiresInstalledFixture $true `
       -SupportsNoCleanup $true `
       -SupportsFailFast $true `
@@ -108,7 +108,7 @@ function Get-UEToolSuiteTestManifest {
       -Name "Codex Startup Prompt" `
       -Path "Scripts/Tests/Test-CodexStartupPrompt.ps1" `
       -Category "codex" `
-      -Description "Validates the Codex startup prompt builder output and local private-context handling." `
+      -Description "Validates the AI startup prompt builder output and local private-context handling." `
       -RequiresInstalledFixture $true `
       -SupportsFailFast $true `
       -ResultDirectory "Scripts/Tests/Test-CodexStartupPromptResults")

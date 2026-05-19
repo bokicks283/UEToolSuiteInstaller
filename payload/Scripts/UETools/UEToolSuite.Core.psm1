@@ -51,20 +51,20 @@ function Get-UEToolSuiteCommandRegistry {
       -Description "Project documentation automation wrapper.")
 
     (New-UEToolSuiteCommandDefinition `
-      -Id "codex-tools" `
-      -Domain "codex" `
-      -FunctionName "Invoke-CodexTools" `
-      -Aliases @("codex-tools") `
+      -Id "ai-tools" `
+      -Domain "ai" `
+      -FunctionName "Invoke-AITools" `
+      -Aliases @("ai-tools", "codex-tools") `
       -RequiredRelativePath "Codex\Get-CodexStartupPrompt.ps1" `
-      -Description "Codex helper command wrapper.")
+      -Description "AI helper command wrapper.")
 
     (New-UEToolSuiteCommandDefinition `
-      -Id "codex-prompt" `
-      -Domain "codex" `
-      -FunctionName "Invoke-CodexPrompt" `
-      -Aliases @("codex-prompt") `
+      -Id "ai-prompt" `
+      -Domain "ai" `
+      -FunctionName "Invoke-AIPrompt" `
+      -Aliases @("ai-prompt", "codex-prompt") `
       -RequiredRelativePath "Codex\Get-CodexStartupPrompt.ps1" `
-      -Description "Codex startup prompt wrapper.")
+      -Description "AI startup prompt wrapper.")
   )
 
   if ([string]::IsNullOrWhiteSpace($ScriptsRoot) -or $IncludeUnavailable) {
@@ -148,52 +148,66 @@ function Get-DocsToolsCommandSpec {
   }
 }
 
-function Get-CodexPromptCommandSpec {
+function Get-AIPromptCommandSpec {
   [CmdletBinding()]
   param()
 
   [pscustomobject]@{
-    CommandName = "codex-prompt"
+    CommandName = "ai-prompt"
     ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
-    ScriptNotFoundPrefix = "Codex startup prompt script not found"
+    ScriptNotFoundPrefix = "AI startup prompt script not found"
     HelpLines = @(
-      "Codex startup prompt builder for this repository."
+      "AI startup prompt builder for this repository."
       "Usage:"
-      "  codex-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
+      "  ai-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
       "Examples:"
-      "  codex-prompt"
-      "  codex-prompt -Task `"Fix UnrealSync regeneration tests`""
-      "  codex-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
+      "  ai-prompt"
+      "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
+      "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
       "Notes:"
       "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
     )
   }
 }
 
-function Get-CodexToolsCommandSpec {
+function Get-AIToolsCommandSpec {
   [CmdletBinding()]
   param()
 
   [pscustomobject]@{
-    CommandName = "codex-tools"
+    CommandName = "ai-tools"
     DefaultCommand = "help"
     OptionPrefixedDefaultCommand = "prompt"
     PromptSubcommandName = "prompt"
     HelpLines = @(
-      "Codex tools wrapper for repository Codex helpers."
+      "AI tools wrapper for repository AI helpers."
       "Usage:"
-      "  codex-tools <command> [options]"
+      "  ai-tools <command> [options]"
       "Commands:"
       "  help                   Show this help text."
       "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
       "Examples:"
-      "  codex-tools help"
-      "  codex-tools prompt -Task `"Fix hook docs`""
-      "  codex-tools prompt -IncludePrivate -CopyToClipboard"
+      "  ai-tools help"
+      "  ai-tools prompt -Task `"Fix hook docs`""
+      "  ai-tools prompt -IncludePrivate -CopyToClipboard"
       "Notes:"
       "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
     )
   }
+}
+
+function Get-CodexPromptCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  return (Get-AIPromptCommandSpec)
+}
+
+function Get-CodexToolsCommandSpec {
+  [CmdletBinding()]
+  param()
+
+  return (Get-AIToolsCommandSpec)
 }
 
 function Write-UEToolSuiteUtf8NoBomFile {
@@ -284,6 +298,8 @@ Export-ModuleMember -Function `
   Get-UEToolsCommandSpec, `
   Get-ArtToolsCommandSpec, `
   Get-DocsToolsCommandSpec, `
+  Get-AIPromptCommandSpec, `
+  Get-AIToolsCommandSpec, `
   Get-CodexPromptCommandSpec, `
   Get-CodexToolsCommandSpec, `
   Write-UEToolSuiteUtf8NoBomFile, `

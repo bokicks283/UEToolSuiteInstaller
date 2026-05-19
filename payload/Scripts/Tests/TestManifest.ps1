@@ -72,7 +72,7 @@ function Get-ProjectTestManifest {
       -Name "Codex Startup Prompt" `
       -Path "Scripts/Tests/Test-CodexStartupPrompt.ps1" `
       -Category "codex" `
-      -Description "Validates the Codex startup prompt builder output and local private-context handling." `
+      -Description "Validates the AI startup prompt builder output and local private-context handling." `
       -SupportsFailFast $true `
       -ResultDirectory "Scripts/Tests/Test-CodexStartupPromptResults")
 

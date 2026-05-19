@@ -224,12 +224,24 @@ function Get-DocsToolsCommandSpecFromRegistry {
   return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-DocsToolsCommandSpec")
 }
 
-function Get-CodexPromptCommandSpecFromRegistry {
+function Get-AIPromptCommandSpecFromRegistry {
+  $spec = Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-AIPromptCommandSpec"
+  if ($null -ne $spec) { return $spec }
   return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-CodexPromptCommandSpec")
 }
 
-function Get-CodexToolsCommandSpecFromRegistry {
+function Get-AIToolsCommandSpecFromRegistry {
+  $spec = Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-AIToolsCommandSpec"
+  if ($null -ne $spec) { return $spec }
   return (Get-ProjectAliasCommandSpecFromRegistry -SpecFunctionName "Get-CodexToolsCommandSpec")
+}
+
+function Get-CodexPromptCommandSpecFromRegistry {
+  return (Get-AIPromptCommandSpecFromRegistry)
+}
+
+function Get-CodexToolsCommandSpecFromRegistry {
+  return (Get-AIToolsCommandSpecFromRegistry)
 }
 
 function Test-ProjectAliasRepoScriptAvailable {
@@ -309,15 +321,15 @@ function Get-ProjectAliasDefinitions {
 
   if (Test-ProjectAliasRepoScriptAvailable -RelativePath "..\Codex\Get-CodexStartupPrompt.ps1") {
     [void]$definitions.Add([pscustomobject]@{
-        Id = "codex-tools"
-        FunctionName = "Invoke-CodexTools"
-        Aliases = @("codex-tools")
+        Id = "ai-tools"
+        FunctionName = "Invoke-AITools"
+        Aliases = @("ai-tools", "codex-tools")
       })
 
     [void]$definitions.Add([pscustomobject]@{
-        Id = "codex-prompt"
-        FunctionName = "Invoke-CodexPrompt"
-        Aliases = @("codex-prompt")
+        Id = "ai-prompt"
+        FunctionName = "Invoke-AIPrompt"
+        Aliases = @("ai-prompt", "codex-prompt")
       })
   }
 
@@ -545,21 +557,21 @@ function Invoke-DocsTools {
   }
 }
 
-function Show-CodexPromptHelp {
-  $spec = Get-CodexPromptCommandSpecFromRegistry
+function Show-AIPromptHelp {
+  $spec = Get-AIPromptCommandSpecFromRegistry
   if ($null -eq $spec) {
     $spec = [pscustomobject]@{
-      CommandName = "codex-prompt"
+      CommandName = "ai-prompt"
       ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
-      ScriptNotFoundPrefix = "Codex startup prompt script not found"
+      ScriptNotFoundPrefix = "AI startup prompt script not found"
       HelpLines = @(
-        "Codex startup prompt builder for this repository."
+        "AI startup prompt builder for this repository."
         "Usage:"
-        "  codex-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
+        "  ai-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
         "Examples:"
-        "  codex-prompt"
-        "  codex-prompt -Task `"Fix UnrealSync regeneration tests`""
-        "  codex-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
+        "  ai-prompt"
+        "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
+        "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
         "Notes:"
         "  - Runs Scripts\Codex\Get-CodexStartupPrompt.ps1."
       )
@@ -569,26 +581,26 @@ function Show-CodexPromptHelp {
   @($spec.HelpLines) | Write-Output
 }
 
-function Invoke-CodexPrompt {
+function Invoke-AIPrompt {
   $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
-  $spec = Get-CodexPromptCommandSpecFromRegistry
+  $spec = Get-AIPromptCommandSpecFromRegistry
   if ($null -eq $spec) {
     $spec = [pscustomobject]@{
-      CommandName = "codex-prompt"
+      CommandName = "ai-prompt"
       ScriptRelativePath = "Scripts\Codex\Get-CodexStartupPrompt.ps1"
-      ScriptNotFoundPrefix = "Codex startup prompt script not found"
+      ScriptNotFoundPrefix = "AI startup prompt script not found"
     }
   }
 
   foreach ($arg in $argsList) {
     if ($helpTokens -contains ([string]$arg).ToLowerInvariant()) {
-      Show-CodexPromptHelp
+      Show-AIPromptHelp
       return
     }
   }
 
-  $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-CodexPrompt"
+  $repoRoot = Get-RepoRootOrThrow -InvokerName "Invoke-AIPrompt"
   $promptScript = Resolve-RepoScriptOrThrow `
     -RepoRoot $repoRoot `
     -RelativePath $spec.ScriptRelativePath `
@@ -597,27 +609,27 @@ function Invoke-CodexPrompt {
   & $promptScript @argsList
 }
 
-function Invoke-CodexTools {
+function Invoke-AITools {
   $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   $argsList = @($args)
-  $spec = Get-CodexToolsCommandSpecFromRegistry
+  $spec = Get-AIToolsCommandSpecFromRegistry
   if ($null -eq $spec) {
     $spec = [pscustomobject]@{
-      CommandName = "codex-tools"
+      CommandName = "ai-tools"
       DefaultCommand = "help"
       OptionPrefixedDefaultCommand = "prompt"
       PromptSubcommandName = "prompt"
       HelpLines = @(
-        "Codex tools wrapper for repository Codex helpers."
+        "AI tools wrapper for repository AI helpers."
         "Usage:"
-        "  codex-tools <command> [options]"
+        "  ai-tools <command> [options]"
         "Commands:"
         "  help                   Show this help text."
         "  prompt [prompt args]   Run Scripts\Codex\Get-CodexStartupPrompt.ps1."
         "Examples:"
-        "  codex-tools help"
-        "  codex-tools prompt -Task `"Fix hook docs`""
-        "  codex-tools prompt -IncludePrivate -CopyToClipboard"
+        "  ai-tools help"
+        "  ai-tools prompt -Task `"Fix hook docs`""
+        "  ai-tools prompt -IncludePrivate -CopyToClipboard"
         "Notes:"
         "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
       )
@@ -630,7 +642,7 @@ function Invoke-CodexTools {
     return ($helpTokens -contains $token)
   }
 
-  function Show-CodexToolsHelp {
+  function Show-AIToolsHelp {
     @($spec.HelpLines) | Write-Output
   }
 
@@ -659,25 +671,29 @@ function Invoke-CodexTools {
 
   switch ($command) {
     "help" {
-      Show-CodexToolsHelp
+      Show-AIToolsHelp
       return
     }
     ([string]$spec.PromptSubcommandName) {
       foreach ($arg in $commandArgs) {
         if (Test-HelpToken $arg) {
-          Show-CodexPromptHelp
+          Show-AIPromptHelp
           return
         }
       }
 
-      Invoke-CodexPrompt @commandArgs
+      Invoke-AIPrompt @commandArgs
       return
     }
     default {
-      throw "Unknown codex-tools command '$command'. Run 'codex-tools help'."
+      throw "Unknown ai-tools command '$command'. Run 'ai-tools help'."
     }
   }
 }
+
+function Show-CodexPromptHelp { Show-AIPromptHelp }
+function Invoke-CodexPrompt { Invoke-AIPrompt @args }
+function Invoke-CodexTools { Invoke-AITools @args }
 
 function Register-ProjectShellAliases {
   $definitions = Get-ProjectAliasDefinitions
@@ -969,7 +985,7 @@ function Install-CodexToolsShellAliases {
   )
 
   $result = Install-ProjectShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath
-  $group = @($result.AliasGroups | Where-Object { $_.Id -eq "codex-tools" } | Select-Object -First 1)
+  $group = @($result.AliasGroups | Where-Object { $_.Id -eq "ai-tools" -or $_.Id -eq "codex-tools" } | Select-Object -First 1)
 
   [pscustomobject]@{
     ProfilePath = $result.ProfilePath
@@ -980,4 +996,14 @@ function Install-CodexToolsShellAliases {
     StartMarker = $result.StartMarker
     EndMarker = $result.EndMarker
   }
+}
+
+function Install-AIToolsShellAliases {
+  param(
+    [string]$ProfilePath,
+    [string]$AliasScriptPath,
+    [string]$BootstrapScriptPath
+  )
+
+  return (Install-CodexToolsShellAliases -ProfilePath $ProfilePath -AliasScriptPath $AliasScriptPath -BootstrapScriptPath $BootstrapScriptPath)
 }
