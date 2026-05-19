@@ -370,6 +370,7 @@ $managedItems = @(
   "Scripts/README.md",
   "Scripts/git-hooks",
   "Scripts/git-tools",
+  "Scripts/UETools",
   "Scripts/Unreal/ProjectContext.ps1",
   "Scripts/Unreal/ProjectShellAliases.ps1",
   "Scripts/Unreal/UESyncShellAliases.ps1",

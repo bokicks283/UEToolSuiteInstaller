@@ -155,6 +155,7 @@ try {
       ".gitignore",
       ".githooks\post-checkout",
       "Scripts\Init-Repo.ps1",
+      "Scripts\UETools\UEToolSuite.Core.psm1",
       "Scripts\Unreal\UnrealSync.ps1",
       "Scripts\Docs\DocsTools.ps1",
       "Docs\Setup.md",

@@ -127,6 +127,27 @@ function Get-ProjectAliasScriptDirectory {
   return (Split-Path -Path $resolvedScriptPath -Parent)
 }
 
+function Get-ProjectAliasScriptsRoot {
+  $scriptDir = Get-ProjectAliasScriptDirectory
+  return (Split-Path -Path $scriptDir -Parent)
+}
+
+function Get-UEToolSuiteCoreModulePath {
+  $scriptsRoot = Get-ProjectAliasScriptsRoot
+  return (Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1")
+}
+
+function Get-ProjectAliasDefinitionsFromRegistry {
+  $modulePath = Get-UEToolSuiteCoreModulePath
+  if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+    return @()
+  }
+
+  Import-Module -Name $modulePath -Force
+  $scriptsRoot = Get-ProjectAliasScriptsRoot
+  return @(Get-UEToolSuiteCommandRegistry -ScriptsRoot $scriptsRoot)
+}
+
 function Test-ProjectAliasRepoScriptAvailable {
   param([Parameter(Mandatory)][string]$RelativePath)
 
@@ -164,7 +185,20 @@ function Get-ProjectAliasLegacyMarkers {
 }
 
 function Get-ProjectAliasDefinitions {
-  # Add new alias groups here by mapping alias name(s) to an existing function.
+  $registryDefinitions = @(Get-ProjectAliasDefinitionsFromRegistry)
+  if ($registryDefinitions.Count -gt 0) {
+    return @(
+      $registryDefinitions | ForEach-Object {
+        [pscustomobject]@{
+          Id = $_.Id
+          FunctionName = $_.FunctionName
+          Aliases = @($_.Aliases)
+        }
+      }
+    )
+  }
+
+  # Fallback for older installed suites that do not have the shared registry module.
   $definitions = New-Object System.Collections.Generic.List[object]
 
   [void]$definitions.Add([pscustomobject]@{
