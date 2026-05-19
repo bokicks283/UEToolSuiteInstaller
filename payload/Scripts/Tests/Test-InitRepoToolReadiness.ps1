@@ -20,105 +20,17 @@ $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-InitRepoToolReadinessResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "InitRepoToolReadiness-$stamp.log"
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
 $script:TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("init repo tool readiness tests " + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $script:TempRoot | Out-Null
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Condition {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-
-  if ($Condition) {
-    Pass $Name $PassDetail
-    return
-  }
-
-  Fail $Name $FailDetail
-}
-
-function Assert-TextContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  if ([string]::Concat($Text).Contains($Needle)) {
-    Pass $Name "matched: $Needle"
-    return
-  }
-
-  Fail $Name "missing expected text: $Needle"
-}
-
-function Assert-TextNotContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  if (-not [string]::Concat($Text).Contains($Needle)) {
-    Pass $Name "did not match: $Needle"
-    return
-  }
-
-  Fail $Name "unexpected text found: $Needle"
-}
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  $directory = Split-Path -Parent $Path
-  if ($directory -and -not (Test-Path -LiteralPath $directory)) {
-    New-Item -ItemType Directory -Force -Path $directory | Out-Null
-  }
-
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
-}
-
-function Remove-AnsiEscapeSequences([string]$Text) {
-  if ($null -eq $Text) { return "" }
-  return ([regex]::Replace($Text, "`e\[[0-9;?]*[ -/]*[@-~]", ""))
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function New-CommandStubToolset {
   param([Parameter(Mandatory)][string]$Name)

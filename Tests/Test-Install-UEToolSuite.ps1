@@ -19,38 +19,15 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "Install-UEToolSuite-$stamp.log"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ue tool suite installer tests " + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+$testHarnessPath = Join-Path $installerRoot "payload\Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
-
-function Write-Log {
-  param([Parameter(Mandatory)][AllowEmptyString()][string]$Message, [ConsoleColor]$Color = [ConsoleColor]::Gray)
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Condition {
-  param([string]$Name, [bool]$Condition, [string]$PassDetail = "ok", [string]$FailDetail = "failed")
-  if ($Condition) { Pass $Name $PassDetail } else { Fail $Name $FailDetail }
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function Assert-PathExists([string]$Name, [string]$Path) {
   Assert-Condition $Name (Test-Path -LiteralPath $Path) "present" "missing: $Path"
@@ -68,20 +45,6 @@ function Assert-FileContains([string]$Name, [string]$Path, [string]$ExpectedText
 
   $content = Get-Content -LiteralPath $Path -Raw
   Assert-Condition $Name ($content.Contains($ExpectedText)) "found expected text" "expected text missing from $Path"
-}
-
-function Write-Utf8NoBomFile {
-  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Content)
-  $parent = Split-Path -Path $Path -Parent
-  if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
-  }
-  [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
-}
-
-function Remove-AnsiEscapeSequences([string]$Text) {
-  if ($null -eq $Text) { return "" }
-  return ([regex]::Replace($Text, "`e\[[0-9;?]*[ -/]*[@-~]", ""))
 }
 
 function Invoke-Installer {

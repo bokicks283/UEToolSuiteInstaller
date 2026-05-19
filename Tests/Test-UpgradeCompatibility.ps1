@@ -14,6 +14,11 @@ if (-not (Test-Path -LiteralPath $fixtureHelper -PathType Leaf)) {
   throw "UE project fixture helper not found: $fixtureHelper"
 }
 . $fixtureHelper
+$testHarnessPath = Join-Path $installerRoot "payload\Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $PSScriptRoot "Test-UpgradeCompatibilityResults"
@@ -23,75 +28,7 @@ $scratchRoot = New-TestScratchRoot -Prefix "ue tool suite upgrade compatibility"
 
 $script:PassCount = 0
 $script:FailCount = 0
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step {
-  param([Parameter(Mandatory)][string]$Title)
-
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass {
-  param([Parameter(Mandatory)][string]$Name, [string]$Detail = "ok")
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail {
-  param([Parameter(Mandatory)][string]$Name, [string]$Detail = "failed")
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Condition {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][bool]$Condition,
-    [string]$PassDetail = "ok",
-    [string]$FailDetail = "failed"
-  )
-
-  if ($Condition) { Pass -Name $Name -Detail $PassDetail } else { Fail -Name $Name -Detail $FailDetail }
-}
-
-function Assert-TextContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  Assert-Condition -Name $Name -Condition $Text.Contains($Needle) -PassDetail "matched: $Needle" -FailDetail "missing: $Needle"
-}
-
-function Assert-TextNotContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  Assert-Condition -Name $Name -Condition (-not $Text.Contains($Needle)) -PassDetail "absent: $Needle" -FailDetail "unexpected: $Needle"
-}
-
-function Remove-AnsiEscapeSequences {
-  param([AllowNull()][string]$Text)
-  if ($null -eq $Text) { return "" }
-  return ([regex]::Replace($Text, "`e\[[0-9;?]*[ -/]*[@-~]", ""))
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function Invoke-CapturedPwsh {
   param(

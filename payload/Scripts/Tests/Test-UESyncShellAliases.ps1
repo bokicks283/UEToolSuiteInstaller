@@ -17,6 +17,11 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "UESyncShellAliasesTest-$stamp.log"
 $scratchRoot = Join-Path $resultsDir "scratch-$stamp"
 New-Item -ItemType Directory -Force -Path $scratchRoot | Out-Null
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
@@ -24,74 +29,7 @@ $script:WarnCount = 0
 $script:SkipCount = 0
 $script:CleanupRan = $false
 $script:ExternalTempDirs = New-Object System.Collections.Generic.List[string]
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Warn([string]$Name, [string]$Detail) {
-  $script:WarnCount++
-  Write-Log "[WARN] $Name - $Detail" Yellow
-}
-
-function Skip([string]$Name, [string]$Detail) {
-  $script:SkipCount++
-  Write-Log "[SKIP] $Name - $Detail" DarkYellow
-}
-
-function Assert-Condition {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-  if ($Condition) { Pass $Name $PassDetail; return }
-  Fail $Name $FailDetail
-}
-
-function Assert-TextContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-  if ([string]::Concat($Text).Contains($Needle)) { Pass $Name "matched: $Needle"; return }
-  Fail $Name "missing expected text: $Needle"
-}
-
-function Assert-TextNotContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-  if (-not [string]::Concat($Text).Contains($Needle)) { Pass $Name "did not match: $Needle"; return }
-  Fail $Name "unexpected text found: $Needle"
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function Normalize-Newlines([string]$Text) {
   if ($null -eq $Text) { return "" }

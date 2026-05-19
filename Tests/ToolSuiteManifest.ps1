@@ -65,6 +65,15 @@ function Get-UEToolSuiteTestManifest {
       -ResultDirectory "Tests/Test-UpgradeCompatibilityResults")
 
     (New-UEToolSuiteTestEntry `
+      -Id "standards-advisory" `
+      -Name "Standards Advisory" `
+      -Path "Tests/Test-Standards-Advisory.ps1" `
+      -Category "standards" `
+      -Description "Runs advisory PSScriptAnalyzer and shellcheck scans without enforcing failures by default." `
+      -SupportsFailFast $true `
+      -ResultDirectory "Tests/Test-Standards-AdvisoryResults")
+
+    (New-UEToolSuiteTestEntry `
       -Id "hooks" `
       -Name "Hook Plumbing" `
       -Path "Scripts/git-hooks/Test-Hooks.ps1" `

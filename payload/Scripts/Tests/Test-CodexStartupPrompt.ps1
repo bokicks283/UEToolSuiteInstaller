@@ -14,85 +14,17 @@ $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-CodexStartupPromptResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "CodexStartupPromptTest-$stamp.log"
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
 $script:WarnCount = 0
 $script:SkipCount = 0
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Condition {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-
-  if ($Condition) {
-    Pass $Name $PassDetail
-    return
-  }
-
-  Fail $Name $FailDetail
-}
-
-function Assert-TextContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  if ([string]::Concat($Text).Contains($Needle)) {
-    Pass $Name "matched: $Needle"
-    return
-  }
-
-  Fail $Name "missing expected text: $Needle"
-}
-
-function Assert-TextNotContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  if (-not [string]::Concat($Text).Contains($Needle)) {
-    Pass $Name "did not match: $Needle"
-    return
-  }
-
-  Fail $Name "unexpected text found: $Needle"
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 try {
   Step "Codex Startup Prompt Tests ($stamp)"

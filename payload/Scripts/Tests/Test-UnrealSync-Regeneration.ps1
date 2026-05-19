@@ -20,107 +20,18 @@ $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-UnrealSync-RegenerationResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "UnrealSync-Regen-$stamp.log"
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
 $script:TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ue sync regen tests " + [Guid]::NewGuid().ToString("N"))
 $script:TestEngineAssociation = "5.4"
 New-Item -ItemType Directory -Force -Path $script:TempRoot | Out-Null
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Code {
-  param([string]$Name, [int]$Code, [int]$Expected)
-  if ($Code -eq $Expected) {
-    Pass $Name "exit=$Code"
-  }
-  else {
-    Fail $Name "expected exit=$Expected, got exit=$Code"
-  }
-}
-
-function Assert-Condition {
-  param(
-    [string]$Name,
-    [bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-  if ($Condition) {
-    Pass $Name $PassDetail
-  }
-  else {
-    Fail $Name $FailDetail
-  }
-}
-
-function Assert-OutputContains {
-  param(
-    [string]$Name,
-    [string]$Output,
-    [string]$Needle
-  )
-  if ($Output -like "*$Needle*") {
-    Pass $Name "matched: $Needle"
-  }
-  else {
-    Fail $Name "missing expected text: $Needle"
-  }
-}
-
-function Assert-OutputNotContains {
-  param(
-    [string]$Name,
-    [string]$Output,
-    [string]$Needle
-  )
-  if ($Output -notlike "*$Needle*") {
-    Pass $Name "not present: $Needle"
-  }
-  else {
-    Fail $Name "unexpected text present: $Needle"
-  }
-}
-
-function Write-TextFileLf {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][string]$Content
-  )
-  $normalized = $Content -replace "`r`n", "`n" -replace "`r", "`n"
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $normalized, $utf8NoBom)
-}
-
-function Remove-AnsiEscapeSequences([string]$Text) {
-  if ($null -eq $Text) { return "" }
-  return ([regex]::Replace($Text, "`e\[[0-9;?]*[ -/]*[@-~]", ""))
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function New-CaseDir([string]$CaseName) {
   $dir = Join-Path $script:TempRoot $CaseName

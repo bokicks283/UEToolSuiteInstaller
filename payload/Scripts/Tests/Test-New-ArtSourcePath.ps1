@@ -14,51 +14,15 @@ $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-New-ArtSourcePathResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "New-ArtSourcePathTest-$stamp.log"
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-}
-
-function Assert-Condition {
-  param(
-    [string]$Name,
-    [bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-
-  if ($Condition) {
-    Pass $Name $PassDetail
-  }
-  else {
-    Fail $Name $FailDetail
-  }
-}
+Initialize-TestHarness -LogPath $logPath
 
 function New-TemplateSkeleton {
   param(
