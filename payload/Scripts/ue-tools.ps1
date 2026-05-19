@@ -58,6 +58,11 @@ function Import-UEToolSuiteCoreModule {
 function Resolve-UEToolsRepoRoot {
   param([string]$ExplicitRepoRoot)
 
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $PSScriptRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools")
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
     if ($resolver) {

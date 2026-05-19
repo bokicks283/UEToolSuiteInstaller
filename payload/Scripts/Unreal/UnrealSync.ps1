@@ -626,6 +626,12 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
 
+  $runtimeWriter = Get-Command -Name "Write-UEToolSuiteRuntimeUtf8NoBomFile" -ErrorAction SilentlyContinue
+  if ($runtimeWriter) {
+    Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $script:UnrealScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory
+    return
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
     if ($writer) {

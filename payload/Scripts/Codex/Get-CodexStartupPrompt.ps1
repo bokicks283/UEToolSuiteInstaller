@@ -53,6 +53,11 @@ function Import-UEToolSuiteCoreModule {
 function Resolve-RepoRoot {
   param([string]$ExplicitRepoRoot)
 
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:CodexToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-CodexStartupPrompt.ps1" -AllowFilePath)
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
     if ($resolver) {

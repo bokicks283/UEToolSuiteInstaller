@@ -166,6 +166,12 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
 
+  $runtimeWriter = Get-Command -Name "Write-UEToolSuiteRuntimeUtf8NoBomFile" -ErrorAction SilentlyContinue
+  if ($runtimeWriter) {
+    Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $PSScriptRoot -Path $Path -Content $Content
+    return
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
     if ($writer) {
@@ -256,6 +262,21 @@ function Update-DocusaurusGitHubMetadata {
 
 function Resolve-InitRepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
+      return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $PSScriptRoot -InvocationName "Init-Repo")
+    }
+
+    $candidate = Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $PSScriptRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo" -AllowFilePath
+    $gitRootFromCandidate = ((git -C $candidate rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($gitRootFromCandidate)) {
+      throw "RepoRoot is not inside a git repository: $candidate"
+    }
+
+    return $gitRootFromCandidate.Trim()
+  }
 
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue

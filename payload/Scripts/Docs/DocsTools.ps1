@@ -66,6 +66,12 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
 
+  $runtimeWriter = Get-Command -Name "Write-UEToolSuiteRuntimeUtf8NoBomFile" -ErrorAction SilentlyContinue
+  if ($runtimeWriter) {
+    Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $script:DocsToolsScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory
+    return
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
     if ($writer) {
@@ -85,6 +91,11 @@ function Write-Utf8NoBomFile {
 
 function Get-DocsToolsRepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:DocsToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "docs-tools")
+  }
 
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue

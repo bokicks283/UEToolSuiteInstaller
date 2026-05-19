@@ -47,6 +47,12 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
 
+  $runtimeWriter = Get-Command -Name "Write-UEToolSuiteRuntimeUtf8NoBomFile" -ErrorAction SilentlyContinue
+  if ($runtimeWriter) {
+    Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot (Get-ProjectAliasScriptsRoot) -Path $Path -Content $Content
+    return
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
     if ($writer) {
@@ -321,6 +327,11 @@ function Get-ProjectAliasDefinitions {
 function Get-RepoRootOrThrow {
   param([Parameter(Mandatory)][string]$InvokerName)
 
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot (Get-ProjectAliasScriptsRoot) -InvocationName $InvokerName)
+  }
+
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
     if ($resolver) {
@@ -348,6 +359,11 @@ function Resolve-RepoScriptOrThrow {
     if ($resolver) {
       return (Resolve-UEToolSuiteRepoPath -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType Leaf)
     }
+  }
+
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoPath" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    return (Resolve-UEToolSuiteRuntimeRepoPath -ScriptsRoot (Get-ProjectAliasScriptsRoot) -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType Leaf)
   }
 
   $scriptPath = Join-Path $RepoRoot $RelativePath
