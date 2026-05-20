@@ -1,2 +1,187 @@
-# AI domain module scaffold.
-# Implementation extraction from Scripts/AI/Get-AIStartupPrompt.ps1 is staged separately.
+function Resolve-UEToolSuiteAIRepoRoot {
+  [CmdletBinding()]
+  param(
+    [string]$ExplicitRepoRoot,
+    [string]$InvocationName = "Get-AIStartupPrompt.ps1"
+  )
+
+  if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
+    $candidate = [System.IO.Path]::GetFullPath($ExplicitRepoRoot)
+    if (-not (Test-Path -LiteralPath $candidate)) {
+      throw "RepoRoot does not exist: $candidate"
+    }
+
+    return (Resolve-Path -LiteralPath $candidate).Path
+  }
+
+  $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
+  if ([string]::IsNullOrWhiteSpace($repoRoot)) {
+    throw "$InvocationName must be run from inside a git repository or passed -RepoRoot."
+  }
+
+  return $repoRoot.Trim()
+}
+
+function Test-UEToolSuiteAIExcludedMarkdownPath {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RelativePath)
+
+  $excludedPrefixes = @(
+    ".git/",
+    ".ai-local/",
+    ".ue-tools-installer-backups/",
+    "Binaries/",
+    "DerivedDataCache/",
+    "Intermediate/",
+    "Saved/",
+    "website/.docusaurus/",
+    "website/build/",
+    "website/node_modules/"
+  )
+
+  foreach ($prefix in $excludedPrefixes) {
+    if ($RelativePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Get-UEToolSuiteAIRepoMarkdownPaths {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $markdownFiles = Get-ChildItem -LiteralPath $ResolvedRepoRoot -Recurse -File -Filter "*.md"
+  $relativePaths = New-Object System.Collections.Generic.List[string]
+
+  foreach ($file in $markdownFiles) {
+    $relativePath = [System.IO.Path]::GetRelativePath($ResolvedRepoRoot, $file.FullName).Replace("\", "/")
+    if ($relativePath -eq "AGENTS.md") {
+      continue
+    }
+    if (Test-UEToolSuiteAIExcludedMarkdownPath -RelativePath $relativePath) {
+      continue
+    }
+
+    $relativePaths.Add($relativePath) | Out-Null
+  }
+
+  $docsPaths = @($relativePaths | Where-Object { $_ -like "Docs/*" } | Sort-Object -Unique)
+  $otherPaths = @($relativePaths | Where-Object { $_ -notlike "Docs/*" } | Sort-Object -Unique)
+  return @($docsPaths + $otherPaths)
+}
+
+function Get-UEToolSuiteAICodingStandardsSnapshotInfo {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $currentSnapshotRoot = Join-Path $ResolvedRepoRoot "Docs\CodingStandards\Current"
+  $sourcePath = Join-Path $currentSnapshotRoot "SOURCE.md"
+
+  if (-not (Test-Path -LiteralPath $currentSnapshotRoot)) {
+    return [pscustomobject]@{
+      Exists = $false
+      Path = $null
+      SnapshotDate = $null
+      IsStale = $false
+      HasValidDate = $false
+    }
+  }
+
+  $snapshotDate = $null
+  $hasValidDate = $false
+  if (Test-Path -LiteralPath $sourcePath) {
+    $sourceText = Get-Content -LiteralPath $sourcePath -Raw
+    if ($sourceText -match '(?m)^\s*-\s*Snapshot date:\s*(?<date>\d{4}-\d{2}-\d{2})\s*$') {
+      $snapshotDate = [datetime]::ParseExact($Matches.date, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+      $hasValidDate = $true
+    }
+  }
+
+  $isStale = $false
+  if ($hasValidDate) {
+    $isStale = $snapshotDate.Date.AddMonths(6) -lt (Get-Date).Date
+  }
+
+  return [pscustomobject]@{
+    Exists = $true
+    Path = "Docs/CodingStandards/Current"
+    SnapshotDate = $snapshotDate
+    IsStale = $isStale
+    HasValidDate = $hasValidDate
+  }
+}
+
+function New-UEToolSuiteAIStartupPrompt {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string]$Task,
+    [switch]$IncludePrivate
+  )
+
+  $repoMarkdownPaths = @(Get-UEToolSuiteAIRepoMarkdownPaths -ResolvedRepoRoot $ResolvedRepoRoot)
+  $snapshotInfo = Get-UEToolSuiteAICodingStandardsSnapshotInfo -ResolvedRepoRoot $ResolvedRepoRoot
+  $privateContextPath = ".ai-local/Private-Context.md"
+  $privateContextExists = Test-Path -LiteralPath (Join-Path $ResolvedRepoRoot $privateContextPath)
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add("Read AGENTS.md first.") | Out-Null
+  $lines.Add("") | Out-Null
+  $lines.Add("Then read these repo markdown docs before doing substantial work:") | Out-Null
+
+  foreach ($relativePath in $repoMarkdownPaths) {
+    $lines.Add("- $relativePath") | Out-Null
+  }
+
+  $lines.Add("") | Out-Null
+
+  if ($snapshotInfo.Exists) {
+    if ($snapshotInfo.HasValidDate) {
+      $lines.Add(("Current Unreal C++ standard snapshot: {0} ({1:yyyy-MM-dd})." -f $snapshotInfo.Path, $snapshotInfo.SnapshotDate)) | Out-Null
+    }
+    else {
+      $lines.Add(("Current Unreal C++ standard snapshot: {0} (snapshot date missing from SOURCE.md)." -f $snapshotInfo.Path)) | Out-Null
+    }
+
+    if ($snapshotInfo.HasValidDate -and $snapshotInfo.IsStale) {
+      $lines.Add("It is older than six months. Refresh it with `pwsh -File Docs/CodingStandards/Sync-UnrealCppStandard.ps1` before treating the local standard reference as current.") | Out-Null
+    }
+    elseif ($snapshotInfo.HasValidDate) {
+      $lines.Add("It is not older than six months.") | Out-Null
+    }
+    else {
+      $lines.Add("Refresh SOURCE.md and re-run `pwsh -File Docs/CodingStandards/Sync-UnrealCppStandard.ps1` before treating the local standard reference as current.") | Out-Null
+    }
+  }
+  else {
+    $lines.Add("No local Unreal C++ standard snapshot was found under Docs/CodingStandards/Current/.") | Out-Null
+  }
+
+  $lines.Add("If this task touches C++ or style-sensitive code, scrutinize Docs/CodingStandards/README.md, Docs/CodingStandards/UnrealCppStandard.md, and Docs/CodingStandards/Current/SOURCE.md first.") | Out-Null
+
+  if (-not [string]::IsNullOrWhiteSpace($Task)) {
+    $lines.Add("") | Out-Null
+    $lines.Add("Task:") | Out-Null
+    $lines.Add("- $Task") | Out-Null
+  }
+
+  if ($IncludePrivate -and $privateContextExists) {
+    $lines.Add("") | Out-Null
+    $lines.Add("Also use .ai-local/Private-Context.md for my local preferences.") | Out-Null
+  }
+
+  return [pscustomobject]@{
+    Prompt = ($lines -join "`r`n")
+    PrivateContextPath = $privateContextPath
+    PrivateContextExists = [bool]$privateContextExists
+  }
+}
+
+Export-ModuleMember -Function `
+  Resolve-UEToolSuiteAIRepoRoot, `
+  Test-UEToolSuiteAIExcludedMarkdownPath, `
+  Get-UEToolSuiteAIRepoMarkdownPaths, `
+  Get-UEToolSuiteAICodingStandardsSnapshotInfo, `
+  New-UEToolSuiteAIStartupPrompt

@@ -11,6 +11,15 @@ param(
 $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 
+$gitModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Git.psm1"
+$facadeManifestPath = Join-Path $repoRoot "Scripts\UETools\UETools.psd1"
+if (Test-Path -LiteralPath $gitModulePath -PathType Leaf) {
+  Import-Module -Name $gitModulePath -Force
+}
+elseif (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
+  Import-Module -Name $facadeManifestPath -Force
+}
+
 . (Join-Path $repoRoot "Scripts/git-tools/GitConflictHelpers.ps1")
 
 # Parse flags
@@ -18,7 +27,12 @@ $VerboseMode = $PSBoundParameters.ContainsKey('Verbose') -or ($VerbosePreference
 $SkipEditor = $false
 
 # Extract -SkipEditor / --skip-editor from ArgsList
-if ($ArgsList) {
+if (Get-Command -Name "Split-UEToolSuiteGitConflictsArguments" -ErrorAction SilentlyContinue) {
+  $argumentSplit = Split-UEToolSuiteGitConflictsArguments -ArgsList $ArgsList
+  $SkipEditor = [bool]$argumentSplit.SkipEditor
+  $ArgsList = @($argumentSplit.Args)
+}
+elseif ($ArgsList) {
   $filteredArgs = New-Object System.Collections.Generic.List[string]
   foreach ($arg in $ArgsList) {
     if ($arg -eq "-SkipEditor" -or $arg -eq "--skip-editor" -or $arg -eq "-se") {
@@ -31,6 +45,12 @@ if ($ArgsList) {
 }
 
 function Show-Help {
+  $moduleHelpWriter = Get-Command -Name "Write-UEToolSuiteGitConflictsHelp" -ErrorAction SilentlyContinue
+  if ($moduleHelpWriter) {
+    Write-UEToolSuiteGitConflictsHelp
+    return
+  }
+
   Write-Host ""
   Write-Host "Unreal Binary Conflict Helpers" -ForegroundColor Cyan
   Write-Host "--------------------------------" -ForegroundColor Cyan

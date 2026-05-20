@@ -91,6 +91,12 @@ function Add-ToolReadiness {
     [Parameter(Mandatory)][string]$Detail
   )
 
+  $readinessAdder = Get-Command -Name "Add-UEToolSuiteInitToolReadinessEntry" -ErrorAction SilentlyContinue
+  if ($readinessAdder) {
+    Add-UEToolSuiteInitToolReadinessEntry -ReadinessList $script:ToolReadiness -Tool $Tool -Status $Status -Detail $Detail
+    return
+  }
+
   [void]$script:ToolReadiness.Add([pscustomobject]@{
       Tool = $Tool
       Status = $Status
@@ -100,6 +106,12 @@ function Add-ToolReadiness {
 
 function Test-CommandAvailable {
   param([Parameter(Mandatory)][string]$Name)
+
+  $availabilityTester = Get-Command -Name "Test-UEToolSuiteInitCommandAvailable" -ErrorAction SilentlyContinue
+  if ($availabilityTester) {
+    return (Test-UEToolSuiteInitCommandAvailable -Name $Name)
+  }
+
   return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
 }
 
@@ -108,6 +120,11 @@ function Assert-CommandAvailable {
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$InstallHint
   )
+
+  $commandAsserter = Get-Command -Name "Assert-UEToolSuiteInitCommandAvailable" -ErrorAction SilentlyContinue
+  if ($commandAsserter) {
+    return (Assert-UEToolSuiteInitCommandAvailable -Name $Name -InstallHint $InstallHint)
+  }
 
   $command = Get-Command $Name -ErrorAction SilentlyContinue
   if (-not $command) {
@@ -118,6 +135,11 @@ function Assert-CommandAvailable {
 }
 
 function Assert-NodeVersion {
+  $nodeVersionAsserter = Get-Command -Name "Assert-UEToolSuiteInitNodeVersion" -ErrorAction SilentlyContinue
+  if ($nodeVersionAsserter) {
+    return (Assert-UEToolSuiteInitNodeVersion)
+  }
+
   $nodeVersion = ((& node --version 2>$null) | Select-Object -First 1)
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($nodeVersion)) {
     throw "node --version failed. Install Node.js 20+ and try again."
@@ -143,6 +165,12 @@ function Invoke-CheckedTool {
     [string[]]$Arguments = @(),
     [string]$WorkingDirectory
   )
+
+  $toolInvoker = Get-Command -Name "Invoke-UEToolSuiteInitCheckedTool" -ErrorAction SilentlyContinue
+  if ($toolInvoker) {
+    Invoke-UEToolSuiteInitCheckedTool -Description $Description -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $WorkingDirectory
+    return
+  }
 
   $oldLocation = (Get-Location).Path
   try {
@@ -186,6 +214,11 @@ function Write-Utf8NoBomFile {
 function Get-GitHubRepoSlugFromRemoteUrl {
   param([string]$RemoteUrl)
 
+  $slugResolver = Get-Command -Name "Get-UEToolSuiteInitGitHubRepoSlugFromRemoteUrl" -ErrorAction SilentlyContinue
+  if ($slugResolver) {
+    return (Get-UEToolSuiteInitGitHubRepoSlugFromRemoteUrl -RemoteUrl $RemoteUrl)
+  }
+
   if ([string]::IsNullOrWhiteSpace($RemoteUrl)) {
     return $null
   }
@@ -201,6 +234,11 @@ function Get-GitHubRepoSlugFromRemoteUrl {
 function ConvertTo-TypeScriptSingleQuotedString {
   param([Parameter(Mandatory)][string]$Value)
 
+  $singleQuoteConverter = Get-Command -Name "ConvertTo-UEToolSuiteInitTypeScriptSingleQuotedString" -ErrorAction SilentlyContinue
+  if ($singleQuoteConverter) {
+    return (ConvertTo-UEToolSuiteInitTypeScriptSingleQuotedString -Value $Value)
+  }
+
   return "'" + (($Value -replace "\\", "\\") -replace "'", "\'") + "'"
 }
 
@@ -210,6 +248,11 @@ function Set-TypeScriptStringProperty {
     [Parameter(Mandatory)][string]$PropertyName,
     [Parameter(Mandatory)][string]$Value
   )
+
+  $propertySetter = Get-Command -Name "Set-UEToolSuiteInitTypeScriptStringProperty" -ErrorAction SilentlyContinue
+  if ($propertySetter) {
+    return (Set-UEToolSuiteInitTypeScriptStringProperty -Text $Text -PropertyName $PropertyName -Value $Value)
+  }
 
   $quotedValue = ConvertTo-TypeScriptSingleQuotedString -Value $Value
   $pattern = "(?m)^(\s*" + [regex]::Escape($PropertyName) + "\s*:\s*)(['""]).*?\2(,?\s*)$"
@@ -262,6 +305,13 @@ function Update-DocusaurusGitHubMetadata {
 
 function Resolve-InitRepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  if (Import-UEToolSuiteCoreModule) {
+    $initRootResolver = Get-Command -Name "Resolve-UEToolSuiteInitRepoRoot" -ErrorAction SilentlyContinue
+    if ($initRootResolver) {
+      return (Resolve-UEToolSuiteInitRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo")
+    }
+  }
 
   $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
   if ($runtimeResolver) {
@@ -427,6 +477,12 @@ function Test-ArtSourceTemplateReady {
 }
 
 function Show-ToolReadinessSummary {
+  $summaryWriter = Get-Command -Name "Show-UEToolSuiteInitToolReadinessSummary" -ErrorAction SilentlyContinue
+  if ($summaryWriter) {
+    Show-UEToolSuiteInitToolReadinessSummary -Entries $script:ToolReadiness -Prefix "[Init]"
+    return
+  }
+
   if ($script:ToolReadiness.Count -eq 0) {
     return
   }

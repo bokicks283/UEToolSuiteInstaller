@@ -53,6 +53,11 @@ function Import-UEToolSuiteCoreModule {
 function Resolve-RepoRoot {
   param([string]$ExplicitRepoRoot)
 
+  $aiRepoResolver = Get-Command -Name "Resolve-UEToolSuiteAIRepoRoot" -ErrorAction SilentlyContinue
+  if ($aiRepoResolver) {
+    return (Resolve-UEToolSuiteAIRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-AIStartupPrompt.ps1")
+  }
+
   $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
   if ($runtimeResolver) {
     return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:AIToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Get-AIStartupPrompt.ps1" -AllowFilePath)
@@ -85,6 +90,11 @@ function Resolve-RepoRoot {
 function Test-IsExcludedMarkdownPath {
   param([Parameter(Mandatory)][string]$RelativePath)
 
+  $excludedPathTester = Get-Command -Name "Test-UEToolSuiteAIExcludedMarkdownPath" -ErrorAction SilentlyContinue
+  if ($excludedPathTester) {
+    return (Test-UEToolSuiteAIExcludedMarkdownPath -RelativePath $RelativePath)
+  }
+
   $excludedPrefixes = @(
     ".git/",
     ".ai-local/",
@@ -110,6 +120,11 @@ function Test-IsExcludedMarkdownPath {
 function Get-RepoMarkdownPaths {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
+  $pathCollector = Get-Command -Name "Get-UEToolSuiteAIRepoMarkdownPaths" -ErrorAction SilentlyContinue
+  if ($pathCollector) {
+    return @(Get-UEToolSuiteAIRepoMarkdownPaths -ResolvedRepoRoot $ResolvedRepoRoot)
+  }
+
   $markdownFiles = Get-ChildItem -LiteralPath $ResolvedRepoRoot -Recurse -File -Filter "*.md"
   $relativePaths = New-Object System.Collections.Generic.List[string]
 
@@ -133,6 +148,11 @@ function Get-RepoMarkdownPaths {
 
 function Get-CodingStandardsSnapshotInfo {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $snapshotResolver = Get-Command -Name "Get-UEToolSuiteAICodingStandardsSnapshotInfo" -ErrorAction SilentlyContinue
+  if ($snapshotResolver) {
+    return (Get-UEToolSuiteAICodingStandardsSnapshotInfo -ResolvedRepoRoot $ResolvedRepoRoot)
+  }
 
   $currentSnapshotRoot = Join-Path $ResolvedRepoRoot "Docs\CodingStandards\Current"
   $sourcePath = Join-Path $currentSnapshotRoot "SOURCE.md"

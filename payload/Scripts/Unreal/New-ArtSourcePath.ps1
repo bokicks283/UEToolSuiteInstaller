@@ -8,6 +8,47 @@ $ErrorActionPreference = "Stop"
 
 $script:RequiredArtItemDirs = @("Source", "Textures", "Exports")
 $script:ReservedFolderNames = @("_Template", "Source", "Textures", "Exports")
+$script:ArtToolsScriptsRoot = Split-Path -Parent $PSScriptRoot
+$runtimeHelperPath = Join-Path $script:ArtToolsScriptsRoot "UETools\UEToolSuite.Runtime.ps1"
+if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
+  . $runtimeHelperPath
+}
+else {
+  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
+    param([Parameter(Mandatory)][string]$ScriptsRoot)
+
+    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+      return $manifestPath
+    }
+
+    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
+    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
+      return $modulePath
+    }
+
+    return $null
+  }
+
+  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
+    param(
+      [Parameter(Mandatory)][string]$ScriptsRoot,
+      [Parameter(Mandatory)][string]$StateKey
+    )
+
+    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
+    if ([string]::IsNullOrWhiteSpace($modulePath)) {
+      return $false
+    }
+
+    Import-Module -Name $modulePath -Force
+    return $true
+  }
+}
+
+function Import-UEToolSuiteCoreModule {
+  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:ArtToolsScriptsRoot -StateKey "new-artsource-path")
+}
 
 function Write-InfoLine([string]$Message) {
   Write-Host "[ArtSource] $Message" -ForegroundColor Cyan
@@ -27,6 +68,11 @@ function Write-ErrLine([string]$Message) {
 
 function Convert-ToUnixPath {
   param([string]$Path)
+
+  $converter = Get-Command -Name "Convert-UEToolSuiteArtToUnixPath" -ErrorAction SilentlyContinue
+  if ($converter) {
+    return (Convert-UEToolSuiteArtToUnixPath -Path $Path)
+  }
 
   if ([string]::IsNullOrWhiteSpace($Path)) {
     return $Path
@@ -75,6 +121,11 @@ function Get-RelativeDisplayPath {
     [Parameter(Mandatory)][string]$RootPath,
     [Parameter(Mandatory)][string]$FullPath
   )
+
+  $displayResolver = Get-Command -Name "Get-UEToolSuiteArtRelativeDisplayPath" -ErrorAction SilentlyContinue
+  if ($displayResolver) {
+    return (Get-UEToolSuiteArtRelativeDisplayPath -RootPath $RootPath -FullPath $FullPath)
+  }
 
   $root = [System.IO.Path]::GetFullPath($RootPath).TrimEnd('\')
   $path = [System.IO.Path]::GetFullPath($FullPath)
@@ -141,6 +192,13 @@ function Merge-TemplateIntoCanonical {
 function Ensure-CanonicalTemplate {
   param([Parameter(Mandatory)][string]$ArtSourceRoot)
 
+  if (Import-UEToolSuiteCoreModule) {
+    $canonicalTemplateResolver = Get-Command -Name "Ensure-UEToolSuiteArtCanonicalTemplate" -ErrorAction SilentlyContinue
+    if ($canonicalTemplateResolver) {
+      return (Ensure-UEToolSuiteArtCanonicalTemplate -ArtSourceRoot $ArtSourceRoot)
+    }
+  }
+
   $canonicalTemplatePath = Join-Path $ArtSourceRoot "_Template"
   $domainTemplatePaths = @(
     Get-ChildItem -LiteralPath $ArtSourceRoot -Directory -ErrorAction Stop |
@@ -179,6 +237,11 @@ function Assert-AvailableFolderName {
     [Parameter(Mandatory)][string]$ParentPath
   )
 
+  $nameValidator = Get-Command -Name "Assert-UEToolSuiteArtAvailableFolderName" -ErrorAction SilentlyContinue
+  if ($nameValidator) {
+    return (Assert-UEToolSuiteArtAvailableFolderName -Name $Name -ParentPath $ParentPath)
+  }
+
   $trimmed = $Name.Trim()
   if ([string]::IsNullOrWhiteSpace($trimmed)) {
     throw "Name cannot be empty."
@@ -211,6 +274,11 @@ function New-DirectoryChecked {
     [Parameter(Mandatory)][string]$ParentPath,
     [Parameter(Mandatory)][string]$Name
   )
+
+  $directoryCreator = Get-Command -Name "New-UEToolSuiteArtDirectoryChecked" -ErrorAction SilentlyContinue
+  if ($directoryCreator) {
+    return (New-UEToolSuiteArtDirectoryChecked -ParentPath $ParentPath -Name $Name)
+  }
 
   $safeName = Assert-AvailableFolderName -Name $Name -ParentPath $ParentPath
   $path = Join-Path $ParentPath $safeName
@@ -281,6 +349,11 @@ function Get-DomainDirectories {
 function Test-IsArtItemDirectory {
   param([Parameter(Mandatory)][string]$Path)
 
+  $artItemTester = Get-Command -Name "Test-UEToolSuiteArtItemDirectory" -ErrorAction SilentlyContinue
+  if ($artItemTester) {
+    return (Test-UEToolSuiteArtItemDirectory -Path $Path)
+  }
+
   if (-not (Test-Path -LiteralPath $Path)) {
     return $false
   }
@@ -307,6 +380,11 @@ function Test-IsArtItemDirectory {
 
 function Get-NavigableChildDirectories {
   param([Parameter(Mandatory)][string]$ParentPath)
+
+  $childResolver = Get-Command -Name "Get-UEToolSuiteArtNavigableChildDirectories" -ErrorAction SilentlyContinue
+  if ($childResolver) {
+    return @(Get-UEToolSuiteArtNavigableChildDirectories -ParentPath $ParentPath)
+  }
 
   return @(
     Get-ChildItem -LiteralPath $ParentPath -Directory -ErrorAction SilentlyContinue |
@@ -359,6 +437,11 @@ function New-ArtItemFromTemplate {
     [Parameter(Mandatory)][string]$TemplatePath,
     [Parameter(Mandatory)][string]$DestinationPath
   )
+
+  $templateInstantiator = Get-Command -Name "New-UEToolSuiteArtItemFromTemplate" -ErrorAction SilentlyContinue
+  if ($templateInstantiator) {
+    return (New-UEToolSuiteArtItemFromTemplate -TemplatePath $TemplatePath -DestinationPath $DestinationPath)
+  }
 
   if (Test-Path -LiteralPath $DestinationPath) {
     throw "Art item path already exists: $(Convert-ToUnixPath -Path $DestinationPath)"
