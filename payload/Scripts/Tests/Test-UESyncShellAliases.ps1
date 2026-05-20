@@ -246,6 +246,52 @@ try {
   Assert-Condition "case4 profile unchanged on second install" ($beforeSecondInstall -ceq $afterSecondInstall) "profile content is unchanged"
   Assert-Condition "case4 bootstrap unchanged on second install" ($beforeSecondBootstrapInstall -ceq $afterSecondBootstrapInstall) "bootstrap content is unchanged"
 
+  Step "Case 4b: Bootstrap aliases resolve to the active repo when multiple repos exist"
+  Reset-LoadedAliases
+  . $bootstrapPath
+
+  $multiRepoA = New-ScratchPath "multi-repo-a"
+  $multiRepoB = New-ScratchPath "multi-repo-b"
+  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoA "Scripts\\Unreal") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoB "Scripts\\Unreal") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoA "Scripts") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoB "Scripts") | Out-Null
+
+  Copy-Item -LiteralPath $helperPath -Destination (Join-Path $multiRepoA "Scripts\\Unreal\\ProjectShellAliases.ps1") -Force
+  Copy-Item -LiteralPath $helperPath -Destination (Join-Path $multiRepoB "Scripts\\Unreal\\ProjectShellAliases.ps1") -Force
+
+  Write-TextFileLf -Path (Join-Path $multiRepoA "Scripts\\ue-tools.ps1") -Content @'
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs)
+Write-Host "UE tools wrapper RepoA"
+'@
+  Write-TextFileLf -Path (Join-Path $multiRepoB "Scripts\\ue-tools.ps1") -Content @'
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs)
+Write-Host "UE tools wrapper RepoB"
+'@
+
+  & git -C $multiRepoA init | Out-Null
+  & git -C $multiRepoA config user.name "UE Tool Suite Test" | Out-Null
+  & git -C $multiRepoA config user.email "ue-tool-suite-test@example.invalid" | Out-Null
+  & git -C $multiRepoB init | Out-Null
+  & git -C $multiRepoB config user.name "UE Tool Suite Test" | Out-Null
+  & git -C $multiRepoB config user.email "ue-tool-suite-test@example.invalid" | Out-Null
+
+  $originalLocation = (Get-Location).Path
+  try {
+    Set-Location -LiteralPath $multiRepoA
+    $resolvedRepoA = Resolve-UEToolSuiteCurrentRepoRoot
+    Assert-Condition "case4b repoA root resolution" ([System.IO.Path]::GetFullPath($resolvedRepoA) -eq [System.IO.Path]::GetFullPath($multiRepoA)) "resolved repoA root"
+    Assert-Condition "case4b repoA helper path exists" (Test-Path -LiteralPath (Join-Path $resolvedRepoA "Scripts\\Unreal\\ProjectShellAliases.ps1") -PathType Leaf) "repoA helper found"
+
+    Set-Location -LiteralPath $multiRepoB
+    $resolvedRepoB = Resolve-UEToolSuiteCurrentRepoRoot
+    Assert-Condition "case4b repoB root resolution" ([System.IO.Path]::GetFullPath($resolvedRepoB) -eq [System.IO.Path]::GetFullPath($multiRepoB)) "resolved repoB root"
+    Assert-Condition "case4b repoB helper path exists" (Test-Path -LiteralPath (Join-Path $resolvedRepoB "Scripts\\Unreal\\ProjectShellAliases.ps1") -PathType Leaf) "repoB helper found"
+  }
+  finally {
+    Set-Location -LiteralPath $originalLocation
+  }
+
   Step "Case 5: Legacy marker migration preserves non-managed profile content"
   $profileLegacy = New-ScratchPath "profile-legacy.ps1"
   $legacyBlocks = New-Object System.Collections.Generic.List[string]

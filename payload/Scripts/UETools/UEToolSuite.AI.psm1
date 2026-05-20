@@ -26,9 +26,12 @@ function Test-UEToolSuiteAIExcludedMarkdownPath {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$RelativePath)
 
+  if ($RelativePath -match '^\.[^/]+-local/') {
+    return $true
+  }
+
   $excludedPrefixes = @(
     ".git/",
-    ".ai-local/",
     ".ue-tools-installer-backups/",
     "Binaries/",
     "DerivedDataCache/",

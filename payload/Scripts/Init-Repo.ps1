@@ -277,6 +277,15 @@ function Update-DocusaurusGitHubMetadata {
     [AllowNull()][string]$RepoSlug
   )
 
+  if (Import-UEToolSuiteCoreModule) {
+    $moduleFn = Get-Command -Name "Invoke-UEToolSuiteInitDocusaurusMetadataUpdate" -ErrorAction SilentlyContinue
+    if ($moduleFn) {
+      $result = Invoke-UEToolSuiteInitDocusaurusMetadataUpdate -ResolvedRepoRoot $ResolvedRepoRoot -RepoSlug $RepoSlug
+      Add-ToolReadiness -Tool "docs site metadata" -Status $result.Status -Detail $result.Detail
+      return
+    }
+  }
+
   $configPath = Join-Path $ResolvedRepoRoot "website\docusaurus.config.ts"
   if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
     Add-ToolReadiness -Tool "docs site metadata" -Status "SKIP" -Detail "website/docusaurus.config.ts is not installed."
@@ -447,6 +456,15 @@ function Initialize-DocsTooling {
 
 function Test-ArtSourceTemplateReady {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  if (Import-UEToolSuiteCoreModule) {
+    $moduleFn = Get-Command -Name "Get-UEToolSuiteInitArtTemplateReadiness" -ErrorAction SilentlyContinue
+    if ($moduleFn) {
+      $result = Get-UEToolSuiteInitArtTemplateReadiness -ResolvedRepoRoot $ResolvedRepoRoot
+      Add-ToolReadiness -Tool "art-tools" -Status $result.Status -Detail $result.Detail
+      return
+    }
+  }
 
   $artToolScript = Join-Path $ResolvedRepoRoot "Scripts\Unreal\New-ArtSourcePath.ps1"
   if (-not (Test-Path -LiteralPath $artToolScript)) {

@@ -396,6 +396,76 @@ function Merge-UEToolSuiteVSCodeWorkspaceJson {
   return $GeneratedWorkspace
 }
 
+function Test-UEToolSuiteUnrealGitTrackedPath {
+  [CmdletBinding()]
+  param([string]$RelativePath)
+
+  if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+    return $false
+  }
+
+  & git ls-files --error-unmatch -- $RelativePath 2>$null | Out-Null
+  return ($LASTEXITCODE -eq 0)
+}
+
+function Get-UEToolSuiteUnrealWorkspaceProtectionPaths {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$ProjectContext,
+    [string]$WorkspacePathOverride
+  )
+
+  $paths = New-Object System.Collections.Generic.List[string]
+  if (-not [string]::IsNullOrWhiteSpace($WorkspacePathOverride)) {
+    [void]$paths.Add((Resolve-UEToolSuiteUnrealPathRelativeTo -BaseDir $ProjectContext.RepoRoot -Path $WorkspacePathOverride))
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ProjectContext.WorkspacePath)) {
+    [void]$paths.Add($ProjectContext.WorkspacePath)
+  }
+
+  [void]$paths.Add((Join-Path $ProjectContext.RepoRoot "$($ProjectContext.ProjectName).code-workspace"))
+
+  return @(
+    $paths.ToArray() |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      ForEach-Object { [System.IO.Path]::GetFullPath($_) } |
+      Sort-Object -Unique
+  )
+}
+
+function New-UEToolSuiteUnrealProjectFileArtifactSnapshot {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$ProjectContext,
+    [string]$WorkspacePathOverride
+  )
+
+  $workspaceSnapshots = @()
+  foreach ($workspacePath in @(Get-UEToolSuiteUnrealWorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)) {
+    if (-not (Test-Path -LiteralPath $workspacePath -PathType Leaf)) {
+      continue
+    }
+
+    $workspaceSnapshots += [pscustomobject]@{
+      Path = $workspacePath
+      Content = Get-Content -LiteralPath $workspacePath -Raw
+    }
+  }
+
+  $ignorePath = Join-Path $ProjectContext.RepoRoot ".ignore"
+  $ignoreExists = Test-Path -LiteralPath $ignorePath -PathType Leaf
+  $ignoreTracked = Test-UEToolSuiteUnrealGitTrackedPath -RelativePath ".ignore"
+
+  return [pscustomobject]@{
+    WorkspaceSnapshots = @($workspaceSnapshots)
+    IgnorePath = $ignorePath
+    IgnoreExists = $ignoreExists
+    IgnoreTracked = $ignoreTracked
+    IgnoreContent = if ($ignoreExists) { Get-Content -LiteralPath $ignorePath -Raw } else { $null }
+  }
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteUnrealChangedFileRecords, `
   Test-UEToolSuiteUnrealCppPath, `
@@ -415,4 +485,7 @@ Export-ModuleMember -Function `
   Merge-UEToolSuiteMissingJsonObjectProperties, `
   Merge-UEToolSuiteStringArrayProperty, `
   Merge-UEToolSuiteNamedObjectArrayProperty, `
-  Merge-UEToolSuiteVSCodeWorkspaceJson
+  Merge-UEToolSuiteVSCodeWorkspaceJson, `
+  Test-UEToolSuiteUnrealGitTrackedPath, `
+  Get-UEToolSuiteUnrealWorkspaceProtectionPaths, `
+  New-UEToolSuiteUnrealProjectFileArtifactSnapshot

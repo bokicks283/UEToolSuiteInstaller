@@ -177,6 +177,61 @@ try {
     }
   }
 
+  Step "CLI surface stability"
+  $aliasHelperPath = Join-Path $repoRoot "payload\Scripts\Unreal\ProjectShellAliases.ps1"
+  if (-not (Test-Path -LiteralPath $aliasHelperPath -PathType Leaf)) {
+    Fail "cli-surface" "Alias helper missing: $aliasHelperPath"
+  }
+  else {
+    . $aliasHelperPath
+    $definitions = @(Get-ProjectAliasDefinitions)
+    $definitionIds = @($definitions | ForEach-Object { $_.Id })
+
+    $expected = @("ue-tools", "art-tools", "docs-tools", "ai-tools", "ai-prompt")
+    $missing = @($expected | Where-Object { $definitionIds -notcontains $_ })
+    if ($missing.Count -gt 0) {
+      Fail "cli-surface" ("Missing aliases: {0}" -f ($missing -join ", "))
+    }
+    else {
+      Pass "cli-surface" "Stable alias surface present."
+    }
+
+    $legacy = @($definitionIds | Where-Object { $_ -in @("codex-tools", "codex-prompt") })
+    if ($legacy.Count -gt 0) {
+      Fail "cli-surface" ("Legacy codex aliases still exported: {0}" -f ($legacy -join ", "))
+    }
+    else {
+      Pass "cli-surface legacy removed" "No codex alias surface exported."
+    }
+  }
+
+  Step "Legacy codex reference scan"
+  $scanRoots = @(
+    (Join-Path $repoRoot "payload"),
+    (Join-Path $repoRoot "README.md"),
+    (Join-Path $repoRoot "AGENTS.md")
+  ) | Where-Object { Test-Path -LiteralPath $_ }
+
+  $legacyMatches = @()
+  foreach ($root in $scanRoots) {
+    $matches = @(& rg -n --hidden --glob '!.git/**' --glob '!node_modules/**' --glob '!.ue-tools-installer-backups/**' "(codex-tools|codex-prompt|Get-Codex|\\.codex-local|Scripts/Codex|Docs/Codex)" $root 2>$null)
+    foreach ($line in $matches) {
+      if (-not [string]::IsNullOrWhiteSpace($line)) {
+        $legacyMatches += $line
+      }
+    }
+  }
+
+  if ($legacyMatches.Count -gt 0) {
+    foreach ($matchLine in $legacyMatches) {
+      Write-Log ("   $matchLine") Yellow
+    }
+    Fail "legacy-codex-scan" "Legacy codex references found."
+  }
+  else {
+    Pass "legacy-codex-scan" "No legacy codex references found in payload/docs roots."
+  }
+
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1} WARN={2} SKIP={3}" -f $script:PassCount, $script:FailCount, $script:WarnCount, $script:SkipCount) Cyan
   if ($script:FailCount -eq 0) {

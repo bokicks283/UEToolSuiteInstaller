@@ -180,10 +180,19 @@ function Invoke-DirectEntrypointSmoke {
 
   Invoke-CompatibilityCommand `
     -Name "direct ai prompt" `
-    -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\AI\Get-AIStartupPrompt.ps1"), "-RepoRoot", $TargetRoot, "-Task", "Validate compatibility") `
+    -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $TargetRoot "Scripts\AI\Get-AIStartupPrompt.ps1"), "-RepoRoot", $TargetRoot, "-Task", "Validate compatibility", "-IncludePrivate") `
     -ExpectedText "Validate compatibility" `
     -TargetRoot $TargetRoot `
-    -UnexpectedText @(".ue-tools-installer-backups/")
+    -UnexpectedText @(".ue-tools-installer-backups/", ".codex-local/Private-Context.md")
+}
+
+function Assert-InstalledPayloadContract {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  Assert-Condition -Name "payload contract AI prompt path present" -Condition (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\\AI\\Get-AIStartupPrompt.ps1") -PathType Leaf) -PassDetail "AI prompt path present" -FailDetail "Scripts\\AI\\Get-AIStartupPrompt.ps1 missing"
+  Assert-Condition -Name "payload contract codex script path absent" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\\Codex\\Get-CodexStartupPrompt.ps1"))) -PassDetail "legacy codex path absent" -FailDetail "legacy codex path still present"
+  Assert-Condition -Name "payload contract installer script not copied to target root" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Install-UEToolSuite.ps1"))) -PassDetail "installer script absent in target root" -FailDetail "installer script should remain installer-only"
+  Assert-Condition -Name "payload contract installer tests folder not copied to target root" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Tests"))) -PassDetail "installer Tests folder absent in target root" -FailDetail "installer Tests folder should not be copied to payload target"
 }
 
 try {
@@ -194,9 +203,11 @@ try {
   $targetRepo = New-TestUEProjectRepo -Root $scratchRoot -Name "PortableSample" -WithGit -WithDocsSite -WithArtSource -WithSourceModule
   Write-TestUtf8NoBomFile -Path (Join-Path $targetRepo "AGENTS.md") -Content "Read AGENTS.md first.`n"
   Write-TestUtf8NoBomFile -Path (Join-Path $targetRepo ".ai-local\Private-Context.md") -Content "Local test-only private context.`n"
+  Write-TestUtf8NoBomFile -Path (Join-Path $targetRepo ".codex-local\Private-Context.md") -Content "Legacy codex private context should be ignored.`n"
 
   $installResult = Invoke-InstallerForUpgradeTest -TargetRoot $targetRepo -RunInit
   Assert-Condition -Name "initial install exits cleanly" -Condition ($installResult.Code -eq 0) -PassDetail "exit=0" -FailDetail "exit=$($installResult.Code)"
+  Assert-InstalledPayloadContract -TargetRoot $targetRepo
 
   $profilePath = Join-Path $scratchRoot "profile.ps1"
   Install-TestProfileAliases -TargetRoot $targetRepo -ProfilePath $profilePath
@@ -208,6 +219,7 @@ try {
   Step "Compatibility after update without reinstalling profile aliases"
   $updateResult = Invoke-InstallerForUpgradeTest -TargetRoot $targetRepo
   Assert-Condition -Name "update install exits cleanly" -Condition ($updateResult.Code -eq 0) -PassDetail "exit=0" -FailDetail "exit=$($updateResult.Code)"
+  Assert-InstalledPayloadContract -TargetRoot $targetRepo
   Invoke-DirectEntrypointSmoke -TargetRoot $targetRepo
   Invoke-ProfileAliasSmoke -TargetRoot $targetRepo -ProfilePath $profilePath
 

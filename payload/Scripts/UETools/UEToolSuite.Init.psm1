@@ -188,6 +188,72 @@ function Show-UEToolSuiteInitToolReadinessSummary {
   }
 }
 
+function Invoke-UEToolSuiteInitDocusaurusMetadataUpdate {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [AllowNull()][string]$RepoSlug
+  )
+
+  $configPath = Join-Path $ResolvedRepoRoot "website\docusaurus.config.ts"
+  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    return [pscustomobject]@{ Status = "SKIP"; Detail = "website/docusaurus.config.ts is not installed." }
+  }
+
+  if ([string]::IsNullOrWhiteSpace($RepoSlug) -or $RepoSlug -notmatch '^(?<owner>[^/]+)/(?<name>[^/]+)$') {
+    return [pscustomobject]@{ Status = "SKIP"; Detail = "origin does not point to a GitHub owner/repo slug." }
+  }
+
+  $owner = $Matches.owner
+  $repoName = $Matches.name
+  $configText = Get-Content -LiteralPath $configPath -Raw
+  $updatedText = Set-UEToolSuiteInitTypeScriptStringProperty -Text $configText -PropertyName "organizationName" -Value $owner
+  $updatedText = Set-UEToolSuiteInitTypeScriptStringProperty -Text $updatedText -PropertyName "projectName" -Value $repoName
+
+  if ($updatedText -eq $configText) {
+    return [pscustomobject]@{ Status = "WARN"; Detail = "Could not find organizationName/projectName in website/docusaurus.config.ts." }
+  }
+
+  if (Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue) {
+    Write-UEToolSuiteUtf8NoBomFile -Path $configPath -Content $updatedText
+  }
+  else {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($configPath, $updatedText, $utf8NoBom)
+  }
+
+  return [pscustomobject]@{ Status = "OK"; Detail = "Set Docusaurus GitHub owner/repo metadata to $owner/$repoName." }
+}
+
+function Get-UEToolSuiteInitArtTemplateReadiness {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $artToolScript = Join-Path $ResolvedRepoRoot "Scripts\Unreal\New-ArtSourcePath.ps1"
+  if (-not (Test-Path -LiteralPath $artToolScript)) {
+    return [pscustomobject]@{ Status = "SKIP"; Detail = "ArtSource helper is not installed in this repo." }
+  }
+
+  $artSourceRoot = Join-Path $ResolvedRepoRoot "ArtSource"
+  if (-not (Test-Path -LiteralPath $artSourceRoot -PathType Container)) {
+    return [pscustomobject]@{ Status = "SKIP"; Detail = "No ArtSource folder found; art tooling is not applicable yet." }
+  }
+
+  $missing = @()
+  foreach ($relativePath in @("_Template", "_Template\\Source", "_Template\\Textures", "_Template\\Exports")) {
+    $candidate = Join-Path $artSourceRoot $relativePath
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+      $missing += (Join-Path "ArtSource" $relativePath)
+    }
+  }
+
+  if ($missing.Count -gt 0) {
+    return [pscustomobject]@{ Status = "WARN"; Detail = "Missing template folder(s): $($missing -join ', '). Run art-tools once after restoring the template." }
+  }
+
+  return [pscustomobject]@{ Status = "OK"; Detail = "ArtSource/_Template contains Source, Textures, and Exports." }
+}
+
 Export-ModuleMember -Function `
   Add-UEToolSuiteInitToolReadinessEntry, `
   Test-UEToolSuiteInitCommandAvailable, `
@@ -198,4 +264,6 @@ Export-ModuleMember -Function `
   ConvertTo-UEToolSuiteInitTypeScriptSingleQuotedString, `
   Set-UEToolSuiteInitTypeScriptStringProperty, `
   Resolve-UEToolSuiteInitRepoRoot, `
-  Show-UEToolSuiteInitToolReadinessSummary
+  Show-UEToolSuiteInitToolReadinessSummary, `
+  Invoke-UEToolSuiteInitDocusaurusMetadataUpdate, `
+  Get-UEToolSuiteInitArtTemplateReadiness

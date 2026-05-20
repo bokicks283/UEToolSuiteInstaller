@@ -986,6 +986,12 @@ function Build-Editor([string]$engineRoot, [string]$uprojectPath, [string]$proje
 }
 
 function Test-GitTrackedPath([string]$RelativePath) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealGitTrackedPath" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealGitTrackedPath -RelativePath $RelativePath)
+  }
+
   if ([string]::IsNullOrWhiteSpace($RelativePath)) { return $false }
   & git ls-files --error-unmatch -- $RelativePath 2>$null | Out-Null
   return ($LASTEXITCODE -eq 0)
@@ -996,6 +1002,12 @@ function Get-WorkspaceProtectionPaths {
     [Parameter(Mandatory)]$ProjectContext,
     [string]$WorkspacePathOverride
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealWorkspaceProtectionPaths" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return @(Get-UEToolSuiteUnrealWorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)
+  }
 
   $paths = New-Object System.Collections.Generic.List[string]
 
@@ -1022,6 +1034,12 @@ function New-ProjectFileArtifactSnapshot {
     [Parameter(Mandatory)]$ProjectContext,
     [string]$WorkspacePathOverride
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "New-UEToolSuiteUnrealProjectFileArtifactSnapshot" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (New-UEToolSuiteUnrealProjectFileArtifactSnapshot -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)
+  }
 
   $workspaceSnapshots = @()
   foreach ($workspacePath in @(Get-WorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)) {
