@@ -685,6 +685,55 @@ function Get-OperationContextId {
   $stamp = Get-OperationStamp
   if (-not $stamp) { $stamp = "nostamp" }
 
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitOperationContextId" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $other = $null
+    $base = $null
+    $onto = $null
+    $current = $null
+
+    if ($ctx -eq "merge") {
+      $other = Get-MergeHeadSha
+      if ($other) {
+        $base = (git merge-base HEAD $other 2>$null)
+        if ($base) { $base = $base.Trim() }
+      }
+    }
+    elseif ($ctx -eq "rebase") {
+      $onto = Get-RebaseOntoSha
+      $current = Get-RebaseHeadSha
+
+      if (-not $current) {
+        $origPath = Get-GitPath -Path "rebase-merge/orig-head"
+        if (-not $origPath) {
+          $origPath = Get-GitPath -Path "rebase-apply/orig-head"
+        }
+        if ($origPath -and (Test-Path $origPath)) {
+          $current = (Get-Content $origPath -Raw -ErrorAction SilentlyContinue)
+          if ($current) { $current = $current.Trim() }
+        }
+      }
+    }
+    else {
+      $other = Get-OtherSideSha
+      if ($other) {
+        $base = (git merge-base HEAD $other 2>$null)
+        if ($base) { $base = $base.Trim() }
+      }
+    }
+
+    $id = Get-UEToolSuiteGitOperationContextId `
+      -Context $ctx `
+      -Stamp $stamp `
+      -OtherSideSha $other `
+      -MergeBaseSha $base `
+      -RebaseOntoSha $onto `
+      -RebaseHeadSha $current
+
+    $script:RunMemo["ctxId"] = $id
+    return $id
+  }
+
   if ($ctx -eq "merge") {
     # Merge: use MERGE_HEAD as the "other" side
     $other = Get-MergeHeadSha

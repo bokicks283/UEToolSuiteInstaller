@@ -258,6 +258,55 @@ function Get-UEToolSuiteGitOperationStamp {
   return $null
 }
 
+function Get-UEToolSuiteGitOperationContextId {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Context,
+    [string]$Stamp,
+    [string]$OtherSideSha,
+    [string]$MergeBaseSha,
+    [string]$RebaseOntoSha,
+    [string]$RebaseHeadSha
+  )
+
+  if ($Context -eq "none") {
+    return $null
+  }
+
+  $contextStamp = $Stamp
+  if (-not $contextStamp) {
+    $contextStamp = "nostamp"
+  }
+
+  if ($Context -eq "merge") {
+    if (-not $OtherSideSha) {
+      return "${Context}:unknown:unknown:${contextStamp}"
+    }
+
+    if (-not $MergeBaseSha) {
+      return "${Context}:${OtherSideSha}:nobase:${contextStamp}"
+    }
+
+    return "${Context}:${OtherSideSha}:${MergeBaseSha}:${contextStamp}"
+  }
+
+  if ($Context -eq "rebase") {
+    $onto = $(if ($RebaseOntoSha) { $RebaseOntoSha } else { "unknown" })
+    $head = $(if ($RebaseHeadSha) { $RebaseHeadSha } else { "unknown" })
+    return "${Context}:${onto}:${head}:${contextStamp}"
+  }
+
+  if (-not $OtherSideSha) {
+    return "${Context}:unknown:unknown:${contextStamp}"
+  }
+
+  if (-not $MergeBaseSha) {
+    return "${Context}:${OtherSideSha}:nobase:${contextStamp}"
+  }
+
+  return "${Context}:${OtherSideSha}:${MergeBaseSha}:${contextStamp}"
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteGitConflictsHelpLines, `
   Write-UEToolSuiteGitConflictsHelp, `
@@ -271,4 +320,5 @@ Export-ModuleMember -Function `
   Test-UEToolSuiteGitRebaseStateDirsPresent, `
   Get-UEToolSuiteGitLedgerPaths, `
   Get-UEToolSuiteGitMTimeEpoch, `
-  Get-UEToolSuiteGitOperationStamp
+  Get-UEToolSuiteGitOperationStamp, `
+  Get-UEToolSuiteGitOperationContextId
