@@ -163,9 +163,256 @@ function Write-UEToolSuiteUnrealSyncActionPlan {
   }
 }
 
+function Test-UEToolSuiteUnrealEnvTrue {
+  [CmdletBinding()]
+  param([string]$Value)
+
+  if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+  switch ($Value.Trim().ToLowerInvariant()) {
+    "1" { return $true }
+    "true" { return $true }
+    "yes" { return $true }
+    default { return $false }
+  }
+}
+
+function Test-UEToolSuiteUnrealCanPrompt {
+  [CmdletBinding()]
+  param()
+
+  try {
+    if (-not [Environment]::UserInteractive) { return $false }
+    if (-not $Host.UI -or -not $Host.UI.RawUI) { return $false }
+    if ([Console]::IsInputRedirected) { return $false }
+    if ([Console]::IsOutputRedirected) { return $false }
+    return $true
+  }
+  catch { return $false }
+}
+
+function Add-UEToolSuiteUnrealDiagnosticAttempt {
+  [CmdletBinding()]
+  param(
+    [System.Collections.Generic.List[string]]$Attempts,
+    [string]$Message
+  )
+
+  if ($null -ne $Attempts) {
+    [void]$Attempts.Add($Message)
+  }
+}
+
+function Test-UEToolSuiteUnrealEngineRoot {
+  [CmdletBinding()]
+  param([string]$Root)
+
+  if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
+  if (-not (Test-Path -LiteralPath $Root)) { return $false }
+  return (Test-Path -LiteralPath (Join-Path $Root "Engine\Build\BatchFiles\Build.bat"))
+}
+
+function Resolve-UEToolSuiteUnrealPathRelativeTo {
+  [CmdletBinding()]
+  param(
+    [string]$BaseDir,
+    [string]$Path
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+  if ([IO.Path]::IsPathRooted($Path)) { return $Path }
+  return (Join-Path $BaseDir $Path)
+}
+
+function Get-UEToolSuiteUnrealRegistryPropertyString {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$KeyPath,
+    [Parameter(Mandatory)][string]$PropertyName
+  )
+
+  if (-not (Test-Path -LiteralPath $KeyPath)) { return $null }
+  $props = Get-ItemProperty -LiteralPath $KeyPath -ErrorAction SilentlyContinue
+  if (-not $props) { return $null }
+
+  $property = $props.PSObject.Properties[$PropertyName]
+  if ($property) { return [string]$property.Value }
+  return $null
+}
+
+function Test-UEToolSuiteJsonObjectProperty {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Object,
+    [Parameter(Mandatory)][string]$Name
+  )
+
+  return ($null -ne $Object.PSObject.Properties[$Name])
+}
+
+function Get-UEToolSuiteJsonObjectPropertyValue {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Object,
+    [Parameter(Mandatory)][string]$Name
+  )
+
+  $property = $Object.PSObject.Properties[$Name]
+  if ($property) { return $property.Value }
+  return $null
+}
+
+function Set-UEToolSuiteJsonObjectPropertyValue {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Object,
+    [Parameter(Mandatory)][string]$Name,
+    [AllowNull()]$Value
+  )
+
+  if (Test-UEToolSuiteJsonObjectProperty -Object $Object -Name $Name) {
+    $Object.$Name = $Value
+    return
+  }
+
+  $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+}
+
+function Test-UEToolSuiteJsonObject {
+  [CmdletBinding()]
+  param([AllowNull()]$Value)
+
+  return ($null -ne $Value -and $Value -is [pscustomobject])
+}
+
+function Merge-UEToolSuiteMissingJsonObjectProperties {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)]$Source
+  )
+
+  foreach ($sourceProperty in @($Source.PSObject.Properties)) {
+    $targetValue = Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name
+    if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $sourceProperty.Name)) {
+      Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name -Value $sourceProperty.Value
+      continue
+    }
+
+    if ((Test-UEToolSuiteJsonObject -Value $targetValue) -and (Test-UEToolSuiteJsonObject -Value $sourceProperty.Value)) {
+      Merge-UEToolSuiteMissingJsonObjectProperties -Target $targetValue -Source $sourceProperty.Value
+    }
+  }
+}
+
+function Merge-UEToolSuiteStringArrayProperty {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)]$Source,
+    [Parameter(Mandatory)][string]$PropertyName
+  )
+
+  if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Source -Name $PropertyName)) { return }
+
+  $existing = @()
+  if (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $PropertyName) {
+    $existing = @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $PropertyName)
+  }
+
+  $merged = @($existing + @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Source -Name $PropertyName)) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+    Select-Object -Unique
+
+  Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $PropertyName -Value @($merged)
+}
+
+function Merge-UEToolSuiteNamedObjectArrayProperty {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)]$Source,
+    [Parameter(Mandatory)][string]$ArrayPropertyName,
+    [Parameter(Mandatory)][string]$KeyPropertyName
+  )
+
+  if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Source -Name $ArrayPropertyName)) { return }
+
+  $targetItems = @()
+  if (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $ArrayPropertyName) {
+    $targetItems = @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName)
+  }
+
+  $targetKeys = @{}
+  foreach ($item in $targetItems) {
+    $key = [string](Get-UEToolSuiteJsonObjectPropertyValue -Object $item -Name $KeyPropertyName)
+    if (-not [string]::IsNullOrWhiteSpace($key)) {
+      $targetKeys[$key] = $true
+    }
+  }
+
+  $mergedItems = @($targetItems)
+  foreach ($sourceItem in @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Source -Name $ArrayPropertyName)) {
+    $sourceKey = [string](Get-UEToolSuiteJsonObjectPropertyValue -Object $sourceItem -Name $KeyPropertyName)
+    if ([string]::IsNullOrWhiteSpace($sourceKey) -or $targetKeys.ContainsKey($sourceKey)) {
+      continue
+    }
+
+    $mergedItems += $sourceItem
+    $targetKeys[$sourceKey] = $true
+  }
+
+  Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName -Value @($mergedItems)
+}
+
+function Merge-UEToolSuiteVSCodeWorkspaceJson {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$GeneratedWorkspace,
+    [Parameter(Mandatory)]$PreviousWorkspace
+  )
+
+  Merge-UEToolSuiteMissingJsonObjectProperties -Target $GeneratedWorkspace -Source $PreviousWorkspace
+  Merge-UEToolSuiteNamedObjectArrayProperty -Target $GeneratedWorkspace -Source $PreviousWorkspace -ArrayPropertyName "folders" -KeyPropertyName "path"
+
+  $generatedExtensions = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "extensions"
+  $previousExtensions = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "extensions"
+  if ((Test-UEToolSuiteJsonObject -Value $generatedExtensions) -and (Test-UEToolSuiteJsonObject -Value $previousExtensions)) {
+    Merge-UEToolSuiteStringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "recommendations"
+    Merge-UEToolSuiteStringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "unwantedRecommendations"
+  }
+
+  $generatedTasks = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "tasks"
+  $previousTasks = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "tasks"
+  if ((Test-UEToolSuiteJsonObject -Value $generatedTasks) -and (Test-UEToolSuiteJsonObject -Value $previousTasks)) {
+    Merge-UEToolSuiteNamedObjectArrayProperty -Target $generatedTasks -Source $previousTasks -ArrayPropertyName "tasks" -KeyPropertyName "label"
+  }
+
+  $generatedLaunch = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "launch"
+  $previousLaunch = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "launch"
+  if ((Test-UEToolSuiteJsonObject -Value $generatedLaunch) -and (Test-UEToolSuiteJsonObject -Value $previousLaunch)) {
+    Merge-UEToolSuiteNamedObjectArrayProperty -Target $generatedLaunch -Source $previousLaunch -ArrayPropertyName "configurations" -KeyPropertyName "name"
+  }
+
+  return $GeneratedWorkspace
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteUnrealChangedFileRecords, `
   Test-UEToolSuiteUnrealCppPath, `
   Test-UEToolSuiteUnrealProjectStructurePath, `
   Get-UEToolSuiteUnrealSyncActionPlan, `
-  Write-UEToolSuiteUnrealSyncActionPlan
+  Write-UEToolSuiteUnrealSyncActionPlan, `
+  Test-UEToolSuiteUnrealEnvTrue, `
+  Test-UEToolSuiteUnrealCanPrompt, `
+  Add-UEToolSuiteUnrealDiagnosticAttempt, `
+  Test-UEToolSuiteUnrealEngineRoot, `
+  Resolve-UEToolSuiteUnrealPathRelativeTo, `
+  Get-UEToolSuiteUnrealRegistryPropertyString, `
+  Test-UEToolSuiteJsonObjectProperty, `
+  Get-UEToolSuiteJsonObjectPropertyValue, `
+  Set-UEToolSuiteJsonObjectPropertyValue, `
+  Test-UEToolSuiteJsonObject, `
+  Merge-UEToolSuiteMissingJsonObjectProperties, `
+  Merge-UEToolSuiteStringArrayProperty, `
+  Merge-UEToolSuiteNamedObjectArrayProperty, `
+  Merge-UEToolSuiteVSCodeWorkspaceJson

@@ -105,6 +105,12 @@ function Test-IsInteractiveConsole {
 }
 
 function Test-CanPrompt {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealCanPrompt" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealCanPrompt)
+  }
+
   try {
     if (-not [Environment]::UserInteractive) { return $false }
     if (-not $Host.UI -or -not $Host.UI.RawUI) { return $false }
@@ -117,6 +123,13 @@ function Test-CanPrompt {
 
 function Test-EnvTrue {
   param([string]$Value)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealEnvTrue" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealEnvTrue -Value $Value)
+  }
+
   if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
   switch ($Value.Trim().ToLowerInvariant()) {
     "1" { return $true }
@@ -240,18 +253,37 @@ function Get-ProjectName([string]$uprojectPath) {
 }
 
 function Add-DiagnosticAttempt([System.Collections.Generic.List[string]]$Attempts, [string]$Message) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Add-UEToolSuiteUnrealDiagnosticAttempt" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Add-UEToolSuiteUnrealDiagnosticAttempt -Attempts $Attempts -Message $Message
+    return
+  }
+
   if ($null -ne $Attempts) {
     [void]$Attempts.Add($Message)
   }
 }
 
 function Test-EngineRoot([string]$root) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealEngineRoot" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealEngineRoot -Root $root)
+  }
+
   if (-not $root) { return $false }
   if (-not (Test-Path $root)) { return $false }
   Test-Path (Join-Path $root "Engine\Build\BatchFiles\Build.bat")
 }
 
 function Resolve-PathRelativeTo([string]$baseDir, [string]$path) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Resolve-UEToolSuiteUnrealPathRelativeTo" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Resolve-UEToolSuiteUnrealPathRelativeTo -BaseDir $baseDir -Path $path)
+  }
+
   if (-not $path) { return $null }
   if ([IO.Path]::IsPathRooted($path)) { return $path }
   Join-Path $baseDir $path
@@ -379,8 +411,14 @@ function Get-UProjectEngineAssociation(
 }
 
 function Get-RegistryPropertyString([string]$keyPath, [string]$propertyName) {
-  if (-not (Test-Path $keyPath)) { return $null }
-  $props = Get-ItemProperty -Path $keyPath -ErrorAction SilentlyContinue
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealRegistryPropertyString" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteUnrealRegistryPropertyString -KeyPath $keyPath -PropertyName $propertyName)
+  }
+
+  if (-not (Test-Path -LiteralPath $keyPath)) { return $null }
+  $props = Get-ItemProperty -LiteralPath $keyPath -ErrorAction SilentlyContinue
   if (-not $props) { return $null }
   $property = $props.PSObject.Properties[$propertyName]
   if ($property) { return [string]$property.Value }
@@ -1014,6 +1052,12 @@ function Test-JsonObjectProperty {
     [Parameter(Mandatory)][string]$Name
   )
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteJsonObjectProperty" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteJsonObjectProperty -Object $Object -Name $Name)
+  }
+
   return ($null -ne $Object.PSObject.Properties[$Name])
 }
 
@@ -1022,6 +1066,12 @@ function Get-JsonObjectPropertyValue {
     [Parameter(Mandatory)]$Object,
     [Parameter(Mandatory)][string]$Name
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteJsonObjectPropertyValue" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteJsonObjectPropertyValue -Object $Object -Name $Name)
+  }
 
   $property = $Object.PSObject.Properties[$Name]
   if ($property) { return $property.Value }
@@ -1035,6 +1085,13 @@ function Set-JsonObjectPropertyValue {
     [AllowNull()]$Value
   )
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Set-UEToolSuiteJsonObjectPropertyValue" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Set-UEToolSuiteJsonObjectPropertyValue -Object $Object -Name $Name -Value $Value
+    return
+  }
+
   if (Test-JsonObjectProperty -Object $Object -Name $Name) {
     $Object.$Name = $Value
     return
@@ -1045,6 +1102,11 @@ function Set-JsonObjectPropertyValue {
 
 function Test-IsJsonObject {
   param([AllowNull()]$Value)
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteJsonObject" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteJsonObject -Value $Value)
+  }
   return ($null -ne $Value -and $Value -is [pscustomobject])
 }
 
@@ -1053,6 +1115,13 @@ function Merge-MissingJsonObjectProperties {
     [Parameter(Mandatory)]$Target,
     [Parameter(Mandatory)]$Source
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteMissingJsonObjectProperties" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Merge-UEToolSuiteMissingJsonObjectProperties -Target $Target -Source $Source
+    return
+  }
 
   foreach ($sourceProperty in @($Source.PSObject.Properties)) {
     $targetValue = Get-JsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name
@@ -1073,6 +1142,13 @@ function Merge-StringArrayProperty {
     [Parameter(Mandatory)]$Source,
     [Parameter(Mandatory)][string]$PropertyName
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteStringArrayProperty" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Merge-UEToolSuiteStringArrayProperty -Target $Target -Source $Source -PropertyName $PropertyName
+    return
+  }
 
   if (-not (Test-JsonObjectProperty -Object $Source -Name $PropertyName)) { return }
 
@@ -1095,6 +1171,13 @@ function Merge-NamedObjectArrayProperty {
     [Parameter(Mandatory)][string]$ArrayPropertyName,
     [Parameter(Mandatory)][string]$KeyPropertyName
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteNamedObjectArrayProperty" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Merge-UEToolSuiteNamedObjectArrayProperty -Target $Target -Source $Source -ArrayPropertyName $ArrayPropertyName -KeyPropertyName $KeyPropertyName
+    return
+  }
 
   if (-not (Test-JsonObjectProperty -Object $Source -Name $ArrayPropertyName)) { return }
 
@@ -1130,6 +1213,12 @@ function Merge-VSCodeWorkspaceJson {
     [Parameter(Mandatory)]$GeneratedWorkspace,
     [Parameter(Mandatory)]$PreviousWorkspace
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteVSCodeWorkspaceJson" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Merge-UEToolSuiteVSCodeWorkspaceJson -GeneratedWorkspace $GeneratedWorkspace -PreviousWorkspace $PreviousWorkspace)
+  }
 
   Merge-MissingJsonObjectProperties -Target $GeneratedWorkspace -Source $PreviousWorkspace
 
