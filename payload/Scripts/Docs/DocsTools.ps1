@@ -153,6 +153,12 @@ function ConvertTo-CmdArgument {
 function Get-NormalizedArgumentList {
   param([AllowNull()][string[]]$Values)
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsNormalizedArgumentList" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return @(Get-UEToolSuiteDocsNormalizedArgumentList -Values $Values)
+  }
+
   $normalized = New-Object System.Collections.Generic.List[string]
   foreach ($value in @($Values)) {
     if ($null -eq $value) {
@@ -168,6 +174,40 @@ function Get-NormalizedArgumentList {
   }
 
   return $normalized.ToArray()
+}
+
+function Resolve-DocsToolsCommandAlias {
+  param([Parameter(Mandatory)][string]$CommandName)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Resolve-UEToolSuiteDocsCommandAlias" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Resolve-UEToolSuiteDocsCommandAlias -CommandName $CommandName)
+  }
+
+  $normalized = $CommandName.Trim().ToLowerInvariant()
+  switch ($normalized) {
+    "create-page" { return "new-page" }
+    "create-section" { return "new-section" }
+    default { return $normalized }
+  }
+}
+
+function Test-DocsToolsHelpToken {
+  param([string]$Token)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteDocsHelpToken" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteDocsHelpToken -Token $Token)
+  }
+
+  if ([string]::IsNullOrWhiteSpace($Token)) {
+    return $false
+  }
+
+  $normalized = $Token.Trim().ToLowerInvariant()
+  return ($normalized -in @("help", "--help", "-help", "-h", "/?", "-?"))
 }
 
 function Test-ProcessRunning {
@@ -2107,6 +2147,12 @@ function Get-DocsStartUrl {
 function Split-DocsStartArguments {
   param([string[]]$StartArgsInput = @())
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Split-UEToolSuiteDocsStartArguments" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Split-UEToolSuiteDocsStartArguments -StartArgsInput $StartArgsInput)
+  }
+
   $background = $false
   $passThroughArgs = New-Object System.Collections.Generic.List[string]
   foreach ($token in @(Get-NormalizedArgumentList -Values $StartArgsInput)) {
@@ -2419,13 +2465,12 @@ function Invoke-DocsToolsMain {
   )
 
   $allArgs = @(Get-NormalizedArgumentList -Values $CommandArguments)
-  $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   if ($allArgs.Count -eq 0) {
     Write-Output (Get-DocsToolsRootHelp)
     return
   }
 
-  if ($helpTokens -contains ([string]$allArgs[0]).ToLowerInvariant()) {
+  if (Test-DocsToolsHelpToken -Token ([string]$allArgs[0])) {
     if ($allArgs.Count -gt 1) {
       Write-Output (Get-DocsToolsCommandHelp -CommandName $allArgs[1])
     }
@@ -2435,14 +2480,10 @@ function Invoke-DocsToolsMain {
     return
   }
 
-  $command = ([string]$allArgs[0]).ToLowerInvariant()
-  switch ($command) {
-    "create-page" { $command = "new-page"; break }
-    "create-section" { $command = "new-section"; break }
-  }
+  $command = Resolve-DocsToolsCommandAlias -CommandName ([string]$allArgs[0])
 
   $remaining = if ($allArgs.Count -gt 1) { @($allArgs[1..($allArgs.Count - 1)]) } else { @() }
-  if ($remaining.Count -gt 0 -and ($helpTokens -contains ([string]$remaining[0]).ToLowerInvariant())) {
+  if ($remaining.Count -gt 0 -and (Test-DocsToolsHelpToken -Token ([string]$remaining[0]))) {
     Write-Output (Get-DocsToolsCommandHelp -CommandName $command)
     return
   }
