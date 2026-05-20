@@ -807,23 +807,45 @@ function Ensure-ContextBoundLedgers {
   $p = Get-LedgerPaths
   $ctx = Get-GitContext
   $id = Get-OperationContextId
+  $prev = Read-GitFile $p.Context
+
+  $transitionResolver = Get-Command -Name "Get-UEToolSuiteGitContextLedgerTransition" -ErrorAction SilentlyContinue
+  if ($transitionResolver) {
+    $transition = Get-UEToolSuiteGitContextLedgerTransition -Context $ctx -CurrentContextId $id -PreviousContextId $prev
+
+    if ($transition.Action -eq "clear") {
+      if (Test-Path -LiteralPath $p.Context) { Remove-Item -Force -LiteralPath $p.Context -ErrorAction SilentlyContinue }
+      if (Test-Path -LiteralPath $p.Resolved) { Remove-Item -Force -LiteralPath $p.Resolved -ErrorAction SilentlyContinue }
+      Clear-GuardMemo -Keys @("approved", "required", "remaining", "unmerged", "conflicted", "overlap", "guardedOverlap", "ctxId", "rebaseHead", "rebaseOnto")
+      return
+    }
+
+    if ($transition.Action -eq "noop") {
+      return
+    }
+
+    Set-Content -LiteralPath $p.Context -Value $transition.ContextId -Encoding UTF8
+    if (Test-Path -LiteralPath $p.Resolved) { Remove-Item -Force -LiteralPath $p.Resolved -ErrorAction SilentlyContinue }
+    Clear-GuardMemo -Keys @("approved", "required", "remaining", "unmerged", "conflicted", "overlap", "guardedOverlap", "ctxId", "rebaseHead", "rebaseOnto")
+
+    if ($transition.AuditMessage) {
+      Write-Audit -Action "CTXRESET" -Message $transition.AuditMessage
+    }
+    return
+  }
 
   if ($ctx -eq "none" -or -not $id) {
-    # No active operation: clear ledgers
     if (Test-Path -LiteralPath $p.Context) { Remove-Item -Force -LiteralPath $p.Context -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $p.Resolved) { Remove-Item -Force -LiteralPath $p.Resolved -ErrorAction SilentlyContinue }
     Clear-GuardMemo -Keys @("approved", "required", "remaining", "unmerged", "conflicted", "overlap", "guardedOverlap", "ctxId", "rebaseHead", "rebaseOnto")
     return
   }
 
-  $prev = Read-GitFile $p.Context
   if ($prev -and $prev -eq $id) { return }
 
-  # New operation detected → wipe approvals
   Set-Content -LiteralPath $p.Context -Value $id -Encoding UTF8
   if (Test-Path -LiteralPath $p.Resolved) { Remove-Item -Force -LiteralPath $p.Resolved -ErrorAction SilentlyContinue }
   Clear-GuardMemo -Keys @("approved", "required", "remaining", "unmerged", "conflicted", "overlap", "guardedOverlap", "ctxId", "rebaseHead", "rebaseOnto")
-
   Write-Audit -Action "CTXRESET" -Message "context changed -> reset resolved to prevent stale approvals ($id)"
 }
 

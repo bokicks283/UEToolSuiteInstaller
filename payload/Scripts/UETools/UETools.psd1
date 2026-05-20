@@ -107,6 +107,7 @@
     "Get-UEToolSuiteGitMTimeEpoch",
     "Get-UEToolSuiteGitOperationStamp",
     "Get-UEToolSuiteGitOperationContextId",
+    "Get-UEToolSuiteGitContextLedgerTransition",
     "Write-UEToolSuiteUtf8NoBomFile",
     "Resolve-UEToolSuiteRepoRoot",
     "Resolve-UEToolSuiteRepoPath",

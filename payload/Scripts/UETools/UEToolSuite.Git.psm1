@@ -307,6 +307,40 @@ function Get-UEToolSuiteGitOperationContextId {
   return "${Context}:${OtherSideSha}:${MergeBaseSha}:${contextStamp}"
 }
 
+function Get-UEToolSuiteGitContextLedgerTransition {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Context,
+    [string]$CurrentContextId,
+    [string]$PreviousContextId
+  )
+
+  if ($Context -eq "none" -or -not $CurrentContextId) {
+    return [pscustomobject]@{
+      Action = "clear"
+      ContextId = $CurrentContextId
+      PreviousContextId = $PreviousContextId
+      AuditMessage = $null
+    }
+  }
+
+  if ($PreviousContextId -and $PreviousContextId -eq $CurrentContextId) {
+    return [pscustomobject]@{
+      Action = "noop"
+      ContextId = $CurrentContextId
+      PreviousContextId = $PreviousContextId
+      AuditMessage = $null
+    }
+  }
+
+  return [pscustomobject]@{
+    Action = "reset"
+    ContextId = $CurrentContextId
+    PreviousContextId = $PreviousContextId
+    AuditMessage = "context changed -> reset resolved to prevent stale approvals ($CurrentContextId)"
+  }
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteGitConflictsHelpLines, `
   Write-UEToolSuiteGitConflictsHelp, `
@@ -321,4 +355,5 @@ Export-ModuleMember -Function `
   Get-UEToolSuiteGitLedgerPaths, `
   Get-UEToolSuiteGitMTimeEpoch, `
   Get-UEToolSuiteGitOperationStamp, `
-  Get-UEToolSuiteGitOperationContextId
+  Get-UEToolSuiteGitOperationContextId, `
+  Get-UEToolSuiteGitContextLedgerTransition
