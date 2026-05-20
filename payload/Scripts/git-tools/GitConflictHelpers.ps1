@@ -613,6 +613,12 @@ function Get-OtherSideSha {
 
 function Get-MTimeEpoch {
   param([Parameter(Mandatory)][string]$Path)
+
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitMTimeEpoch" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitMTimeEpoch -Path $Path)
+  }
+
   try {
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     $item = Get-Item -LiteralPath $Path -ErrorAction Stop
@@ -625,6 +631,11 @@ function Get-MTimeEpoch {
 }
 
 function Get-OperationStamp {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitOperationStamp" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitOperationStamp -Context (Get-GitContext))
+  }
+
   $ctx = Get-GitContext
   $gitDir = Get-GitDir
 

@@ -202,6 +202,62 @@ function Get-UEToolSuiteGitLedgerPaths {
   }
 }
 
+function Get-UEToolSuiteGitMTimeEpoch {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  try {
+    if (-not (Test-Path -LiteralPath $Path)) {
+      return $null
+    }
+
+    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    return [DateTimeOffset]::new($item.LastWriteTimeUtc).ToUnixTimeSeconds()
+  }
+  catch {
+    return $null
+  }
+}
+
+function Get-UEToolSuiteGitOperationStamp {
+  [CmdletBinding()]
+  param([string]$Context)
+
+  $ctx = $Context
+  if ([string]::IsNullOrWhiteSpace($ctx)) {
+    $ctx = Get-UEToolSuiteGitContext
+  }
+
+  $gitDir = Get-UEToolSuiteGitDir
+
+  if ($ctx -eq "merge") {
+    $mergeHeadPath = Join-Path $gitDir "MERGE_HEAD"
+    $stamp = Get-UEToolSuiteGitMTimeEpoch -Path $mergeHeadPath
+    return $(if ($stamp) { $stamp.ToString() } else { "nostamp" })
+  }
+
+  if ($ctx -eq "rebase") {
+    $rebaseMergeRoot = Join-Path $gitDir "rebase-merge"
+    $rebaseApplyRoot = Join-Path $gitDir "rebase-apply"
+    $candidates = @(
+      (Join-Path $rebaseMergeRoot "onto"),
+      (Join-Path $rebaseMergeRoot "head-name"),
+      (Join-Path $rebaseApplyRoot "orig-head")
+    )
+
+    foreach ($candidate in $candidates) {
+      $stamp = Get-UEToolSuiteGitMTimeEpoch -Path $candidate
+      if ($stamp) {
+        return $stamp.ToString()
+      }
+    }
+
+    return "nostamp"
+  }
+
+  return $null
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteGitConflictsHelpLines, `
   Write-UEToolSuiteGitConflictsHelp, `
@@ -213,4 +269,6 @@ Export-ModuleMember -Function `
   Read-UEToolSuiteGitFile, `
   Get-UEToolSuiteGitContext, `
   Test-UEToolSuiteGitRebaseStateDirsPresent, `
-  Get-UEToolSuiteGitLedgerPaths
+  Get-UEToolSuiteGitLedgerPaths, `
+  Get-UEToolSuiteGitMTimeEpoch, `
+  Get-UEToolSuiteGitOperationStamp

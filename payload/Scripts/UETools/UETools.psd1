@@ -104,6 +104,8 @@
     "Get-UEToolSuiteGitContext",
     "Test-UEToolSuiteGitRebaseStateDirsPresent",
     "Get-UEToolSuiteGitLedgerPaths",
+    "Get-UEToolSuiteGitMTimeEpoch",
+    "Get-UEToolSuiteGitOperationStamp",
     "Write-UEToolSuiteUtf8NoBomFile",
     "Resolve-UEToolSuiteRepoRoot",
     "Resolve-UEToolSuiteRepoPath",
