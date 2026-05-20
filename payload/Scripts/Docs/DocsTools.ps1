@@ -213,6 +213,12 @@ function Test-DocsToolsHelpToken {
 function Test-ProcessRunning {
   param([int]$ProcessId)
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteDocsProcessRunning" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteDocsProcessRunning -ProcessId $ProcessId)
+  }
+
   if ($ProcessId -le 0) {
     return $false
   }
@@ -228,6 +234,12 @@ function Test-ProcessRunning {
 
 function Get-DescendantProcessId {
   param([int]$RootProcessId)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsDescendantProcessId" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsDescendantProcessId -RootProcessId $RootProcessId)
+  }
 
   if ($RootProcessId -le 0) {
     return $null
@@ -318,6 +330,12 @@ function Get-WebsitePackageScriptNames {
 }
 
 function Get-DocsToolsRootHelp {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsRootHelpText" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsRootHelpText)
+  }
+
 @"
 UE project docs automation.
 
@@ -365,13 +383,20 @@ Notes:
 function Get-DocsToolsCommandHelp {
   param([Parameter(Mandatory)][string]$CommandName)
 
-  $normalized = $CommandName.Trim().ToLowerInvariant()
-  switch ($normalized) {
-    "new-page" { break }
-    "create-page" { $normalized = "new-page"; break }
-    "new-section" { break }
-    "create-section" { $normalized = "new-section"; break }
-    default { }
+  [void](Import-UEToolSuiteCoreModule)
+  $topicResolver = Get-Command -Name "Resolve-UEToolSuiteDocsHelpTopicAlias" -ErrorAction SilentlyContinue
+  if ($topicResolver) {
+    $normalized = Resolve-UEToolSuiteDocsHelpTopicAlias -CommandName $CommandName
+  }
+  else {
+    $normalized = $CommandName.Trim().ToLowerInvariant()
+    switch ($normalized) {
+      "new-page" { break }
+      "create-page" { $normalized = "new-page"; break }
+      "new-section" { break }
+      "create-section" { $normalized = "new-section"; break }
+      default { }
+    }
   }
 
   switch ($normalized) {
@@ -2118,6 +2143,12 @@ function Invoke-WebsiteNpmScript {
 function Get-DocsStartUrl {
   param([string[]]$StartArgs = @())
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsStartUrl" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsStartUrl -StartArgs $StartArgs)
+  }
+
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
   $port = 3000
   for ($i = 0; $i -lt $normalizedStartArgs.Count; $i++) {
@@ -2381,6 +2412,13 @@ function Invoke-DocsStatus {
 
 function Test-CommandAvailable {
   param([Parameter(Mandatory)][string]$Name)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteDocsCommandAvailable" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteDocsCommandAvailable -Name $Name)
+  }
+
   return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
 }
 

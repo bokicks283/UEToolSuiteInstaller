@@ -65,8 +65,162 @@ function Split-UEToolSuiteDocsStartArguments {
   }
 }
 
+function Resolve-UEToolSuiteDocsHelpTopicAlias {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CommandName)
+
+  $normalized = $CommandName.Trim().ToLowerInvariant()
+  switch ($normalized) {
+    "create-page" { return "new-page" }
+    "create-section" { return "new-section" }
+    default { return $normalized }
+  }
+}
+
+function Get-UEToolSuiteDocsRootHelpText {
+  [CmdletBinding()]
+  param()
+
+@"
+UE project docs automation.
+
+Usage:
+  docs-tools <command> [options]
+
+Create:
+  new-section, create-section   Create a docs section
+  new-page, create-page         Create a page at Docs root or inside a section
+  reorder                       Reorder a page or section and shift sibling positions
+
+Run:
+  start                         Start Docusaurus in the current terminal
+  stop                          Stop the tracked background Docusaurus server
+  status                        Show tracked background server status
+  check                         Validate docs and run the production build
+  doctor                        Check local docs prerequisites
+
+Pass-through:
+  build, clear, deploy, serve, swizzle
+  write-translations, write-heading-ids, typecheck
+  docusaurus <args...>
+
+Other:
+  install-bridge                Install the optional VS Code TOC bridge
+  help [command]
+
+Examples:
+  docs-tools help new-section
+  docs-tools create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
+  docs-tools create-page Setup -Title "Setup"
+  docs-tools create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
+  docs-tools reorder Art-Source 4
+  docs-tools start --port 3001
+  docs-tools start --background --port 3001
+  docs-tools docusaurus docs:version 1.0.0 --skip-feedback
+
+Notes:
+  - Docs are authored in Docs/ and rendered by website/.
+  - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
+  - Use docs-tools help <command> for detailed option help.
+"@
+}
+
+function Test-UEToolSuiteDocsProcessRunning {
+  [CmdletBinding()]
+  param([int]$ProcessId)
+
+  if ($ProcessId -le 0) {
+    return $false
+  }
+
+  try {
+    Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+    return $true
+  }
+  catch {
+    return $false
+  }
+}
+
+function Get-UEToolSuiteDocsDescendantProcessId {
+  [CmdletBinding()]
+  param([int]$RootProcessId)
+
+  if ($RootProcessId -le 0) {
+    return $null
+  }
+
+  $queue = New-Object System.Collections.Generic.Queue[int]
+  $queue.Enqueue($RootProcessId)
+
+  while ($queue.Count -gt 0) {
+    $parentId = $queue.Dequeue()
+
+    try {
+      $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId" -ErrorAction Stop)
+    }
+    catch {
+      $children = @()
+    }
+
+    foreach ($child in $children) {
+      $childId = [int]$child.ProcessId
+      if (Test-UEToolSuiteDocsProcessRunning -ProcessId $childId) {
+        return $childId
+      }
+
+      $queue.Enqueue($childId)
+    }
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteDocsStartUrl {
+  [CmdletBinding()]
+  param([string[]]$StartArgs = @())
+
+  $normalizedStartArgs = @(Get-UEToolSuiteDocsNormalizedArgumentList -Values $StartArgs)
+  $port = 3000
+  for ($i = 0; $i -lt $normalizedStartArgs.Count; $i++) {
+    $token = [string]$normalizedStartArgs[$i]
+    if ($token -match '^--port=(?<port>\d+)$') {
+      $parsedEqualsPort = 0
+      if ([int]::TryParse($Matches.port, [ref]$parsedEqualsPort)) {
+        $port = $parsedEqualsPort
+      }
+      break
+    }
+
+    if ($token -eq "--port" -or $token -eq "-p") {
+      if (($i + 1) -lt $normalizedStartArgs.Count) {
+        $parsedPort = 0
+        if ([int]::TryParse([string]$normalizedStartArgs[$i + 1], [ref]$parsedPort)) {
+          $port = $parsedPort
+        }
+      }
+      break
+    }
+  }
+
+  return "http://localhost:$port/docs/"
+}
+
+function Test-UEToolSuiteDocsCommandAvailable {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Name)
+
+  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteDocsNormalizedArgumentList, `
   Resolve-UEToolSuiteDocsCommandAlias, `
   Test-UEToolSuiteDocsHelpToken, `
-  Split-UEToolSuiteDocsStartArguments
+  Split-UEToolSuiteDocsStartArguments, `
+  Resolve-UEToolSuiteDocsHelpTopicAlias, `
+  Get-UEToolSuiteDocsRootHelpText, `
+  Test-UEToolSuiteDocsProcessRunning, `
+  Get-UEToolSuiteDocsDescendantProcessId, `
+  Get-UEToolSuiteDocsStartUrl, `
+  Test-UEToolSuiteDocsCommandAvailable
