@@ -114,8 +114,103 @@ function Enable-UEToolSuiteGitHooks {
   }
 }
 
+function Get-UEToolSuiteGitDir {
+  [CmdletBinding()]
+  param()
+
+  $gitDir = (git rev-parse --git-dir 2>$null)
+  if (-not $gitDir) {
+    throw "Not inside a git repository."
+  }
+
+  return (Resolve-Path -LiteralPath $gitDir).Path
+}
+
+function Get-UEToolSuiteGitPath {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  $resolved = (git rev-parse --git-path $Path 2>$null).Trim()
+  if (-not $resolved) {
+    return $null
+  }
+
+  return $resolved
+}
+
+function Test-UEToolSuiteGitPathExists {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  $resolved = Get-UEToolSuiteGitPath -Path $Path
+  if (-not $resolved) {
+    return $false
+  }
+
+  return (Test-Path -LiteralPath $resolved)
+}
+
+function Read-UEToolSuiteGitFile {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return $null
+  }
+
+  return (Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue).Trim()
+}
+
+function Get-UEToolSuiteGitContext {
+  [CmdletBinding()]
+  param()
+
+  if (Test-UEToolSuiteGitPathExists -Path "MERGE_HEAD") { return "merge" }
+  if (Test-UEToolSuiteGitPathExists -Path "CHERRY_PICK_HEAD") { return "merge" }
+  if (Test-UEToolSuiteGitPathExists -Path "REVERT_HEAD") { return "merge" }
+  if (Test-UEToolSuiteGitPathExists -Path "rebase-merge") { return "rebase" }
+  if (Test-UEToolSuiteGitPathExists -Path "rebase-apply") { return "rebase" }
+  return "none"
+}
+
+function Test-UEToolSuiteGitRebaseStateDirsPresent {
+  [CmdletBinding()]
+  param()
+
+  $mergeDir = Get-UEToolSuiteGitPath -Path "rebase-merge"
+  if ($mergeDir -and (Test-Path -LiteralPath $mergeDir -PathType Container)) {
+    return $true
+  }
+
+  $applyDir = Get-UEToolSuiteGitPath -Path "rebase-apply"
+  if ($applyDir -and (Test-Path -LiteralPath $applyDir -PathType Container)) {
+    return $true
+  }
+
+  return $false
+}
+
+function Get-UEToolSuiteGitLedgerPaths {
+  [CmdletBinding()]
+  param()
+
+  $gitDir = Get-UEToolSuiteGitDir
+  return [pscustomobject]@{
+    Context  = Join-Path $gitDir "ue_binary_conflicts.context"
+    Resolved = Join-Path $gitDir "ue_binary_conflicts.resolved"
+    Audit    = Join-Path $gitDir "ue_binary_conflicts.audit"
+  }
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteGitConflictsHelpLines, `
   Write-UEToolSuiteGitConflictsHelp, `
   Split-UEToolSuiteGitConflictsArguments, `
-  Enable-UEToolSuiteGitHooks
+  Enable-UEToolSuiteGitHooks, `
+  Get-UEToolSuiteGitDir, `
+  Get-UEToolSuiteGitPath, `
+  Test-UEToolSuiteGitPathExists, `
+  Read-UEToolSuiteGitFile, `
+  Get-UEToolSuiteGitContext, `
+  Test-UEToolSuiteGitRebaseStateDirsPresent, `
+  Get-UEToolSuiteGitLedgerPaths

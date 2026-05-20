@@ -15,6 +15,23 @@
 
 $ErrorActionPreference = "Stop"
 
+try {
+  $repoRootForModule = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
+  if (-not [string]::IsNullOrWhiteSpace($repoRootForModule)) {
+    $gitDomainModulePath = Join-Path $repoRootForModule "Scripts\UETools\UEToolSuite.Git.psm1"
+    $facadeManifestPath = Join-Path $repoRootForModule "Scripts\UETools\UETools.psd1"
+    if (Test-Path -LiteralPath $gitDomainModulePath -PathType Leaf) {
+      Import-Module -Name $gitDomainModulePath -Force
+    }
+    elseif (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
+      Import-Module -Name $facadeManifestPath -Force
+    }
+  }
+}
+catch {
+  # Keep helper runnable even when module import cannot be resolved.
+}
+
 if (-not $script:RunMemo) {
   $script:RunMemo = @{}
 }
@@ -52,6 +69,13 @@ function Get-GitDir {
     return $script:RunMemo["gitDir"]
   }
 
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitDir" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $resolvedFromModule = Get-UEToolSuiteGitDir
+    $script:RunMemo["gitDir"] = $resolvedFromModule
+    return $resolvedFromModule
+  }
+
   $gitDir = git rev-parse --git-dir 2>$null
   if (-not $gitDir) { throw "Not inside a git repository." }
   $resolved = (Resolve-Path -LiteralPath $gitDir).Path
@@ -66,6 +90,13 @@ function Get-GitPath {
     return $script:RunMemo[$memoKey]
   }
 
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitPath" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $resolvedFromModule = Get-UEToolSuiteGitPath -Path $Path
+    $script:RunMemo[$memoKey] = $resolvedFromModule
+    return $resolvedFromModule
+  }
+
   $p = (git rev-parse --git-path $Path 2>$null).Trim()
   if (-not $p) {
     $script:RunMemo[$memoKey] = $null
@@ -78,6 +109,11 @@ function Get-GitPath {
 
 function Test-GitPathExists {
   param([Parameter(Mandatory)][string]$Path)
+  $moduleResolver = Get-Command -Name "Test-UEToolSuiteGitPathExists" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Test-UEToolSuiteGitPathExists -Path $Path)
+  }
+
   $p = Get-GitPath -Path $Path
   if (-not $p) { return $false }
   Test-Path -LiteralPath $p
@@ -109,6 +145,13 @@ function Get-GitContext {
     return $script:RunMemo["ctx"]
   }
 
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitContext" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $contextFromModule = Get-UEToolSuiteGitContext
+    $script:RunMemo["ctx"] = $contextFromModule
+    return $contextFromModule
+  }
+
   $ctx = "none"
 
   # Check merge first
@@ -125,6 +168,11 @@ function Get-GitContext {
 }
 
 function Test-RebaseStateDirsPresent {
+  $moduleResolver = Get-Command -Name "Test-UEToolSuiteGitRebaseStateDirsPresent" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Test-UEToolSuiteGitRebaseStateDirsPresent)
+  }
+
   $rbm = Get-GitPath -Path "rebase-merge"
   if ($rbm -and (Test-Path -LiteralPath $rbm -PathType Container)) { return $true }
 
@@ -138,6 +186,11 @@ function Test-RebaseStateDirsPresent {
 function Get-Context { Get-GitContext }
 
 function Get-LedgerPaths {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitLedgerPaths" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitLedgerPaths)
+  }
+
   $gitDir = Get-GitDir
   [pscustomobject]@{
     Context  = Join-Path $gitDir "ue_binary_conflicts.context"
@@ -148,6 +201,11 @@ function Get-LedgerPaths {
 
 function Read-GitFile {
   param([Parameter(Mandatory)][string]$Path)
+  $moduleResolver = Get-Command -Name "Read-UEToolSuiteGitFile" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Read-UEToolSuiteGitFile -Path $Path)
+  }
+
   if (-not (Test-Path -LiteralPath $Path)) { return $null }
   (Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue).Trim()
 }
