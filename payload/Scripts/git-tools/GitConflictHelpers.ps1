@@ -389,12 +389,22 @@ function Get-UnmergedPaths {
 # Merge/Rebase operation refs
 # -----------------------------
 function Get-MergeHeadSha {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitMergeHeadSha" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitMergeHeadSha)
+  }
+
   $p = Get-GitPath -Path "MERGE_HEAD"
   if (-not $p) { return $null }
   Read-GitFile $p
 }
 
 function Get-RebasePatchSha {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRebasePatchSha" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitRebasePatchSha)
+  }
+
   $patches = @(
     (Get-GitPath -Path "rebase-merge/patch"),
     (Get-GitPath -Path "rebase-apply/patch")
@@ -411,6 +421,11 @@ function Get-RebasePatchSha {
 }
 
 function Get-RebasePatchPaths {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRebasePatchPaths" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return @(Get-UEToolSuiteGitRebasePatchPaths)
+  }
+
   $patches = @(
     (Get-GitPath -Path "rebase-merge/patch"),
     (Get-GitPath -Path "rebase-apply/patch")
@@ -445,6 +460,11 @@ function Get-RebasePatchPaths {
 }
 
 function Get-RebaseSeqCurrentSha {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRebaseSeqCurrentSha" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitRebaseSeqCurrentSha)
+  }
+
   $done = Get-GitPath -Path "rebase-merge/done"
   $todo = Get-GitPath -Path "rebase-merge/git-rebase-todo"
 
@@ -472,6 +492,13 @@ function Get-RebaseSeqCurrentSha {
 function Get-RebaseHeadSha {
   if ($script:RunMemo.ContainsKey("rebaseHead")) {
     return $script:RunMemo["rebaseHead"]
+  }
+
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRebaseHeadSha" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $resolved = Get-UEToolSuiteGitRebaseHeadSha
+    $script:RunMemo["rebaseHead"] = $resolved
+    return $resolved
   }
 
   if (-not (Test-RebaseStateDirsPresent)) {
@@ -553,6 +580,13 @@ function Get-RebaseOntoSha {
     return $script:RunMemo["rebaseOnto"]
   }
 
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRebaseOntoSha" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $resolved = Get-UEToolSuiteGitRebaseOntoSha
+    $script:RunMemo["rebaseOnto"] = $resolved
+    return $resolved
+  }
+
   if (-not (Test-RebaseStateDirsPresent)) {
     $script:RunMemo["rebaseOnto"] = $null
     return $null
@@ -605,6 +639,11 @@ function Get-RebaseOntoSha {
 }
 
 function Get-OtherSideSha {
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitOtherSideSha" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    return (Get-UEToolSuiteGitOtherSideSha -Context (Get-GitContext))
+  }
+
   $ctx = Get-GitContext
   if ($ctx -eq "merge") { return Get-MergeHeadSha }
   if ($ctx -eq "rebase") { return Get-RebaseHeadSha }
@@ -879,6 +918,22 @@ function Get-OverlapCandidates {
     return @()
   }
 
+  $moduleMergeResolver = Get-Command -Name "Get-UEToolSuiteGitMergeOverlapCandidates" -ErrorAction SilentlyContinue
+  $moduleRebaseResolver = Get-Command -Name "Get-UEToolSuiteGitRebaseOverlapCandidates" -ErrorAction SilentlyContinue
+  if ($moduleMergeResolver -and $moduleRebaseResolver) {
+    if ($ctx -eq "merge") {
+      $mergedOverlap = @(Get-UEToolSuiteGitMergeOverlapCandidates -OtherSideSha $other)
+      $script:RunMemo["overlap"] = @($mergedOverlap)
+      return @($mergedOverlap)
+    }
+
+    if ($ctx -eq "rebase") {
+      $rebaseOverlap = @(Get-UEToolSuiteGitRebaseOverlapCandidates -OtherSideSha $other -RebaseOntoSha (Get-RebaseOntoSha))
+      $script:RunMemo["overlap"] = @($rebaseOverlap)
+      return @($rebaseOverlap)
+    }
+  }
+
   # MERGE: keep existing behavior
   if ($ctx -eq "merge") {
     $left = "HEAD"
@@ -1035,16 +1090,22 @@ function Get-RequiredGuardedPaths {
 
   Ensure-ContextBoundLedgers
 
-  $req = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRequiredGuardedPaths" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $out = @(Get-UEToolSuiteGitRequiredGuardedPaths `
+      -UnmergedGuardedPaths @(Get-GuardedPathsFromList -Paths @(Get-UnmergedPaths)) `
+      -OverlapGuardedPaths @(Get-GuardedOverlapCandidates))
+    $script:RunMemo["required"] = @($out)
+    return @($out)
+  }
 
+  $req = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
   foreach ($p in @(Get-GuardedPathsFromList -Paths @(Get-UnmergedPaths))) {
     if ($p) { [void]$req.Add($p) }
   }
-
   foreach ($p in (Get-GuardedOverlapCandidates)) {
     if ($p) { [void]$req.Add(($p -replace '\\', '/').Trim()) }
   }
-
   $out = @($req) | Sort-Object
   $script:RunMemo["required"] = @($out)
   return @($out)
@@ -1056,14 +1117,22 @@ function Get-ApprovedGuardedPaths {
   }
 
   $p = Get-LedgerPaths
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitApprovedPathsFromLedger" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $out = @(Get-UEToolSuiteGitApprovedPathsFromLedger -ResolvedLedgerPath $p.Resolved)
+    $script:RunMemo["approved"] = @($out)
+    return @($out)
+  }
+
   if (-not (Test-Path -LiteralPath $p.Resolved)) {
     $script:RunMemo["approved"] = @()
     return @()
   }
+
   $out = @(
     Get-Content -LiteralPath $p.Resolved -ErrorAction SilentlyContinue |
-    ForEach-Object { ($_ -replace '\\', '/').Trim() } |
-    Where-Object { $_ }
+      ForEach-Object { ($_ -replace '\\', '/').Trim() } |
+      Where-Object { $_ }
   ) | Sort-Object -Unique
   $script:RunMemo["approved"] = @($out)
   return @($out)
@@ -1081,14 +1150,19 @@ function Get-RemainingRequiredGuardedPaths {
   }
 
   $approved = Get-ApprovedGuardedPaths
+  $moduleResolver = Get-Command -Name "Get-UEToolSuiteGitRemainingRequiredPaths" -ErrorAction SilentlyContinue
+  if ($moduleResolver) {
+    $out = @(Get-UEToolSuiteGitRemainingRequiredPaths -RequiredPaths $required -ApprovedPaths $approved)
+    $script:RunMemo["remaining"] = @($out)
+    return @($out)
+  }
+
   $set = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
   foreach ($a in $approved) { [void]$set.Add($a) }
-
   $remaining = New-Object System.Collections.Generic.List[string]
   foreach ($r in $required) {
     if (-not $set.Contains($r)) { $remaining.Add($r) | Out-Null }
   }
-
   $out = @($remaining | Sort-Object -Unique)
   $script:RunMemo["remaining"] = @($out)
   return @($out)

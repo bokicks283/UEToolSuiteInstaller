@@ -139,6 +139,12 @@ function Get-DocsServerStatePath {
 function ConvertTo-CmdArgument {
   param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "ConvertTo-UEToolSuiteDocsCmdArgument" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (ConvertTo-UEToolSuiteDocsCmdArgument -Value $Value)
+  }
+
   if ($Value.Length -eq 0) {
     return '""'
   }
@@ -275,10 +281,13 @@ function Get-DocsServerState {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $statePath = Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot
-  if (-not (Test-Path -LiteralPath $statePath)) {
-    return $null
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsServerState" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsServerState -StatePath $statePath)
   }
 
+  if (-not (Test-Path -LiteralPath $statePath)) { return $null }
   return (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json)
 }
 
@@ -286,6 +295,13 @@ function Remove-DocsServerState {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $statePath = Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Remove-UEToolSuiteDocsServerState" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Remove-UEToolSuiteDocsServerState -StatePath $statePath
+    return
+  }
+
   if (Test-Path -LiteralPath $statePath) {
     Remove-Item -LiteralPath $statePath -Force
   }
@@ -296,6 +312,12 @@ function Save-DocsServerState {
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
     [Parameter(Mandatory)][object]$State
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Save-UEToolSuiteDocsServerState" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Save-UEToolSuiteDocsServerState -StatePath (Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot) -State $State)
+  }
 
   $runtimeDir = Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot
   New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
@@ -1120,6 +1142,7 @@ function Test-VSCodeExtensionInstalled {
 }
 
 function Get-BridgeStatus {
+  [void](Import-UEToolSuiteCoreModule)
   $codeCliPath = Get-CodeCliPath
   $markdownInstalled = $false
   $bridgeInstalled = $false
@@ -1129,16 +1152,22 @@ function Get-BridgeStatus {
     $bridgeInstalled = Test-VSCodeExtensionInstalled -ExtensionId $script:DocsToolsBridgeExtensionId
   }
 
-  return [pscustomobject]@{
-    CodeCliPath = $codeCliPath
-    MarkdownAllInOneInstalled = $markdownInstalled
-    BridgeInstalled = $bridgeInstalled
-    TocReady = ($codeCliPath -and $markdownInstalled -and $bridgeInstalled)
+  $moduleFn = Get-Command -Name "New-UEToolSuiteDocsBridgeStatus" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (New-UEToolSuiteDocsBridgeStatus -CodeCliPath $codeCliPath -MarkdownAllInOneInstalled:$markdownInstalled -BridgeInstalled:$bridgeInstalled)
   }
+
+  return [pscustomobject]@{ CodeCliPath = $codeCliPath; MarkdownAllInOneInstalled = $markdownInstalled; BridgeInstalled = $bridgeInstalled; TocReady = ($codeCliPath -and $markdownInstalled -and $bridgeInstalled) }
 }
 
 function Get-WorkspaceRequestKey {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsWorkspaceRequestKey" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsWorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot)
+  }
 
   $normalized = [System.IO.Path]::GetFullPath($ResolvedRepoRoot).ToLowerInvariant()
   $sha1 = [System.Security.Cryptography.SHA1]::Create()
@@ -1154,6 +1183,12 @@ function Get-WorkspaceRequestKey {
 
 function Get-BridgeRequestDirectory {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsBridgeRequestDirectory" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsBridgeRequestDirectory -ResolvedRepoRoot $ResolvedRepoRoot)
+  }
 
   $workspaceKey = Get-WorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot
   return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-docs-tools\$workspaceKey")

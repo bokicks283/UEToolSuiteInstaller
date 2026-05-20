@@ -213,6 +213,104 @@ function Test-UEToolSuiteDocsCommandAvailable {
   return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
 }
 
+function ConvertTo-UEToolSuiteDocsCmdArgument {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
+
+  if ($Value.Length -eq 0) {
+    return '""'
+  }
+
+  if ($Value -notmatch '[\s"&|<>^]') {
+    return $Value
+  }
+
+  return '"' + ($Value -replace '"', '""') + '"'
+}
+
+function Get-UEToolSuiteDocsServerState {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$StatePath)
+
+  if (-not (Test-Path -LiteralPath $StatePath)) {
+    return $null
+  }
+
+  return (Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json)
+}
+
+function Remove-UEToolSuiteDocsServerState {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$StatePath)
+
+  if (Test-Path -LiteralPath $StatePath) {
+    Remove-Item -LiteralPath $StatePath -Force
+  }
+}
+
+function Save-UEToolSuiteDocsServerState {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][object]$State
+  )
+
+  $stateDirectory = Split-Path -Parent $StatePath
+  if (-not [string]::IsNullOrWhiteSpace($stateDirectory)) {
+    New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
+  }
+
+  $stateJson = $State | ConvertTo-Json -Depth 6
+  if (Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue) {
+    Write-UEToolSuiteUtf8NoBomFile -Path $StatePath -Content $stateJson
+  }
+  else {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($StatePath, $stateJson, $utf8NoBom)
+  }
+  return $StatePath
+}
+
+function Get-UEToolSuiteDocsWorkspaceRequestKey {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $normalized = [System.IO.Path]::GetFullPath($ResolvedRepoRoot).ToLowerInvariant()
+  $sha1 = [System.Security.Cryptography.SHA1]::Create()
+  try {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
+    $hash = $sha1.ComputeHash($bytes)
+    return ([System.BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant()
+  }
+  finally {
+    $sha1.Dispose()
+  }
+}
+
+function Get-UEToolSuiteDocsBridgeRequestDirectory {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $workspaceKey = Get-UEToolSuiteDocsWorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-docs-tools\$workspaceKey")
+}
+
+function New-UEToolSuiteDocsBridgeStatus {
+  [CmdletBinding()]
+  param(
+    [string]$CodeCliPath,
+    [bool]$MarkdownAllInOneInstalled = $false,
+    [bool]$BridgeInstalled = $false
+  )
+
+  return [pscustomobject]@{
+    CodeCliPath = $CodeCliPath
+    MarkdownAllInOneInstalled = [bool]$MarkdownAllInOneInstalled
+    BridgeInstalled = [bool]$BridgeInstalled
+    TocReady = ([bool]$CodeCliPath -and [bool]$MarkdownAllInOneInstalled -and [bool]$BridgeInstalled)
+  }
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteDocsNormalizedArgumentList, `
   Resolve-UEToolSuiteDocsCommandAlias, `
@@ -223,4 +321,11 @@ Export-ModuleMember -Function `
   Test-UEToolSuiteDocsProcessRunning, `
   Get-UEToolSuiteDocsDescendantProcessId, `
   Get-UEToolSuiteDocsStartUrl, `
-  Test-UEToolSuiteDocsCommandAvailable
+  Test-UEToolSuiteDocsCommandAvailable, `
+  ConvertTo-UEToolSuiteDocsCmdArgument, `
+  Get-UEToolSuiteDocsServerState, `
+  Remove-UEToolSuiteDocsServerState, `
+  Save-UEToolSuiteDocsServerState, `
+  Get-UEToolSuiteDocsWorkspaceRequestKey, `
+  Get-UEToolSuiteDocsBridgeRequestDirectory, `
+  New-UEToolSuiteDocsBridgeStatus

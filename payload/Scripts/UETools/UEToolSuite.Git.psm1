@@ -258,6 +258,407 @@ function Get-UEToolSuiteGitOperationStamp {
   return $null
 }
 
+function Get-UEToolSuiteGitMergeHeadSha {
+  [CmdletBinding()]
+  param()
+
+  $mergeHeadPath = Get-UEToolSuiteGitPath -Path "MERGE_HEAD"
+  if (-not $mergeHeadPath) {
+    return $null
+  }
+
+  return (Read-UEToolSuiteGitFile -Path $mergeHeadPath)
+}
+
+function Get-UEToolSuiteGitRebasePatchSha {
+  [CmdletBinding()]
+  param()
+
+  $patchCandidates = @(
+    (Get-UEToolSuiteGitPath -Path "rebase-merge/patch"),
+    (Get-UEToolSuiteGitPath -Path "rebase-apply/patch")
+  )
+
+  foreach ($candidate in $patchCandidates) {
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate)) {
+      continue
+    }
+
+    $line = Get-Content -LiteralPath $candidate -TotalCount 1 -ErrorAction SilentlyContinue
+    if ($line -match '^From\s+([0-9a-f]{7,40})\b') {
+      return $Matches[1]
+    }
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitRebasePatchPaths {
+  [CmdletBinding()]
+  param()
+
+  $patchCandidates = @(
+    (Get-UEToolSuiteGitPath -Path "rebase-merge/patch"),
+    (Get-UEToolSuiteGitPath -Path "rebase-apply/patch")
+  )
+
+  foreach ($candidate in $patchCandidates) {
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate)) {
+      continue
+    }
+
+    try {
+      if ((Get-Item -LiteralPath $candidate).Length -eq 0) {
+        continue
+      }
+    }
+    catch {
+      continue
+    }
+
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Get-Content -LiteralPath $candidate -ErrorAction SilentlyContinue)) {
+      if ($line -match '^\+\+\+\s+(.+)$') {
+        $pathValue = $Matches[1] -replace '^b/', ''
+        if ($pathValue -and $pathValue -ne '/dev/null') {
+          $paths.Add($pathValue) | Out-Null
+        }
+        continue
+      }
+
+      if ($line -match '^---\s+(.+)$') {
+        $pathValue = $Matches[1] -replace '^a/', ''
+        if ($pathValue -and $pathValue -ne '/dev/null') {
+          $paths.Add($pathValue) | Out-Null
+        }
+      }
+    }
+
+    if ($paths.Count -gt 0) {
+      return @($paths | Sort-Object -Unique)
+    }
+  }
+
+  return @()
+}
+
+function Get-UEToolSuiteGitRebaseSeqCurrentSha {
+  [CmdletBinding()]
+  param()
+
+  $donePath = Get-UEToolSuiteGitPath -Path "rebase-merge/done"
+  $todoPath = Get-UEToolSuiteGitPath -Path "rebase-merge/git-rebase-todo"
+
+  if ($donePath -and (Test-Path -LiteralPath $donePath)) {
+    $doneLines = Get-Content -LiteralPath $donePath -ErrorAction SilentlyContinue |
+      Where-Object { $_ -and ($_ -notmatch '^\s*#') }
+    if ($doneLines) {
+      $lastLine = $doneLines | Select-Object -Last 1
+      if ($lastLine -match '^\s*\S+\s+([0-9a-fA-F]{7,40})\b') {
+        return $Matches[1]
+      }
+    }
+  }
+
+  if ($todoPath -and (Test-Path -LiteralPath $todoPath)) {
+    $todoLines = Get-Content -LiteralPath $todoPath -ErrorAction SilentlyContinue |
+      Where-Object { $_ -and ($_ -notmatch '^\s*#') }
+    if ($todoLines) {
+      $firstLine = $todoLines | Select-Object -First 1
+      if ($firstLine -match '^\s*\S+\s+([0-9a-fA-F]{7,40})\b') {
+        return $Matches[1]
+      }
+    }
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitRebaseHeadSha {
+  [CmdletBinding()]
+  param()
+
+  if (-not (Test-UEToolSuiteGitRebaseStateDirsPresent)) {
+    return $null
+  }
+
+  try {
+    $stoppedShaPath = Get-UEToolSuiteGitPath -Path "rebase-merge/stopped-sha"
+    if ($stoppedShaPath -and (Test-Path -LiteralPath $stoppedShaPath -PathType Leaf)) {
+      $stoppedSha = Get-Content -LiteralPath $stoppedShaPath -Raw -ErrorAction SilentlyContinue
+      if ($stoppedSha) {
+        $stoppedSha = $stoppedSha.Trim()
+        if ($stoppedSha) {
+          return $stoppedSha
+        }
+      }
+    }
+  }
+  catch {
+  }
+
+  try {
+    $rebaseHeadSha = (git rev-parse -q --verify REBASE_HEAD 2>$null)
+    if ($rebaseHeadSha) {
+      $rebaseHeadSha = $rebaseHeadSha.Trim()
+      if ($rebaseHeadSha) {
+        return $rebaseHeadSha
+      }
+    }
+  }
+  catch {
+  }
+
+  $cherryPickHeadPath = Get-UEToolSuiteGitPath -Path "CHERRY_PICK_HEAD"
+  $cherryPickHeadSha = if ($cherryPickHeadPath) { Read-UEToolSuiteGitFile -Path $cherryPickHeadPath } else { $null }
+  if ($cherryPickHeadSha) {
+    return $cherryPickHeadSha
+  }
+
+  $patchSha = Get-UEToolSuiteGitRebasePatchSha
+  if ($patchSha) {
+    return $patchSha
+  }
+
+  $sequenceSha = Get-UEToolSuiteGitRebaseSeqCurrentSha
+  if ($sequenceSha) {
+    return $sequenceSha
+  }
+
+  $origMergePath = Get-UEToolSuiteGitPath -Path "rebase-merge/orig-head"
+  $origMergeSha = if ($origMergePath) { Read-UEToolSuiteGitFile -Path $origMergePath } else { $null }
+  if ($origMergeSha) {
+    return $origMergeSha
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitRebaseOntoSha {
+  [CmdletBinding()]
+  param()
+
+  if (-not (Test-UEToolSuiteGitRebaseStateDirsPresent)) {
+    return $null
+  }
+
+  try {
+    $ontoPath = Get-UEToolSuiteGitPath -Path "rebase-merge/onto"
+    if ($ontoPath -and (Test-Path -LiteralPath $ontoPath -PathType Leaf)) {
+      $ontoValue = Get-Content -LiteralPath $ontoPath -Raw -ErrorAction SilentlyContinue
+      if ($ontoValue) {
+        $ontoValue = $ontoValue.Trim()
+        if ($ontoValue) {
+          return $ontoValue
+        }
+      }
+    }
+  }
+  catch {
+  }
+
+  try {
+    $ontoPath = Get-UEToolSuiteGitPath -Path "rebase-apply/onto"
+    if ($ontoPath -and (Test-Path -LiteralPath $ontoPath -PathType Leaf)) {
+      $ontoValue = Get-Content -LiteralPath $ontoPath -Raw -ErrorAction SilentlyContinue
+      if ($ontoValue) {
+        $ontoValue = $ontoValue.Trim()
+        if ($ontoValue) {
+          return $ontoValue
+        }
+      }
+    }
+  }
+  catch {
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitOtherSideSha {
+  [CmdletBinding()]
+  param([string]$Context)
+
+  $ctx = $Context
+  if ([string]::IsNullOrWhiteSpace($ctx)) {
+    $ctx = Get-UEToolSuiteGitContext
+  }
+
+  if ($ctx -eq "merge") {
+    return (Get-UEToolSuiteGitMergeHeadSha)
+  }
+
+  if ($ctx -eq "rebase") {
+    return (Get-UEToolSuiteGitRebaseHeadSha)
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitNormalizedUniquePaths {
+  [CmdletBinding()]
+  param([AllowNull()][string[]]$Paths)
+
+  return @(
+    foreach ($path in @($Paths)) {
+      if ($null -eq $path) { continue }
+      $normalized = ([string]$path).Trim()
+      if (-not $normalized) { continue }
+      $normalized
+    }
+  ) | Sort-Object -Unique
+}
+
+function Get-UEToolSuiteGitPathIntersection {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][string[]]$Left,
+    [AllowNull()][string[]]$Right
+  )
+
+  $leftPaths = @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $Left)
+  $rightPaths = @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $Right)
+  if ($leftPaths.Count -eq 0 -or $rightPaths.Count -eq 0) {
+    return @()
+  }
+
+  $rightSet = @{}
+  foreach ($path in $rightPaths) {
+    $rightSet[$path] = $true
+  }
+
+  $intersection = New-Object System.Collections.Generic.List[string]
+  foreach ($path in $leftPaths) {
+    if ($rightSet.ContainsKey($path)) {
+      $intersection.Add($path) | Out-Null
+    }
+  }
+
+  return @($intersection | Sort-Object -Unique)
+}
+
+function Get-UEToolSuiteGitMergeOverlapCandidates {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$OtherSideSha)
+
+  $leftRef = "HEAD"
+  $mergeBase = (git merge-base $leftRef $OtherSideSha 2>$null)
+  if ($mergeBase) {
+    $mergeBase = $mergeBase.Trim()
+  }
+  if (-not $mergeBase) {
+    return @()
+  }
+
+  $leftPaths = @((git diff --name-only $mergeBase $leftRef 2>$null) -split "`r?`n")
+  $rightPaths = @((git diff --name-only $mergeBase $OtherSideSha 2>$null) -split "`r?`n")
+  return @(Get-UEToolSuiteGitPathIntersection -Left $leftPaths -Right $rightPaths)
+}
+
+function Get-UEToolSuiteGitRebaseOverlapCandidates {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$OtherSideSha,
+    [string]$RebaseOntoSha
+  )
+
+  $parentSha = $null
+  try {
+    $parentSha = (git rev-parse -q --verify "${OtherSideSha}^" 2>$null)
+    if ($parentSha) {
+      $parentSha = $parentSha.Trim()
+    }
+  }
+  catch {
+  }
+
+  if ($RebaseOntoSha -and $parentSha) {
+    $basePaths = @((git diff --name-only $parentSha $OtherSideSha 2>$null) -split "`r?`n")
+    $targetPaths = @((git diff --name-only $parentSha $RebaseOntoSha 2>$null) -split "`r?`n")
+    return @(Get-UEToolSuiteGitPathIntersection -Left $basePaths -Right $targetPaths)
+  }
+
+  $fallbackBase = if ($parentSha) { $parentSha } else { (git merge-base HEAD $OtherSideSha 2>$null) }
+  if ($fallbackBase) {
+    $fallbackBase = $fallbackBase.Trim()
+  }
+  if (-not $fallbackBase) {
+    return @()
+  }
+
+  $targetRef = if ($RebaseOntoSha) { $RebaseOntoSha } else { "HEAD" }
+  $headPaths = @((git diff --name-only $fallbackBase $targetRef 2>$null) -split "`r?`n")
+  $commitPaths = @((git diff --name-only $fallbackBase $OtherSideSha 2>$null) -split "`r?`n")
+  return @(Get-UEToolSuiteGitPathIntersection -Left $headPaths -Right $commitPaths)
+}
+
+function Get-UEToolSuiteGitRequiredGuardedPaths {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][string[]]$UnmergedGuardedPaths,
+    [AllowNull()][string[]]$OverlapGuardedPaths
+  )
+
+  $required = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($path in @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $UnmergedGuardedPaths)) {
+    if ($path) {
+      [void]$required.Add(($path -replace '\\', '/').Trim())
+    }
+  }
+  foreach ($path in @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $OverlapGuardedPaths)) {
+    if ($path) {
+      [void]$required.Add(($path -replace '\\', '/').Trim())
+    }
+  }
+
+  return @($required) | Sort-Object
+}
+
+function Get-UEToolSuiteGitApprovedPathsFromLedger {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedLedgerPath)
+
+  if (-not (Test-Path -LiteralPath $ResolvedLedgerPath)) {
+    return @()
+  }
+
+  return @(
+    Get-Content -LiteralPath $ResolvedLedgerPath -ErrorAction SilentlyContinue |
+      ForEach-Object { ($_ -replace '\\', '/').Trim() } |
+      Where-Object { $_ }
+  ) | Sort-Object -Unique
+}
+
+function Get-UEToolSuiteGitRemainingRequiredPaths {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][string[]]$RequiredPaths,
+    [AllowNull()][string[]]$ApprovedPaths
+  )
+
+  $required = @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $RequiredPaths)
+  if ($required.Count -eq 0) {
+    return @()
+  }
+
+  $approvedSet = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($path in @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $ApprovedPaths)) {
+    if ($path) {
+      [void]$approvedSet.Add(($path -replace '\\', '/').Trim())
+    }
+  }
+
+  $remaining = New-Object System.Collections.Generic.List[string]
+  foreach ($path in $required) {
+    $normalized = ($path -replace '\\', '/').Trim()
+    if (-not $approvedSet.Contains($normalized)) {
+      $remaining.Add($normalized) | Out-Null
+    }
+  }
+
+  return @($remaining | Sort-Object -Unique)
+}
+
 function Get-UEToolSuiteGitOperationContextId {
   [CmdletBinding()]
   param(
@@ -355,5 +756,19 @@ Export-ModuleMember -Function `
   Get-UEToolSuiteGitLedgerPaths, `
   Get-UEToolSuiteGitMTimeEpoch, `
   Get-UEToolSuiteGitOperationStamp, `
+  Get-UEToolSuiteGitMergeHeadSha, `
+  Get-UEToolSuiteGitRebasePatchSha, `
+  Get-UEToolSuiteGitRebasePatchPaths, `
+  Get-UEToolSuiteGitRebaseSeqCurrentSha, `
+  Get-UEToolSuiteGitRebaseHeadSha, `
+  Get-UEToolSuiteGitRebaseOntoSha, `
+  Get-UEToolSuiteGitOtherSideSha, `
+  Get-UEToolSuiteGitNormalizedUniquePaths, `
+  Get-UEToolSuiteGitPathIntersection, `
+  Get-UEToolSuiteGitMergeOverlapCandidates, `
+  Get-UEToolSuiteGitRebaseOverlapCandidates, `
+  Get-UEToolSuiteGitRequiredGuardedPaths, `
+  Get-UEToolSuiteGitApprovedPathsFromLedger, `
+  Get-UEToolSuiteGitRemainingRequiredPaths, `
   Get-UEToolSuiteGitOperationContextId, `
   Get-UEToolSuiteGitContextLedgerTransition
