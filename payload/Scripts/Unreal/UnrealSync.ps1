@@ -650,6 +650,12 @@ function Write-Utf8NoBomFile {
 }
 
 function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealChangedFileRecords" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return @(Get-UEToolSuiteUnrealChangedFileRecords -OldRev $oldrev -NewRev $newrev)
+  }
+
   if ([string]::IsNullOrWhiteSpace($oldrev) -or [string]::IsNullOrWhiteSpace($newrev)) { return @() }
 
   $out = git diff --name-status $oldrev $newrev 2>$null
@@ -683,6 +689,12 @@ function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {
 }
 
 function Test-IsUnrealCppPath([string]$Path) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealCppPath" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealCppPath -Path $Path)
+  }
+
   if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
   return (
     $Path -match '^Source/.*\.(h|hpp|cpp|inl)$' -or
@@ -691,6 +703,12 @@ function Test-IsUnrealCppPath([string]$Path) {
 }
 
 function Test-IsUnrealProjectStructurePath([string]$Path) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealProjectStructurePath" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealProjectStructurePath -Path $Path)
+  }
+
   if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
   return (
     $Path -match '\.Build\.cs$' -or
@@ -710,6 +728,12 @@ function Test-IsAddDeleteOrRenameStatus([string]$Status) {
 }
 
 function Get-UnrealSyncActionPlan([object[]]$ChangedFileRecords) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealSyncActionPlan" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteUnrealSyncActionPlan -ChangedFileRecords $ChangedFileRecords)
+  }
+
   if (-not $ChangedFileRecords -or $ChangedFileRecords.Count -eq 0) {
     return [pscustomobject]@{
       BuildTriggers = @()
@@ -772,6 +796,16 @@ function Get-RebuildTriggers([string[]]$ChangedFiles) {
 }
 
 function Show-UnrealSyncActionPlan($ActionPlan) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Write-UEToolSuiteUnrealSyncActionPlan" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Write-UEToolSuiteUnrealSyncActionPlan -ActionPlan $ActionPlan -WarnWriter {
+      param([string]$Message)
+      Warn $Message
+    }
+    return
+  }
+
   if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen)) {
     return
   }
