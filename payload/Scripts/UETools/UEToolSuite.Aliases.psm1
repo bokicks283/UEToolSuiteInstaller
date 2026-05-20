@@ -1,22 +1,3 @@
-$ErrorActionPreference = "Stop"
-
-$scriptsRoot = Split-Path -Parent $PSScriptRoot
-$aliasesModulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Aliases.psm1"
-$facadeManifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
-
-if (Test-Path -LiteralPath $aliasesModulePath -PathType Leaf) {
-  Import-Module -Name $aliasesModulePath -Force
-  return
-}
-
-if (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
-  Import-Module -Name $facadeManifestPath -Force
-  if (Get-Command -Name "Get-ProjectAliasDefinitions" -ErrorAction SilentlyContinue) {
-    return
-  }
-}
-
-# Legacy self-contained fallback for copied helper scenarios where UETools modules are not present.
 $script:ProjectShellAliasesScriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) "Unreal\ProjectShellAliases.ps1"
 if (-not (Test-Path -LiteralPath $script:ProjectShellAliasesScriptPath -PathType Leaf)) {
   $script:ProjectShellAliasesScriptPath = if ($PSCommandPath) {
@@ -1075,3 +1056,20 @@ function Install-AIToolsShellAliases {
   }
 }
 
+Export-ModuleMember -Function @(
+  "Get-ProjectAliasBootstrapMarkers",
+  "Get-ProjectAliasLegacyMarkers",
+  "Get-ProjectAliasDefinitions",
+  "Test-ProjectAliasRepoScriptAvailable",
+  "Invoke-UETools",
+  "Invoke-ArtTools",
+  "Invoke-DocsTools",
+  "Invoke-AIPrompt",
+  "Invoke-AITools",
+  "Register-ProjectShellAliases",
+  "Install-ProjectShellAliases",
+  "Install-UEToolsShellAliases",
+  "Install-ArtToolsShellAliases",
+  "Install-DocsToolsShellAliases",
+  "Install-AIToolsShellAliases"
+)
