@@ -1,7 +1,7 @@
 function Add-UEToolSuiteInitToolReadinessEntry {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][System.Collections.Generic.List[object]]$ReadinessList,
+    [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$ReadinessList,
     [Parameter(Mandatory)][string]$Tool,
     [Parameter(Mandatory)][ValidateSet("OK", "WARN", "SKIP")][string]$Status,
     [Parameter(Mandatory)][string]$Detail

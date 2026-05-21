@@ -26,19 +26,7 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
 else {
   throw "Runtime helper not found: $runtimeHelperPath"
 }
-
-function Import-UEToolSuiteCoreModule {
-  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:DocsToolsScriptsRoot -StateKey "docs-tools")
-}
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $script:DocsToolsScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory
-}
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $script:DocsToolsScriptsRoot -StateKey "docs-tools" -WriteFileEnsureParentDirectory -CommandAvailabilityFunctionName "Test-UEToolSuiteDocsCommandAvailable"
 
 function Get-DocsToolsRepoRoot {
   param([string]$ExplicitRepoRoot)
@@ -2394,18 +2382,6 @@ function Invoke-DocsStatus {
     StartedAt = [string]$state.startedAt
     Args = @($state.args)
   }
-}
-
-function Test-CommandAvailable {
-  param([Parameter(Mandatory)][string]$Name)
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Test-UEToolSuiteDocsCommandAvailable" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Test-UEToolSuiteDocsCommandAvailable -Name $Name)
-  }
-
-  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
 }
 
 function Invoke-DocsDoctor {

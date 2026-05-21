@@ -44,14 +44,17 @@ else {
   throw "Runtime helper not found: $runtimeHelperPath"
 }
 
-function Import-UEToolSuiteCoreModule {
-  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $PSScriptRoot -StateKey "init-repo")
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $PSScriptRoot -StateKey "init-repo" -LogPrefix "[Init]" -CommandAvailabilityFunctionName "Test-UEToolSuiteInitCommandAvailable"
+
+if (-not (Import-UEToolSuiteCoreModule)) {
+  throw "UETools module entry not found under $PSScriptRoot\UETools."
 }
 
-function Info($m) { Write-Host "[Init] $m" -ForegroundColor Cyan }
-function Warn($m) { Write-Host "[Init] $m" -ForegroundColor Yellow }
-function Err ($m) { Write-Host "[Init] $m" -ForegroundColor Red }
-function Ok  ($m) { Write-Host "[Init] $m" -ForegroundColor Green }
+$initDomainModulePath = Join-Path $PSScriptRoot "UETools\UEToolSuite.Init.psm1"
+if (-not (Test-Path -LiteralPath $initDomainModulePath -PathType Leaf)) {
+  throw "Init domain module not found: $initDomainModulePath"
+}
+Import-Module -Name $initDomainModulePath -Force
 
 $script:ToolReadiness = New-Object System.Collections.Generic.List[object]
 
@@ -62,28 +65,7 @@ function Add-ToolReadiness {
     [Parameter(Mandatory)][string]$Detail
   )
 
-  $readinessAdder = Get-Command -Name "Add-UEToolSuiteInitToolReadinessEntry" -ErrorAction SilentlyContinue
-  if ($readinessAdder) {
-    Add-UEToolSuiteInitToolReadinessEntry -ReadinessList $script:ToolReadiness -Tool $Tool -Status $Status -Detail $Detail
-    return
-  }
-
-  [void]$script:ToolReadiness.Add([pscustomobject]@{
-      Tool = $Tool
-      Status = $Status
-      Detail = $Detail
-    })
-}
-
-function Test-CommandAvailable {
-  param([Parameter(Mandatory)][string]$Name)
-
-  $availabilityTester = Get-Command -Name "Test-UEToolSuiteInitCommandAvailable" -ErrorAction SilentlyContinue
-  if ($availabilityTester) {
-    return (Test-UEToolSuiteInitCommandAvailable -Name $Name)
-  }
-
-  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
+  Add-UEToolSuiteInitToolReadinessEntry -ReadinessList $script:ToolReadiness -Tool $Tool -Status $Status -Detail $Detail
 }
 
 function Assert-CommandAvailable {
@@ -91,42 +73,11 @@ function Assert-CommandAvailable {
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$InstallHint
   )
-
-  $commandAsserter = Get-Command -Name "Assert-UEToolSuiteInitCommandAvailable" -ErrorAction SilentlyContinue
-  if ($commandAsserter) {
-    return (Assert-UEToolSuiteInitCommandAvailable -Name $Name -InstallHint $InstallHint)
-  }
-
-  $command = Get-Command $Name -ErrorAction SilentlyContinue
-  if (-not $command) {
-    throw "$Name not found. $InstallHint"
-  }
-
-  return $command
+  return (Assert-UEToolSuiteInitCommandAvailable -Name $Name -InstallHint $InstallHint)
 }
 
 function Assert-NodeVersion {
-  $nodeVersionAsserter = Get-Command -Name "Assert-UEToolSuiteInitNodeVersion" -ErrorAction SilentlyContinue
-  if ($nodeVersionAsserter) {
-    return (Assert-UEToolSuiteInitNodeVersion)
-  }
-
-  $nodeVersion = ((& node --version 2>$null) | Select-Object -First 1)
-  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($nodeVersion)) {
-    throw "node --version failed. Install Node.js 20+ and try again."
-  }
-
-  $versionText = $nodeVersion.Trim()
-  if ($versionText -notmatch '^v?(?<major>\d+)') {
-    throw "Could not parse Node.js version '$versionText'. Install Node.js 20+ and try again."
-  }
-
-  $major = [int]$Matches.major
-  if ($major -lt 20) {
-    throw "Node.js 20+ is required for docs tooling. Current: $versionText"
-  }
-
-  return $versionText
+  return (Assert-UEToolSuiteInitNodeVersion)
 }
 
 function Invoke-CheckedTool {
@@ -136,96 +87,12 @@ function Invoke-CheckedTool {
     [string[]]$Arguments = @(),
     [string]$WorkingDirectory
   )
-
-  $toolInvoker = Get-Command -Name "Invoke-UEToolSuiteInitCheckedTool" -ErrorAction SilentlyContinue
-  if ($toolInvoker) {
-    Invoke-UEToolSuiteInitCheckedTool -Description $Description -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $WorkingDirectory
-    return
-  }
-
-  $oldLocation = (Get-Location).Path
-  try {
-    if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
-      Set-Location -LiteralPath $WorkingDirectory
-    }
-
-    & $FilePath @Arguments
-    if ($LASTEXITCODE -ne 0) {
-      throw "$Description failed (exit $LASTEXITCODE)."
-    }
-  }
-  finally {
-    Set-Location -LiteralPath $oldLocation
-  }
-}
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $PSScriptRoot -Path $Path -Content $Content
+  Invoke-UEToolSuiteInitCheckedTool -Description $Description -FilePath $FilePath -Arguments $Arguments -WorkingDirectory $WorkingDirectory
 }
 
 function Get-GitHubRepoSlugFromRemoteUrl {
   param([string]$RemoteUrl)
-
-  $slugResolver = Get-Command -Name "Get-UEToolSuiteInitGitHubRepoSlugFromRemoteUrl" -ErrorAction SilentlyContinue
-  if ($slugResolver) {
-    return (Get-UEToolSuiteInitGitHubRepoSlugFromRemoteUrl -RemoteUrl $RemoteUrl)
-  }
-
-  if ([string]::IsNullOrWhiteSpace($RemoteUrl)) {
-    return $null
-  }
-
-  $trimmed = $RemoteUrl.Trim()
-  if ($trimmed -match 'github\.com[:/](?<slug>[^/\s]+/[^/\s]+?)(?:\.git)?$') {
-    return $Matches.slug
-  }
-
-  return $null
-}
-
-function ConvertTo-TypeScriptSingleQuotedString {
-  param([Parameter(Mandatory)][string]$Value)
-
-  $singleQuoteConverter = Get-Command -Name "ConvertTo-UEToolSuiteInitTypeScriptSingleQuotedString" -ErrorAction SilentlyContinue
-  if ($singleQuoteConverter) {
-    return (ConvertTo-UEToolSuiteInitTypeScriptSingleQuotedString -Value $Value)
-  }
-
-  return "'" + (($Value -replace "\\", "\\") -replace "'", "\'") + "'"
-}
-
-function Set-TypeScriptStringProperty {
-  param(
-    [Parameter(Mandatory)][string]$Text,
-    [Parameter(Mandatory)][string]$PropertyName,
-    [Parameter(Mandatory)][string]$Value
-  )
-
-  $propertySetter = Get-Command -Name "Set-UEToolSuiteInitTypeScriptStringProperty" -ErrorAction SilentlyContinue
-  if ($propertySetter) {
-    return (Set-UEToolSuiteInitTypeScriptStringProperty -Text $Text -PropertyName $PropertyName -Value $Value)
-  }
-
-  $quotedValue = ConvertTo-TypeScriptSingleQuotedString -Value $Value
-  $pattern = "(?m)^(\s*" + [regex]::Escape($PropertyName) + "\s*:\s*)(['""]).*?\2(,?\s*)$"
-  if (-not [regex]::IsMatch($Text, $pattern)) {
-    return $Text
-  }
-
-  return [regex]::Replace(
-    $Text,
-    $pattern,
-    [System.Text.RegularExpressions.MatchEvaluator] {
-      param($match)
-      return $match.Groups[1].Value + $quotedValue + $match.Groups[3].Value
-    },
-    1
-  )
+  return (Get-UEToolSuiteInitGitHubRepoSlugFromRemoteUrl -RemoteUrl $RemoteUrl)
 }
 
 function Update-DocusaurusGitHubMetadata {
@@ -234,103 +101,24 @@ function Update-DocusaurusGitHubMetadata {
     [AllowNull()][string]$RepoSlug
   )
 
-  if (Import-UEToolSuiteCoreModule) {
-    $moduleFn = Get-Command -Name "Invoke-UEToolSuiteInitDocusaurusMetadataUpdate" -ErrorAction SilentlyContinue
-    if ($moduleFn) {
-      $result = Invoke-UEToolSuiteInitDocusaurusMetadataUpdate -ResolvedRepoRoot $ResolvedRepoRoot -RepoSlug $RepoSlug
-      Add-ToolReadiness -Tool "docs site metadata" -Status $result.Status -Detail $result.Detail
-      return
-    }
-  }
-
-  $configPath = Join-Path $ResolvedRepoRoot "website\docusaurus.config.ts"
-  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-    Add-ToolReadiness -Tool "docs site metadata" -Status "SKIP" -Detail "website/docusaurus.config.ts is not installed."
-    return
-  }
-
-  if ([string]::IsNullOrWhiteSpace($RepoSlug) -or $RepoSlug -notmatch '^(?<owner>[^/]+)/(?<name>[^/]+)$') {
-    Add-ToolReadiness -Tool "docs site metadata" -Status "SKIP" -Detail "origin does not point to a GitHub owner/repo slug."
-    return
-  }
-
-  $owner = $Matches.owner
-  $repoName = $Matches.name
-  $configText = Get-Content -LiteralPath $configPath -Raw
-  $updatedText = Set-TypeScriptStringProperty -Text $configText -PropertyName "organizationName" -Value $owner
-  $updatedText = Set-TypeScriptStringProperty -Text $updatedText -PropertyName "projectName" -Value $repoName
-
-  if ($updatedText -eq $configText) {
-    Add-ToolReadiness -Tool "docs site metadata" -Status "WARN" -Detail "Could not find organizationName/projectName in website/docusaurus.config.ts."
-    return
-  }
-
-  Write-Utf8NoBomFile -Path $configPath -Content $updatedText
-  Add-ToolReadiness -Tool "docs site metadata" -Status "OK" -Detail "Set Docusaurus GitHub owner/repo metadata to $owner/$repoName."
+  $result = Invoke-UEToolSuiteInitDocusaurusMetadataUpdate -ResolvedRepoRoot $ResolvedRepoRoot -RepoSlug $RepoSlug
+  Add-ToolReadiness -Tool "docs site metadata" -Status $result.Status -Detail $result.Detail
 }
 
 function Resolve-InitRepoRoot {
   param([string]$ExplicitRepoRoot)
+  return (Resolve-UEToolSuiteInitRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo")
+}
 
-  if (Import-UEToolSuiteCoreModule) {
-    $initRootResolver = Get-Command -Name "Resolve-UEToolSuiteInitRepoRoot" -ErrorAction SilentlyContinue
-    if ($initRootResolver) {
-      return (Resolve-UEToolSuiteInitRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo")
-    }
-  }
+function Test-ArtSourceTemplateReady {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
-  if ($runtimeResolver) {
-    if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
-      return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $PSScriptRoot -InvocationName "Init-Repo")
-    }
+  $result = Get-UEToolSuiteInitArtTemplateReadiness -ResolvedRepoRoot $ResolvedRepoRoot
+  Add-ToolReadiness -Tool "art-tools" -Status $result.Status -Detail $result.Detail
+}
 
-    $candidate = Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $PSScriptRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo" -AllowFilePath
-    $gitRootFromCandidate = ((git -C $candidate rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
-    if ([string]::IsNullOrWhiteSpace($gitRootFromCandidate)) {
-      throw "RepoRoot is not inside a git repository: $candidate"
-    }
-
-    return $gitRootFromCandidate.Trim()
-  }
-
-  if (Import-UEToolSuiteCoreModule) {
-    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
-    if ($resolver) {
-      if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
-        return (Resolve-UEToolSuiteRepoRoot -InvocationName "Init-Repo")
-      }
-
-      $candidate = Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo"
-      $gitRootFromCandidate = ((git -C $candidate rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
-      if ([string]::IsNullOrWhiteSpace($gitRootFromCandidate)) {
-        throw "RepoRoot is not inside a git repository: $candidate"
-      }
-
-      return $gitRootFromCandidate.Trim()
-    }
-  }
-
-  if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
-    $gitRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
-    if ([string]::IsNullOrWhiteSpace($gitRoot)) {
-      throw "Not inside a git repository (git rev-parse failed). Pass -RepoRoot when running from outside the repo."
-    }
-
-    return $gitRoot.Trim()
-  }
-
-  $candidate = [System.IO.Path]::GetFullPath($ExplicitRepoRoot)
-  if (-not (Test-Path -LiteralPath $candidate)) {
-    throw "RepoRoot does not exist: $candidate"
-  }
-
-  $gitRootFromCandidate = ((git -C $candidate rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
-  if ([string]::IsNullOrWhiteSpace($gitRootFromCandidate)) {
-    throw "RepoRoot is not inside a git repository: $candidate"
-  }
-
-  return $gitRootFromCandidate.Trim()
+function Show-ToolReadinessSummary {
+  Show-UEToolSuiteInitToolReadinessSummary -Entries $script:ToolReadiness -Prefix "[Init]"
 }
 
 function Initialize-DocsTooling {
@@ -411,74 +199,6 @@ function Initialize-DocsTooling {
   Add-ToolReadiness -Tool "docs-tools" -Status "OK" -Detail "docs-tools doctor completed."
 }
 
-function Test-ArtSourceTemplateReady {
-  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
-
-  if (Import-UEToolSuiteCoreModule) {
-    $moduleFn = Get-Command -Name "Get-UEToolSuiteInitArtTemplateReadiness" -ErrorAction SilentlyContinue
-    if ($moduleFn) {
-      $result = Get-UEToolSuiteInitArtTemplateReadiness -ResolvedRepoRoot $ResolvedRepoRoot
-      Add-ToolReadiness -Tool "art-tools" -Status $result.Status -Detail $result.Detail
-      return
-    }
-  }
-
-  $artToolScript = Join-Path $ResolvedRepoRoot "Scripts\Unreal\New-ArtSourcePath.ps1"
-  if (-not (Test-Path -LiteralPath $artToolScript)) {
-    Add-ToolReadiness -Tool "art-tools" -Status "SKIP" -Detail "ArtSource helper is not installed in this repo."
-    return
-  }
-
-  $artSourceRoot = Join-Path $ResolvedRepoRoot "ArtSource"
-  if (-not (Test-Path -LiteralPath $artSourceRoot -PathType Container)) {
-    Add-ToolReadiness -Tool "art-tools" -Status "SKIP" -Detail "No ArtSource folder found; art tooling is not applicable yet."
-    return
-  }
-
-  $missing = @()
-  foreach ($relativePath in @("_Template", "_Template\Source", "_Template\Textures", "_Template\Exports")) {
-    $candidate = Join-Path $artSourceRoot $relativePath
-    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
-      $missing += (Join-Path "ArtSource" $relativePath)
-    }
-  }
-
-  if ($missing.Count -gt 0) {
-    Add-ToolReadiness -Tool "art-tools" -Status "WARN" -Detail "Missing template folder(s): $($missing -join ', '). Run art-tools once after restoring the template."
-    return
-  }
-
-  Add-ToolReadiness -Tool "art-tools" -Status "OK" -Detail "ArtSource/_Template contains Source, Textures, and Exports."
-}
-
-function Show-ToolReadinessSummary {
-  $summaryWriter = Get-Command -Name "Show-UEToolSuiteInitToolReadinessSummary" -ErrorAction SilentlyContinue
-  if ($summaryWriter) {
-    Show-UEToolSuiteInitToolReadinessSummary -Entries $script:ToolReadiness -Prefix "[Init]"
-    return
-  }
-
-  if ($script:ToolReadiness.Count -eq 0) {
-    return
-  }
-
-  Info "Tool readiness summary:"
-  $entries = $script:ToolReadiness.ToArray()
-  foreach ($entry in $entries) {
-    $color = [ConsoleColor]::Gray
-    if ($entry.Status -eq "OK") {
-      $color = [ConsoleColor]::Green
-    }
-    elseif ($entry.Status -eq "WARN") {
-      $color = [ConsoleColor]::Yellow
-    }
-    elseif ($entry.Status -eq "SKIP") {
-      $color = [ConsoleColor]::DarkYellow
-    }
-
-    Write-Host ("  [{0}] {1}: {2}" -f $entry.Status, $entry.Tool, $entry.Detail) -ForegroundColor $color
-  }
-}
 
 # --- Require PowerShell 7+ ---
 if ($PSVersionTable.PSVersion.Major -lt 7) {

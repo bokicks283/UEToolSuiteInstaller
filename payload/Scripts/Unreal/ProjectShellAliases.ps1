@@ -18,7 +18,7 @@ if (-not $script:UEToolSuiteAliasesModuleLoadContext) {
   }
 }
 
-# Legacy self-contained fallback for copied helper scenarios where UETools modules are not present.
+# Runtime-backed fallback for copied helper scenarios where UETools modules are not present.
 $script:ProjectShellAliasesScriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) "Unreal\ProjectShellAliases.ps1"
 if (-not (Test-Path -LiteralPath $script:ProjectShellAliasesScriptPath -PathType Leaf)) {
   $script:ProjectShellAliasesScriptPath = if ($PSCommandPath) {
@@ -33,60 +33,7 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
   . $runtimeHelperPath
 }
 else {
-  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
-    param([Parameter(Mandatory)][string]$ScriptsRoot)
-
-    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
-    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-      return $manifestPath
-    }
-
-    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
-    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
-      return $modulePath
-    }
-
-    return $null
-  }
-
-  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
-    param(
-      [Parameter(Mandatory)][string]$ScriptsRoot,
-      [Parameter(Mandatory)][string]$StateKey
-    )
-
-    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
-    if ([string]::IsNullOrWhiteSpace($modulePath)) {
-      return $false
-    }
-
-    Import-Module -Name $modulePath -Force
-    return $true
-  }
-}
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  $runtimeWriter = Get-Command -Name "Write-UEToolSuiteRuntimeUtf8NoBomFile" -ErrorAction SilentlyContinue
-  if ($runtimeWriter) {
-    Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot (Get-ProjectAliasScriptsRoot) -Path $Path -Content $Content
-    return
-  }
-
-  if (Import-UEToolSuiteCoreModule) {
-    $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
-    if ($writer) {
-      Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content
-      return
-    }
-  }
-
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+  throw "Runtime helper not found: $runtimeHelperPath"
 }
 
 function Remove-ProfileSnippet {
@@ -105,7 +52,7 @@ function Remove-ProfileSnippet {
   $updated = [regex]::Replace($existing, $pattern, "")
 
   if ($updated -cne $existing) {
-    Write-Utf8NoBomFile -Path $ProfilePath -Content $updated
+    Write-Utf8NoBomFile -ScriptsRoot (Get-ProjectAliasScriptsRoot) -Path $ProfilePath -Content $updated
   }
 }
 
@@ -154,7 +101,7 @@ function Set-ProfileSnippet {
     $updated += $snippet + "`r`n"
   }
 
-  Write-Utf8NoBomFile -Path $ProfilePath -Content $updated
+  Write-Utf8NoBomFile -ScriptsRoot (Get-ProjectAliasScriptsRoot) -Path $ProfilePath -Content $updated
 }
 
 function Resolve-ProfilePathForAliases {
@@ -206,25 +153,28 @@ function Get-ProjectAliasScriptsRoot {
   return (Split-Path -Path $scriptDir -Parent)
 }
 
-function Import-UEToolSuiteCoreModule {
+function Get-ProjectAliasCoreImportContext {
   $scriptsRoot = Get-ProjectAliasScriptsRoot
-  $stateKey = "project-shell-aliases::{0}" -f $scriptsRoot.ToLowerInvariant()
-  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $scriptsRoot -StateKey $stateKey)
+  return [pscustomobject]@{
+    ScriptsRoot = $scriptsRoot
+    StateKey = ("project-shell-aliases::{0}" -f $scriptsRoot.ToLowerInvariant())
+  }
 }
 
 function Get-ProjectAliasDefinitionsFromRegistry {
-  if (-not (Import-UEToolSuiteCoreModule)) {
+  $context = Get-ProjectAliasCoreImportContext
+  if (-not (Import-UEToolSuiteCoreModule -ScriptsRoot $context.ScriptsRoot -StateKey $context.StateKey)) {
     return @()
   }
 
-  $scriptsRoot = Get-ProjectAliasScriptsRoot
-  return @(Get-UEToolSuiteCommandRegistry -ScriptsRoot $scriptsRoot)
+  return @(Get-UEToolSuiteCommandRegistry -ScriptsRoot $context.ScriptsRoot)
 }
 
 function Get-ProjectAliasCommandSpecFromRegistry {
   param([Parameter(Mandatory)][string]$SpecFunctionName)
 
-  if (-not (Import-UEToolSuiteCoreModule)) {
+  $context = Get-ProjectAliasCoreImportContext
+  if (-not (Import-UEToolSuiteCoreModule -ScriptsRoot $context.ScriptsRoot -StateKey $context.StateKey)) {
     return $null
   }
 
@@ -506,12 +456,13 @@ function Get-ProjectAliasDefinitions {
 function Get-RepoRootOrThrow {
   param([Parameter(Mandatory)][string]$InvokerName)
 
+  $context = Get-ProjectAliasCoreImportContext
   $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
   if ($runtimeResolver) {
-    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot (Get-ProjectAliasScriptsRoot) -InvocationName $InvokerName)
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $context.ScriptsRoot -InvocationName $InvokerName)
   }
 
-  if (Import-UEToolSuiteCoreModule) {
+  if (Import-UEToolSuiteCoreModule -ScriptsRoot $context.ScriptsRoot -StateKey $context.StateKey) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
     if ($resolver) {
       return (Resolve-UEToolSuiteRepoRoot -InvocationName $InvokerName)
@@ -533,7 +484,8 @@ function Resolve-RepoScriptOrThrow {
     [Parameter(Mandatory)][string]$NotFoundMessagePrefix
   )
 
-  if (Import-UEToolSuiteCoreModule) {
+  $context = Get-ProjectAliasCoreImportContext
+  if (Import-UEToolSuiteCoreModule -ScriptsRoot $context.ScriptsRoot -StateKey $context.StateKey) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoPath" -ErrorAction SilentlyContinue
     if ($resolver) {
       return (Resolve-UEToolSuiteRepoPath -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType Leaf)
@@ -542,7 +494,7 @@ function Resolve-RepoScriptOrThrow {
 
   $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoPath" -ErrorAction SilentlyContinue
   if ($runtimeResolver) {
-    return (Resolve-UEToolSuiteRuntimeRepoPath -ScriptsRoot (Get-ProjectAliasScriptsRoot) -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType Leaf)
+    return (Resolve-UEToolSuiteRuntimeRepoPath -ScriptsRoot $context.ScriptsRoot -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType Leaf)
   }
 
   $scriptPath = Join-Path $RepoRoot $RelativePath
@@ -963,7 +915,7 @@ function Install-ProjectShellAliases {
     $existingBootstrap = Get-Content -LiteralPath $resolvedBootstrapScriptPath -Raw
   }
   if ($existingBootstrap -cne $bootstrapContent) {
-    Write-Utf8NoBomFile -Path $resolvedBootstrapScriptPath -Content $bootstrapContent
+    Write-Utf8NoBomFile -ScriptsRoot (Get-ProjectAliasScriptsRoot) -Path $resolvedBootstrapScriptPath -Content $bootstrapContent
   }
 
   $markers = Get-ProjectAliasBootstrapMarkers

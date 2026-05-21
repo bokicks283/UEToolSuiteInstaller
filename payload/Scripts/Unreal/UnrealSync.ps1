@@ -46,15 +46,7 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
 else {
   throw "Runtime helper not found: $runtimeHelperPath"
 }
-
-function Import-UEToolSuiteCoreModule {
-  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $script:UnrealScriptsRoot -StateKey "unreal-sync")
-}
-
-function Info($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Cyan }
-function Warn($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Yellow }
-function Err ($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Red }
-function Success($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Green }
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $script:UnrealScriptsRoot -StateKey "unreal-sync" -LogPrefix "[UE Sync]" -WriteFileEnsureParentDirectory
 
 function Test-IsInteractiveConsole {
   try {
@@ -600,15 +592,6 @@ function Resolve-RegenerateFallbackTool([string]$engineRoot) {
     Path       = $null
     Candidates = $candidates
   }
-}
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $script:UnrealScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory
 }
 
 function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {

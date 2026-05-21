@@ -122,6 +122,10 @@ try {
   if (-not (Test-Path -LiteralPath $helperPath)) {
     throw "Helper script not found: $helperPath"
   }
+  $runtimeHelperPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Runtime.ps1"
+  if (-not (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf)) {
+    throw "Runtime helper not found: $runtimeHelperPath"
+  }
   $bootstrapPath = New-ScratchPath "UEToolsBootstrap.ps1"
   . $helperPath
   $artToolsAvailable = Test-ProjectAliasRepoScriptAvailable -RelativePath "New-ArtSourcePath.ps1"
@@ -254,11 +258,13 @@ try {
   $multiRepoB = New-ScratchPath "multi-repo-b"
   New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoA "Scripts\\Unreal") | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoB "Scripts\\Unreal") | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoA "Scripts") | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoB "Scripts") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoA "Scripts\\UETools") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $multiRepoB "Scripts\\UETools") | Out-Null
 
   Copy-Item -LiteralPath $helperPath -Destination (Join-Path $multiRepoA "Scripts\\Unreal\\ProjectShellAliases.ps1") -Force
   Copy-Item -LiteralPath $helperPath -Destination (Join-Path $multiRepoB "Scripts\\Unreal\\ProjectShellAliases.ps1") -Force
+  Copy-Item -LiteralPath $runtimeHelperPath -Destination (Join-Path $multiRepoA "Scripts\\UETools\\UEToolSuite.Runtime.ps1") -Force
+  Copy-Item -LiteralPath $runtimeHelperPath -Destination (Join-Path $multiRepoB "Scripts\\UETools\\UEToolSuite.Runtime.ps1") -Force
 
   Write-TextFileLf -Path (Join-Path $multiRepoA "Scripts\\ue-tools.ps1") -Content @'
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs)
@@ -413,9 +419,12 @@ Write-Host "UE tools wrapper RepoB"
   Step "Case 10: ue-tools build forwards -Force and passthrough arguments"
   $forwardRepo = New-ScratchPath "forwarding-repo"
   $forwardUnrealDir = Join-Path $forwardRepo "Scripts\Unreal"
+  $forwardUEToolsDir = Join-Path $forwardRepo "Scripts\UETools"
   New-Item -ItemType Directory -Force -Path $forwardUnrealDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $forwardUEToolsDir | Out-Null
   & git -C $forwardRepo init | Out-Null
   Copy-Item -LiteralPath $helperPath -Destination (Join-Path $forwardUnrealDir "ProjectShellAliases.ps1") -Force
+  Copy-Item -LiteralPath $runtimeHelperPath -Destination (Join-Path $forwardUEToolsDir "UEToolSuite.Runtime.ps1") -Force
 
   $forwardScript = Join-Path $forwardUnrealDir "UnrealSync.ps1"
   $forwardResult = Join-Path $forwardUnrealDir "last-run.json"
@@ -472,9 +481,12 @@ $outPath = Join-Path (Split-Path -Parent $PSCommandPath) "last-run.json"
   Step "Case 11: art-tools errors clearly when target script is missing"
   $missingArtRepo = New-ScratchPath "missing-art-repo"
   $missingArtUnrealDir = Join-Path $missingArtRepo "Scripts\Unreal"
+  $missingArtUEToolsDir = Join-Path $missingArtRepo "Scripts\UETools"
   New-Item -ItemType Directory -Force -Path $missingArtUnrealDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $missingArtUEToolsDir | Out-Null
   & git -C $missingArtRepo init | Out-Null
   Copy-Item -LiteralPath $helperPath -Destination (Join-Path $missingArtUnrealDir "ProjectShellAliases.ps1") -Force
+  Copy-Item -LiteralPath $runtimeHelperPath -Destination (Join-Path $missingArtUEToolsDir "UEToolSuite.Runtime.ps1") -Force
 
   Push-Location $missingArtRepo
   try {

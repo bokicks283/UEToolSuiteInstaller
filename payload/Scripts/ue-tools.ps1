@@ -15,15 +15,12 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
 else {
   throw "Runtime helper not found: $runtimeHelperPath"
 }
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $PSScriptRoot -StateKey "ue-tools"
 
 function Write-UEToolsError {
   param([Parameter(Mandatory)][string]$Message)
 
   Write-Host "Error: $Message" -ForegroundColor Red
-}
-
-function Import-UEToolSuiteCoreModule {
-  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $PSScriptRoot -StateKey "ue-tools")
 }
 
 function Resolve-UEToolsRepoRoot {

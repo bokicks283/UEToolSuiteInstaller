@@ -48,6 +48,184 @@ function Import-UEToolSuiteCoreModuleFromScriptsRoot {
   return $true
 }
 
+function Set-UEToolSuiteRuntimeContext {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ScriptsRoot,
+    [Parameter(Mandatory)][string]$StateKey,
+    [string]$LogPrefix = "[UETools]",
+    [switch]$WriteFileEnsureParentDirectory,
+    [string]$CommandAvailabilityFunctionName
+  )
+
+  $script:UEToolSuiteRuntimeContext = @{
+    ScriptsRoot = $ScriptsRoot
+    StateKey = $StateKey
+    LogPrefix = $LogPrefix
+    WriteFileEnsureParentDirectory = [bool]$WriteFileEnsureParentDirectory
+    CommandAvailabilityFunctionName = $CommandAvailabilityFunctionName
+  }
+}
+
+function Get-UEToolSuiteRuntimeContext {
+  [CmdletBinding()]
+  param(
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = @{}
+  if ($script:UEToolSuiteRuntimeContext) {
+    $context = $script:UEToolSuiteRuntimeContext
+  }
+
+  $resolvedScriptsRoot = $ScriptsRoot
+  if ([string]::IsNullOrWhiteSpace($resolvedScriptsRoot)) {
+    $resolvedScriptsRoot = [string]$context.ScriptsRoot
+  }
+  if ([string]::IsNullOrWhiteSpace($resolvedScriptsRoot)) {
+    throw "UEToolSuite runtime context is missing ScriptsRoot. Call Set-UEToolSuiteRuntimeContext or pass -ScriptsRoot."
+  }
+
+  $resolvedStateKey = $StateKey
+  if ([string]::IsNullOrWhiteSpace($resolvedStateKey)) {
+    $resolvedStateKey = [string]$context.StateKey
+  }
+  if ([string]::IsNullOrWhiteSpace($resolvedStateKey)) {
+    $resolvedStateKey = "runtime::{0}" -f $resolvedScriptsRoot.ToLowerInvariant()
+  }
+
+  $logPrefix = [string]$context.LogPrefix
+  if ([string]::IsNullOrWhiteSpace($logPrefix)) {
+    $logPrefix = "[UETools]"
+  }
+
+  return [pscustomobject]@{
+    ScriptsRoot = $resolvedScriptsRoot
+    StateKey = $resolvedStateKey
+    LogPrefix = $logPrefix
+    WriteFileEnsureParentDirectory = [bool]$context.WriteFileEnsureParentDirectory
+    CommandAvailabilityFunctionName = [string]$context.CommandAvailabilityFunctionName
+  }
+}
+
+function Import-UEToolSuiteCoreModule {
+  [CmdletBinding()]
+  param(
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = Get-UEToolSuiteRuntimeContext -ScriptsRoot $ScriptsRoot -StateKey $StateKey
+  return (Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $context.ScriptsRoot -StateKey $context.StateKey)
+}
+
+function Write-UEToolSuiteRuntimeLog {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][AllowEmptyString()][string]$Message,
+    [ValidateSet("Info", "Warn", "Err", "Ok", "Success")][string]$Level = "Info",
+    [string]$LogPrefix
+  )
+
+  $prefix = $LogPrefix
+  if ([string]::IsNullOrWhiteSpace($prefix)) {
+    if ($script:UEToolSuiteRuntimeContext -and -not [string]::IsNullOrWhiteSpace([string]$script:UEToolSuiteRuntimeContext.LogPrefix)) {
+      $prefix = [string]$script:UEToolSuiteRuntimeContext.LogPrefix
+    }
+    else {
+      $prefix = "[UETools]"
+    }
+  }
+
+  $color = switch ($Level) {
+    "Info" { "Cyan" }
+    "Warn" { "Yellow" }
+    "Err" { "Red" }
+    "Ok" { "Green" }
+    "Success" { "Green" }
+    default { "Gray" }
+  }
+
+  Write-Host "$prefix $Message" -ForegroundColor $color
+}
+
+function Info {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Info"
+}
+
+function Warn {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Warn"
+}
+
+function Err {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Err"
+}
+
+function Ok {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Ok"
+}
+
+function Success {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Success"
+}
+
+function Write-Utf8NoBomFile {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Content,
+    [switch]$EnsureParentDirectory,
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = Get-UEToolSuiteRuntimeContext -ScriptsRoot $ScriptsRoot -StateKey $StateKey
+  $ensureParent = $EnsureParentDirectory
+  if (-not $PSBoundParameters.ContainsKey("EnsureParentDirectory")) {
+    $ensureParent = [bool]$context.WriteFileEnsureParentDirectory
+  }
+
+  Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $context.ScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory:$ensureParent
+}
+
+function Test-CommandAvailable {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Name,
+    [string]$ModuleFunctionName,
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = Get-UEToolSuiteRuntimeContext -ScriptsRoot $ScriptsRoot -StateKey $StateKey
+
+  $resolverName = $ModuleFunctionName
+  if ([string]::IsNullOrWhiteSpace($resolverName)) {
+    $resolverName = $context.CommandAvailabilityFunctionName
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($resolverName)) {
+    [void](Import-UEToolSuiteCoreModuleFromScriptsRoot -ScriptsRoot $context.ScriptsRoot -StateKey $context.StateKey)
+    $moduleFn = Get-Command -Name $resolverName -ErrorAction SilentlyContinue
+    if ($moduleFn) {
+      return (& $resolverName -Name $Name)
+    }
+  }
+
+  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
+}
+
 function Resolve-UEToolSuiteRuntimeRepoRoot {
   [CmdletBinding()]
   param(

@@ -4,10 +4,14 @@
 
 $ErrorActionPreference = "Stop"
 
-function Info($m) { Write-Host "[HookTest] $m" -ForegroundColor Cyan }
-function Ok($m)   { Write-Host "[HookTest] $m" -ForegroundColor Green }
-function Warn($m) { Write-Host "[HookTest] $m" -ForegroundColor Yellow }
-function Err($m)  { Write-Host "[HookTest] $m" -ForegroundColor Red }
+$runtimeHelperPath = Join-Path (Split-Path -Parent $PSScriptRoot) "UETools\UEToolSuite.Runtime.ps1"
+if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
+  . $runtimeHelperPath
+}
+else {
+  throw "Runtime helper not found: $runtimeHelperPath"
+}
+Set-UEToolSuiteRuntimeContext -ScriptsRoot (Split-Path -Parent $PSScriptRoot) -StateKey "hook-tests" -LogPrefix "[HookTest]"
 
 function Get-GitExePath {
   $git = Get-Command git -ErrorAction SilentlyContinue
