@@ -340,6 +340,7 @@ Defined in `Tests/ToolSuiteManifest.ps1`:
 - Non-mutating/default suites:
   - installer regression
   - upgrade compatibility
+  - packaging contracts
   - hooks
   - shell aliases
   - docs tools

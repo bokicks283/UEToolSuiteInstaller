@@ -152,7 +152,8 @@ Recommended release flow:
 2. Run:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Test-Install-UEToolSuite.ps1
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -FailFast
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& './Tests/Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
 git add -N .
 git diff --check
 ```

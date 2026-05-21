@@ -41,9 +41,15 @@ jobs:
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Run installer tests
+      - name: Run full non-mutating suite
         shell: pwsh
-        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Test-Install-UEToolSuite.ps1
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -FailFast
+
+      - name: Run mutating suites
+        shell: pwsh
+        run: >
+          pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass
+          -Command "& './Tests/Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
 
       - name: Decode signing certificate
         if: ${{ env.WINDOWS_CODESIGN_PFX_BASE64 != '' }}

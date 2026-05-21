@@ -65,6 +65,15 @@ function Get-UEToolSuiteTestManifest {
       -ResultDirectory "Tests/Test-UpgradeCompatibilityResults")
 
     (New-UEToolSuiteTestEntry `
+      -Id "packaging-contracts" `
+      -Name "Packaging Contracts" `
+      -Path "Tests/Test-PackagingContracts.ps1" `
+      -Category "packaging" `
+      -Description "Validates GUI/publish/release packaging contracts and gate coverage." `
+      -SupportsFailFast $true `
+      -ResultDirectory "Tests/Test-PackagingContractsResults")
+
+    (New-UEToolSuiteTestEntry `
       -Id "standards-advisory" `
       -Name "Standards Advisory" `
       -Path "Tests/Test-Standards-Advisory.ps1" `
