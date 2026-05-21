@@ -4,15 +4,17 @@ $scriptsRoot = Split-Path -Parent $PSScriptRoot
 $aliasesModulePath = Join-Path $scriptsRoot "UETools\UEToolSuite.Aliases.psm1"
 $facadeManifestPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
 
-if (Test-Path -LiteralPath $aliasesModulePath -PathType Leaf) {
-  Import-Module -Name $aliasesModulePath -Force
-  return
-}
-
-if (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
-  Import-Module -Name $facadeManifestPath -Force
-  if (Get-Command -Name "Get-ProjectAliasDefinitions" -ErrorAction SilentlyContinue) {
+if (-not $script:UEToolSuiteAliasesModuleLoadContext) {
+  if (Test-Path -LiteralPath $aliasesModulePath -PathType Leaf) {
+    Import-Module -Name $aliasesModulePath -Force
     return
+  }
+
+  if (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
+    Import-Module -Name $facadeManifestPath -Force
+    if (Get-Command -Name "Get-ProjectAliasDefinitions" -ErrorAction SilentlyContinue) {
+      return
+    }
   }
 }
 
@@ -1074,4 +1076,3 @@ function Install-AIToolsShellAliases {
     EndMarker = $result.EndMarker
   }
 }
-

@@ -13,36 +13,7 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
   . $runtimeHelperPath
 }
 else {
-  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
-    param([Parameter(Mandatory)][string]$ScriptsRoot)
-
-    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
-    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-      return $manifestPath
-    }
-
-    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
-    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
-      return $modulePath
-    }
-
-    return $null
-  }
-
-  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
-    param(
-      [Parameter(Mandatory)][string]$ScriptsRoot,
-      [Parameter(Mandatory)][string]$StateKey
-    )
-
-    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
-    if ([string]::IsNullOrWhiteSpace($modulePath)) {
-      return $false
-    }
-
-    Import-Module -Name $modulePath -Force
-    return $true
-  }
+  throw "Runtime helper not found: $runtimeHelperPath"
 }
 
 function Write-UEToolsError {

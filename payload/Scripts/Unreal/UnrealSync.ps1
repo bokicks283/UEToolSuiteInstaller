@@ -44,36 +44,7 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
   . $runtimeHelperPath
 }
 else {
-  function Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot {
-    param([Parameter(Mandatory)][string]$ScriptsRoot)
-
-    $manifestPath = Join-Path $ScriptsRoot "UETools\UETools.psd1"
-    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-      return $manifestPath
-    }
-
-    $modulePath = Join-Path $ScriptsRoot "UETools\UEToolSuite.Core.psm1"
-    if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
-      return $modulePath
-    }
-
-    return $null
-  }
-
-  function Import-UEToolSuiteCoreModuleFromScriptsRoot {
-    param(
-      [Parameter(Mandatory)][string]$ScriptsRoot,
-      [Parameter(Mandatory)][string]$StateKey
-    )
-
-    $modulePath = Get-UEToolSuiteCoreModuleEntryPathFromScriptsRoot -ScriptsRoot $ScriptsRoot
-    if ([string]::IsNullOrWhiteSpace($modulePath)) {
-      return $false
-    }
-
-    Import-Module -Name $modulePath -Force
-    return $true
-  }
+  throw "Runtime helper not found: $runtimeHelperPath"
 }
 
 function Import-UEToolSuiteCoreModule {
@@ -265,18 +236,6 @@ function Add-DiagnosticAttempt([System.Collections.Generic.List[string]]$Attempt
   }
 }
 
-function Test-EngineRoot([string]$root) {
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealEngineRoot" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Test-UEToolSuiteUnrealEngineRoot -Root $root)
-  }
-
-  if (-not $root) { return $false }
-  if (-not (Test-Path $root)) { return $false }
-  Test-Path (Join-Path $root "Engine\Build\BatchFiles\Build.bat")
-}
-
 function Resolve-PathRelativeTo([string]$baseDir, [string]$path) {
   [void](Import-UEToolSuiteCoreModule)
   $moduleFn = Get-Command -Name "Resolve-UEToolSuiteUnrealPathRelativeTo" -ErrorAction SilentlyContinue
@@ -408,21 +367,6 @@ function Get-UProjectEngineAssociation(
 
   Add-DiagnosticAttempt $attempts ".uproject EngineAssociation='$association'"
   return $association.Trim()
-}
-
-function Get-RegistryPropertyString([string]$keyPath, [string]$propertyName) {
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealRegistryPropertyString" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Get-UEToolSuiteUnrealRegistryPropertyString -KeyPath $keyPath -PropertyName $propertyName)
-  }
-
-  if (-not (Test-Path -LiteralPath $keyPath)) { return $null }
-  $props = Get-ItemProperty -LiteralPath $keyPath -ErrorAction SilentlyContinue
-  if (-not $props) { return $null }
-  $property = $props.PSObject.Properties[$propertyName]
-  if ($property) { return [string]$property.Value }
-  return $null
 }
 
 function Get-EngineRootFromEngineAssociation(
@@ -664,27 +608,7 @@ function Write-Utf8NoBomFile {
     [Parameter(Mandatory)][AllowEmptyString()][string]$Content
   )
 
-  $runtimeWriter = Get-Command -Name "Write-UEToolSuiteRuntimeUtf8NoBomFile" -ErrorAction SilentlyContinue
-  if ($runtimeWriter) {
-    Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $script:UnrealScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory
-    return
-  }
-
-  if (Import-UEToolSuiteCoreModule) {
-    $writer = Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue
-    if ($writer) {
-      Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content -EnsureParentDirectory
-      return
-    }
-  }
-
-  $parent = Split-Path -Path $Path -Parent
-  if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
-  }
-
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+  Write-UEToolSuiteRuntimeUtf8NoBomFile -ScriptsRoot $script:UnrealScriptsRoot -Path $Path -Content $Content -EnsureParentDirectory
 }
 
 function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {
