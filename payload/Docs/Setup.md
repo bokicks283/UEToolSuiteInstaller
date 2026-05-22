@@ -22,7 +22,7 @@ Use this flow when bootstrapping a fresh clone or when moving the repo to a new 
 2. Run:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/ue-tools.ps1 init
 ```
 
 3. Open the project `.uproject` and let Unreal regenerate local workspace data if needed.
@@ -30,31 +30,31 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1
 5. Start the docs site when you need a local preview:
 
 ```powershell
-docs-tools start
+ue-tools docs start
 ```
 
-`Init-Repo.ps1` prepares installed optional tool prerequisites during first-run setup. When `website/package.json` is present, it verifies Node.js 20+ and npm, runs `npm install` if `website/node_modules` is missing, installs the optional docs VS Code bridge when the `code` CLI is available, and runs `docs-tools doctor`.
+`ue-tools init` prepares installed optional tool prerequisites during first-run setup. When `website/package.json` is present, it verifies Node.js 20+ and npm, runs `npm install` if `website/node_modules` is missing, installs the optional docs VS Code bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
 
-After init installs project shell aliases, open a new PowerShell session or reload the profile path printed by the script before using commands like `ue-tools`, `art-tools`, `docs-tools`, or `ai-prompt`.
+After init installs project shell aliases, open a new PowerShell session or reload the profile path printed by the script before using commands like `ue-tools`, `ue-tools art`, `ue-tools docs`, or `ue-tools ai prompt`.
 
 The Docusaurus site is already set up in `website/`. You do not need to create a new site scaffold for this repo. See [Docusaurus Setup](./DocsSite/Docusaurus-Setup.md) for the edit/preview/build workflow.
 
-`docs-tools start` now stays attached to the current terminal so you can see live server output. If you want the old detached tracked mode instead, run `docs-tools start --background`.
+`ue-tools docs start` now stays attached to the current terminal so you can see live server output. If you want the old detached tracked mode instead, run `ue-tools docs start --background`.
 
 When you are done with the tracked background docs server:
 
 ```powershell
-docs-tools stop
+ue-tools docs stop
 ```
 
-If `Init-Repo.ps1` skipped the bridge because the `code` CLI was unavailable, or if you want to rerun the install manually:
+If `ue-tools init` skipped the bridge because the `code` CLI was unavailable, or if you want to rerun the install manually:
 
 ```powershell
-docs-tools help
-docs-tools install-bridge
+ue-tools docs help
+ue-tools docs install-bridge
 ```
 
-`docs-tools install-bridge` is optional. It only enables table-of-contents generation for new pages and sections when `Markdown All in One` is also installed in VS Code.
+`ue-tools docs install-bridge` is optional. It only enables table-of-contents generation for new pages and sections when `Markdown All in One` is also installed in VS Code.
 
 ## Engine Discovery Rules
 

@@ -52,7 +52,7 @@ function Get-ProjectTestManifest {
       -Name "UE Sync Shell Aliases" `
       -Path "Scripts/Tests/Test-UESyncShellAliases.ps1" `
       -Category "shell" `
-      -Description "Validates ue-tools, optional art-tools, and PowerShell profile bootstrap." `
+      -Description "Validates dispatcher alias bootstrap (ue-tools and ue) and repo-at-call-time routing." `
       -SupportsNoCleanup $true `
       -SupportsFailFast $true `
       -ResultDirectory "Scripts/Tests/Test-UESyncShellAliasesResults")

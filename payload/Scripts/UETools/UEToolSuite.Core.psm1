@@ -1,201 +1,3 @@
-function New-UEToolSuiteCommandDefinition {
-  param(
-    [Parameter(Mandatory)][string]$Id,
-    [Parameter(Mandatory)][string]$Domain,
-    [Parameter(Mandatory)][string]$FunctionName,
-    [Parameter(Mandatory)][string[]]$Aliases,
-    [Parameter(Mandatory)][string]$RequiredRelativePath,
-    [string]$Description = ""
-  )
-
-  [pscustomobject]@{
-    Id                   = $Id
-    Domain               = $Domain
-    FunctionName         = $FunctionName
-    Aliases              = @($Aliases)
-    RequiredRelativePath = $RequiredRelativePath
-    Description          = $Description
-  }
-}
-
-function Get-UEToolSuiteCommandRegistry {
-  [CmdletBinding()]
-  param(
-    [string]$ScriptsRoot,
-    [switch]$IncludeUnavailable
-  )
-
-  $commands = @(
-    (New-UEToolSuiteCommandDefinition `
-      -Id "ue-tools" `
-      -Domain "unreal" `
-      -FunctionName "Invoke-UETools" `
-      -Aliases @("ue-tools") `
-      -RequiredRelativePath "Unreal\UnrealSync.ps1" `
-      -Description "Unreal project sync and build wrapper.")
-
-    (New-UEToolSuiteCommandDefinition `
-      -Id "art-tools" `
-      -Domain "art" `
-      -FunctionName "Invoke-ArtTools" `
-      -Aliases @("art-tools") `
-      -RequiredRelativePath "Unreal\New-ArtSourcePath.ps1" `
-      -Description "ArtSource folder creation wrapper.")
-
-    (New-UEToolSuiteCommandDefinition `
-      -Id "docs-tools" `
-      -Domain "docs" `
-      -FunctionName "Invoke-DocsTools" `
-      -Aliases @("docs-tools") `
-      -RequiredRelativePath "Docs\DocsTools.ps1" `
-      -Description "Project documentation automation wrapper.")
-
-    (New-UEToolSuiteCommandDefinition `
-      -Id "ai-tools" `
-      -Domain "ai" `
-      -FunctionName "Invoke-AITools" `
-      -Aliases @("ai-tools") `
-      -RequiredRelativePath "AI\Get-AIStartupPrompt.ps1" `
-      -Description "AI helper command wrapper.")
-
-    (New-UEToolSuiteCommandDefinition `
-      -Id "ai-prompt" `
-      -Domain "ai" `
-      -FunctionName "Invoke-AIPrompt" `
-      -Aliases @("ai-prompt") `
-      -RequiredRelativePath "AI\Get-AIStartupPrompt.ps1" `
-      -Description "AI startup prompt wrapper.")
-  )
-
-  if ([string]::IsNullOrWhiteSpace($ScriptsRoot) -or $IncludeUnavailable) {
-    return @($commands)
-  }
-
-  $resolvedScriptsRoot = [System.IO.Path]::GetFullPath($ScriptsRoot)
-  return @(
-    $commands | Where-Object {
-      Test-Path -LiteralPath (Join-Path $resolvedScriptsRoot $_.RequiredRelativePath) -PathType Leaf
-    }
-  )
-}
-
-function Get-UEToolsCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  [pscustomobject]@{
-    CommandName = "ue-tools"
-    DefaultCommand = "help"
-    OptionPrefixedDefaultCommand = "build"
-    BuildScriptRelativePath = "Scripts\Unreal\UnrealSync.ps1"
-    BuildScriptNotFoundPrefix = "UnrealSync script not found"
-    HelpLines = @(
-      "UE tools wrapper for repository Unreal helpers."
-      "Usage:"
-      "  ue-tools <command> [options]"
-      "Commands:"
-      "  help                 Show this help text."
-      "  build [sync options] Run Scripts\Unreal\UnrealSync.ps1 with -Force."
-      "Examples:"
-      "  ue-tools help"
-      "  ue-tools build -DryRun"
-      "  ue-tools build -NoBuild -Config Debug"
-      "Notes:"
-      "  - If the first argument starts with '-' or '/', 'build' is assumed."
-      "  - Additional commands can be added under this command group later."
-    )
-    BuildHelpLines = @(
-      "Usage: ue-tools build [UnrealSync.ps1 options]"
-      "Examples:"
-      "  ue-tools build -DryRun"
-      "  ue-tools build -NoBuild -NoRegen"
-      "  ue-tools build -Config Debug -Platform Win64"
-      "Notes:"
-      "  - Wrapper always passes -Force to UnrealSync.ps1."
-    )
-  }
-}
-
-function Get-ArtToolsCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  [pscustomobject]@{
-    CommandName = "art-tools"
-    ScriptRelativePath = "Scripts\Unreal\New-ArtSourcePath.ps1"
-    ScriptNotFoundPrefix = "ArtSource path script not found"
-    HelpLines = @(
-      "Art tools wrapper for ArtSource helpers."
-      "Usage:"
-      "  art-tools [New-ArtSourcePath.ps1 options]"
-      "Examples:"
-      "  art-tools"
-      "  art-tools -RepoRoot C:\Path\To\Repo"
-      "Notes:"
-      "  - Runs Scripts\Unreal\New-ArtSourcePath.ps1."
-    )
-  }
-}
-
-function Get-DocsToolsCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  [pscustomobject]@{
-    CommandName = "docs-tools"
-    ScriptRelativePath = "Scripts\Docs\DocsTools.ps1"
-    ScriptNotFoundPrefix = "Docs tools script not found"
-  }
-}
-
-function Get-AIPromptCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  [pscustomobject]@{
-    CommandName = "ai-prompt"
-    ScriptRelativePath = "Scripts\AI\Get-AIStartupPrompt.ps1"
-    ScriptNotFoundPrefix = "AI startup prompt script not found"
-    HelpLines = @(
-      "AI startup prompt builder for this repository."
-      "Usage:"
-      "  ai-prompt [-Task <text>] [-IncludePrivate] [-CopyToClipboard]"
-      "Examples:"
-      "  ai-prompt"
-      "  ai-prompt -Task `"Fix UnrealSync regeneration tests`""
-      "  ai-prompt -Task `"Review Coding Standards docs`" -IncludePrivate -CopyToClipboard"
-      "Notes:"
-      "  - Runs Scripts\AI\Get-AIStartupPrompt.ps1."
-    )
-  }
-}
-
-function Get-AIToolsCommandSpec {
-  [CmdletBinding()]
-  param()
-
-  [pscustomobject]@{
-    CommandName = "ai-tools"
-    DefaultCommand = "help"
-    OptionPrefixedDefaultCommand = "prompt"
-    PromptSubcommandName = "prompt"
-    HelpLines = @(
-      "AI tools wrapper for repository AI helpers."
-      "Usage:"
-      "  ai-tools <command> [options]"
-      "Commands:"
-      "  help                   Show this help text."
-      "  prompt [prompt args]   Run Scripts\AI\Get-AIStartupPrompt.ps1."
-      "Examples:"
-      "  ai-tools help"
-      "  ai-tools prompt -Task `"Fix hook docs`""
-      "  ai-tools prompt -IncludePrivate -CopyToClipboard"
-      "Notes:"
-      "  - If the first argument starts with '-' or '/', 'prompt' is assumed."
-    )
-  }
-}
-
 function Write-UEToolSuiteUtf8NoBomFile {
   [CmdletBinding()]
   param(
@@ -279,14 +81,68 @@ function Get-UEToolSuiteCoreModuleEntryPath {
   return $null
 }
 
+function Get-UEToolSuitePowerShellHostPath {
+  [CmdletBinding()]
+  param()
+
+  try {
+    $currentProcessPath = (Get-Process -Id $PID -ErrorAction Stop).Path
+    if (-not [string]::IsNullOrWhiteSpace($currentProcessPath) -and (Test-Path -LiteralPath $currentProcessPath -PathType Leaf)) {
+      return $currentProcessPath
+    }
+  }
+  catch {
+    # Fall back to command lookup.
+  }
+
+  $pwshCommand = Get-Command -Name "pwsh" -ErrorAction SilentlyContinue
+  if ($pwshCommand -and -not [string]::IsNullOrWhiteSpace($pwshCommand.Source)) {
+    return $pwshCommand.Source
+  }
+
+  $powershellCommand = Get-Command -Name "powershell" -ErrorAction SilentlyContinue
+  if ($powershellCommand -and -not [string]::IsNullOrWhiteSpace($powershellCommand.Source)) {
+    return $powershellCommand.Source
+  }
+
+  throw "Unable to locate a PowerShell host executable."
+}
+
+function Invoke-UEToolSuiteScriptProcess {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ScriptPath,
+    [AllowNull()][string[]]$ScriptArguments = @()
+  )
+
+  if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+    throw "Script path was not found: $ScriptPath"
+  }
+
+  $hostPath = Get-UEToolSuitePowerShellHostPath
+  $invokeArgs = New-Object System.Collections.Generic.List[string]
+  $invokeArgs.Add("-NoLogo") | Out-Null
+  $invokeArgs.Add("-NoProfile") | Out-Null
+  $invokeArgs.Add("-ExecutionPolicy") | Out-Null
+  $invokeArgs.Add("Bypass") | Out-Null
+  $invokeArgs.Add("-File") | Out-Null
+  $invokeArgs.Add($ScriptPath) | Out-Null
+  foreach ($argument in @($ScriptArguments)) {
+    if ($null -eq $argument) { continue }
+    $invokeArgs.Add([string]$argument) | Out-Null
+  }
+
+  & $hostPath @($invokeArgs.ToArray())
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -ne 0) {
+    throw "Script command failed (exit $exitCode): $ScriptPath"
+  }
+}
+
 Export-ModuleMember -Function `
-  Get-UEToolSuiteCommandRegistry, `
-  Get-UEToolsCommandSpec, `
-  Get-ArtToolsCommandSpec, `
-  Get-DocsToolsCommandSpec, `
-  Get-AIPromptCommandSpec, `
-  Get-AIToolsCommandSpec, `
   Write-UEToolSuiteUtf8NoBomFile, `
   Resolve-UEToolSuiteRepoRoot, `
   Resolve-UEToolSuiteRepoPath, `
-  Get-UEToolSuiteCoreModuleEntryPath
+  Get-UEToolSuiteCoreModuleEntryPath, `
+  Get-UEToolSuitePowerShellHostPath, `
+  Invoke-UEToolSuiteScriptProcess

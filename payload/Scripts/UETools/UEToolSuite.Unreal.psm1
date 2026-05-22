@@ -466,6 +466,118 @@ function New-UEToolSuiteUnrealProjectFileArtifactSnapshot {
   }
 }
 
+function ConvertTo-UEToolSuiteUnrealBuildParameters {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $switchMap = @{
+    "force" = "Force"
+    "cleangenerated" = "CleanGenerated"
+    "cleansaved" = "CleanSaved"
+    "cleancache" = "CleanCache"
+    "noregen" = "NoRegen"
+    "nobuild" = "NoBuild"
+    "noninteractive" = "NonInteractive"
+    "dryrun" = "DryRun"
+  }
+  $valueMap = @{
+    "oldrev" = "OldRev"
+    "newrev" = "NewRev"
+    "flag" = "Flag"
+    "reporoot" = "RepoRoot"
+    "workspacepath" = "WorkspacePath"
+    "uprojectpath" = "UProjectPath"
+    "config" = "Config"
+    "platform" = "Platform"
+  }
+
+  $parameters = @{
+    RepoRoot = $RepoRoot
+    Force = $true
+  }
+
+  $argsList = @()
+  foreach ($argument in @($CommandArguments)) {
+    if ($null -eq $argument) { continue }
+    $text = [string]$argument
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $argsList += $text
+  }
+
+  $i = 0
+  while ($i -lt $argsList.Count) {
+    $token = [string]$argsList[$i]
+    if (-not ($token.StartsWith("-") -or $token.StartsWith("/"))) {
+      throw "Unknown build argument '$token'. Run 'ue-tools help build'."
+    }
+
+    $normalized = $token.TrimStart('-', '/').ToLowerInvariant()
+    if ($switchMap.ContainsKey($normalized)) {
+      $parameters[$switchMap[$normalized]] = $true
+      $i += 1
+      continue
+    }
+
+    if ($valueMap.ContainsKey($normalized)) {
+      if (($i + 1) -ge $argsList.Count) {
+        throw "Missing value for build option '$token'."
+      }
+      $parameters[$valueMap[$normalized]] = [string]$argsList[$i + 1]
+      $i += 2
+      continue
+    }
+
+    throw "Unknown build option '$token'. Run 'ue-tools help build'."
+  }
+
+  if ($parameters.ContainsKey("Flag")) {
+    $flagValue = 0
+    if (-not [int]::TryParse([string]$parameters.Flag, [ref]$flagValue)) {
+      throw "Invalid -Flag value '$($parameters.Flag)'. Expected integer."
+    }
+    $parameters.Flag = $flagValue
+  }
+
+  return $parameters
+}
+
+function Invoke-UEToolSuiteUnrealBuild {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $resolvedRepoRoot = $RepoRoot
+  $runtimePath = Join-Path $resolvedRepoRoot "Scripts\Unreal\UnrealSync.Runtime.ps1"
+  if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+    throw "The 'build' command is not installed for this repo. Missing required path: $runtimePath. Re-run the installer with base tooling."
+  }
+
+  $previousNoAutorun = $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN
+  $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN = "1"
+  try {
+    . $runtimePath
+  }
+  finally {
+    if ([string]::IsNullOrEmpty($previousNoAutorun)) {
+      Remove-Item Env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN = $previousNoAutorun
+    }
+  }
+  if (-not (Get-Command -Name "Invoke-UEToolSuiteUnrealRuntime" -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "Build runtime entrypoint not found after loading $runtimePath."
+  }
+
+  $parameters = ConvertTo-UEToolSuiteUnrealBuildParameters -RepoRoot $resolvedRepoRoot -CommandArguments $CommandArguments
+  Invoke-UEToolSuiteUnrealRuntime @parameters
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteUnrealChangedFileRecords, `
   Test-UEToolSuiteUnrealCppPath, `
@@ -488,4 +600,6 @@ Export-ModuleMember -Function `
   Merge-UEToolSuiteVSCodeWorkspaceJson, `
   Test-UEToolSuiteUnrealGitTrackedPath, `
   Get-UEToolSuiteUnrealWorkspaceProtectionPaths, `
-  New-UEToolSuiteUnrealProjectFileArtifactSnapshot
+  New-UEToolSuiteUnrealProjectFileArtifactSnapshot, `
+  ConvertTo-UEToolSuiteUnrealBuildParameters, `
+  Invoke-UEToolSuiteUnrealBuild

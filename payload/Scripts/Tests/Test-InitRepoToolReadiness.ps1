@@ -11,7 +11,7 @@ $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).T
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$initScript = Join-Path $repoRoot "Scripts\Init-Repo.ps1"
+$initScript = Join-Path $repoRoot "Scripts\Init-Repo.Runtime.ps1"
 if (-not (Test-Path -LiteralPath $initScript)) {
   throw "Init script not found: $initScript"
 }
@@ -116,8 +116,9 @@ function New-InitRepoFixture {
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-hooks\Enable-GitHooks.ps1") -Content "Write-Host 'Enable hooks stub'`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-hooks\Test-Hooks.ps1") -Content "Write-Host 'Hook self-test stub'`n"
 
-  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-tools\conflicts.ps1") -Content "Write-Host 'conflicts stub'`n"
-  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-tools\GitConflictHelpers.ps1") -Content "function Test-GitConflictHelperStub { `$true }`n"
+  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-tools\GitConflictHelpers.Runtime.ps1") -Content "function Test-GitConflictHelperStub { `$true }`n"
+  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Art.psm1") -Content "function Test-UEToolSuiteArtStub { `$true }`n"
+  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.AI.psm1") -Content "function Test-UEToolSuiteAIStub { `$true }`n"
 
   New-Item -ItemType Directory -Force -Path (Join-Path $target "Scripts\Unreal") | Out-Null
   Copy-Item `
@@ -125,18 +126,49 @@ function New-InitRepoFixture {
     -Destination (Join-Path $target "Scripts\Unreal\ProjectContext.ps1") `
     -Force
 
-  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\Unreal\ProjectShellAliases.ps1") -Content @'
-function Install-ProjectShellAliases {
-  [pscustomobject]@{
-    ProfilePath = "stub-profile"
-    AliasGroups = @()
-    Aliases = @()
-  }
+  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\ue-tools.ps1") -Content @'
+[CmdletBinding()]
+param(
+  [string]$RepoRoot,
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$CommandArgs
+)
+
+$normalizedArgs = New-Object System.Collections.Generic.List[string]
+foreach ($arg in @($CommandArgs)) {
+  if ($null -eq $arg) { continue }
+  $value = [string]$arg
+  if ([string]::IsNullOrWhiteSpace($value)) { continue }
+  $normalizedArgs.Add($value) | Out-Null
 }
+$effectiveCommandArgs = @($normalizedArgs.ToArray())
+if (-not [string]::IsNullOrWhiteSpace($env:INIT_REPO_TOOL_READINESS_LOG)) {
+  Add-Content -LiteralPath $env:INIT_REPO_TOOL_READINESS_LOG -Value ("ue-tools " + ($effectiveCommandArgs -join " ") + " repo=$RepoRoot")
+}
+
+if ($effectiveCommandArgs.Count -lt 1) {
+  Write-Error "Missing ue-tools command."
+  exit 1
+}
+
+$command = [string]$effectiveCommandArgs[0]
+if ($command -eq "docs") {
+  $docsArgs = if ($effectiveCommandArgs.Count -gt 1) { @($effectiveCommandArgs[1..($effectiveCommandArgs.Count - 1)]) } else { @() }
+  $docsScript = Join-Path $RepoRoot "Scripts\Docs\DocsTools.Runtime.ps1"
+  if (-not (Test-Path -LiteralPath $docsScript -PathType Leaf)) {
+    Write-Error "Docs script missing: $docsScript"
+    exit 1
+  }
+
+  & $docsScript -RepoRoot $RepoRoot -CommandArgs $docsArgs
+  exit $LASTEXITCODE
+}
+
+Write-Output "ue-tools stub command: $command"
+exit 0
 '@
 
   if ($IncludeArtSourceTool) {
-    Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\Unreal\New-ArtSourcePath.ps1") -Content "Write-Host 'art-tools stub'`n"
     foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
       New-Item -ItemType Directory -Force -Path (Join-Path $target $relativePath) | Out-Null
     }
@@ -152,20 +184,26 @@ function Install-ProjectShellAliases {
 }
 '@
 
-    Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\Docs\DocsTools.ps1") -Content @'
+    Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\Docs\DocsTools.Runtime.ps1") -Content @'
 [CmdletBinding()]
 param(
   [string]$RepoRoot,
-  [string[]]$CommandArgs,
   [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$ExtraArgs
+  [string[]]$CommandArgs
 )
 
-$effectiveCommandArgs = @($CommandArgs) + @($ExtraArgs) + @($MyInvocation.UnboundArguments)
-$command = ($effectiveCommandArgs | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1)
+$normalizedArgs = New-Object System.Collections.Generic.List[string]
+foreach ($arg in @($CommandArgs)) {
+  if ($null -eq $arg) { continue }
+  $value = [string]$arg
+  if ([string]::IsNullOrWhiteSpace($value)) { continue }
+  $normalizedArgs.Add($value) | Out-Null
+}
+$effectiveCommandArgs = @($normalizedArgs.ToArray())
+$command = if ($effectiveCommandArgs.Count -gt 0) { [string]$effectiveCommandArgs[0] } else { $null }
 
 if (-not [string]::IsNullOrWhiteSpace($env:INIT_REPO_TOOL_READINESS_LOG)) {
-  Add-Content -LiteralPath $env:INIT_REPO_TOOL_READINESS_LOG -Value ("docs-tools " + ($effectiveCommandArgs -join " ") + " repo=$RepoRoot")
+  Add-Content -LiteralPath $env:INIT_REPO_TOOL_READINESS_LOG -Value ("ue-tools docs " + ($effectiveCommandArgs -join " ") + " repo=$RepoRoot")
 }
 
 switch ($command) {
@@ -186,7 +224,7 @@ switch ($command) {
     exit 0
   }
   default {
-    Write-Error "Unexpected docs-tools command: $($effectiveCommandArgs -join ' ')"
+    Write-Error "Unexpected ue-tools docs command: $($effectiveCommandArgs -join ' ')"
     exit 1
   }
 }
@@ -267,16 +305,16 @@ try {
   Assert-Condition "case1 init exits cleanly" ($result.ExitCode -eq 0) "exit=0" "exit=$($result.ExitCode)"
   Assert-TextContains "case1 npm install invoked" $commandLogText "npm cwd="
   Assert-TextContains "case1 npm install args" $commandLogText "args=install"
-  Assert-TextContains "case1 bridge install invoked" $commandLogText "docs-tools install-bridge"
-  Assert-TextContains "case1 docs doctor invoked" $commandLogText "docs-tools doctor"
+  Assert-TextContains "case1 bridge install invoked" $commandLogText "ue-tools docs install-bridge"
+  Assert-TextContains "case1 docs doctor invoked" $commandLogText "ue-tools docs doctor"
   Assert-Condition "case1 node_modules created" (Test-Path -LiteralPath (Join-Path $targetRepo "website\node_modules")) "website/node_modules created" "website/node_modules missing"
   Assert-TextContains "case1 summary shown" $result.OutputText "Tool readiness summary:"
   Assert-TextContains "case1 git-lfs ready" $result.OutputText "[OK] git-lfs"
   Assert-TextContains "case1 node ready" $result.OutputText "[OK] node/npm"
   Assert-TextContains "case1 docs deps ready" $result.OutputText "[OK] docs dependencies"
   Assert-TextContains "case1 docs bridge ready" $result.OutputText "[OK] docs VS Code bridge"
-  Assert-TextContains "case1 docs tools ready" $result.OutputText "[OK] docs-tools"
-  Assert-TextContains "case1 art tools ready" $result.OutputText "[OK] art-tools"
+  Assert-TextContains "case1 docs tools ready" $result.OutputText "[OK] ue-tools docs"
+  Assert-TextContains "case1 art tools ready" $result.OutputText "[OK] ue-tools art"
   Assert-TextContains "case1 aliases skipped" $result.OutputText "[SKIP] PowerShell aliases"
   Assert-TextContains "case1 ue-tools skipped" $result.OutputText "[SKIP] ue-tools"
 
@@ -286,8 +324,8 @@ try {
   $targetRepoWithoutOptionalTools = New-InitRepoFixture -Name "target without optional tools"
   $result2 = Invoke-InitRepo -TargetRepoRoot $targetRepoWithoutOptionalTools -StubRoot $stubRoot -CommandLog $commandLog2
   Assert-Condition "case2 init exits cleanly" ($result2.ExitCode -eq 0) "exit=0" "exit=$($result2.ExitCode)"
-  Assert-TextContains "case2 docs tools skipped" $result2.OutputText "[SKIP] docs-tools"
-  Assert-TextContains "case2 art tools skipped" $result2.OutputText "[SKIP] art-tools"
+  Assert-TextContains "case2 docs tools skipped" $result2.OutputText "[SKIP] ue-tools docs"
+  Assert-TextContains "case2 art tools skipped" $result2.OutputText "[SKIP] ue-tools art"
   Assert-TextContains "case2 ue-tools skipped" $result2.OutputText "[SKIP] ue-tools"
 
   Step "Case 3: SkipOptionalToolSetup leaves installed optional tools alone"
@@ -301,11 +339,11 @@ try {
     -ExtraArgs @("-SkipOptionalToolSetup")
   $commandLog3Text = Get-Content -LiteralPath $commandLog3 -Raw
   Assert-Condition "case3 init exits cleanly" ($result3.ExitCode -eq 0) "exit=0" "exit=$($result3.ExitCode)"
-  Assert-TextContains "case3 docs tools skipped" $result3.OutputText "[SKIP] docs-tools"
-  Assert-TextContains "case3 art tools skipped" $result3.OutputText "[SKIP] art-tools"
+  Assert-TextContains "case3 docs tools skipped" $result3.OutputText "[SKIP] ue-tools docs"
+  Assert-TextContains "case3 art tools skipped" $result3.OutputText "[SKIP] ue-tools art"
   Assert-TextNotContains "case3 npm install not invoked" $commandLog3Text "npm cwd="
-  Assert-TextNotContains "case3 bridge install not invoked" $commandLog3Text "docs-tools install-bridge"
-  Assert-TextNotContains "case3 doctor not invoked" $commandLog3Text "docs-tools doctor"
+  Assert-TextNotContains "case3 bridge install not invoked" $commandLog3Text "ue-tools docs install-bridge"
+  Assert-TextNotContains "case3 doctor not invoked" $commandLog3Text "ue-tools docs doctor"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

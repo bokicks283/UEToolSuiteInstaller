@@ -8,23 +8,17 @@
   "managedItems": {
     "base": [
       ".githooks",
-      "Scripts/Init-Repo.ps1",
+      "Scripts/Init-Repo.Runtime.ps1",
       "Scripts/README.md",
       "Scripts/ue-tools.ps1",
       "Scripts/git-hooks",
       "Scripts/git-tools",
       "Scripts/UETools",
       "Scripts/Unreal/ProjectContext.ps1",
-      "Scripts/Unreal/ProjectShellAliases.ps1",
-      "Scripts/Unreal/UESyncShellAliases.ps1",
-      "Scripts/Unreal/UnrealSync.ps1"
+      "Scripts/Unreal/UnrealSync.Runtime.ps1"
     ],
-    "artTools": [
-      "Scripts/Unreal/New-ArtSourcePath.ps1"
-    ],
-    "aiTools": [
-      "Scripts/AI"
-    ],
+    "artTools": [],
+    "aiTools": [],
     "tests": [
       "Scripts/Tests"
     ],
@@ -47,6 +41,16 @@
     ]
   },
   "legacyCleanupPaths": [
-    "Scripts/Install-UEProjectTools.ps1"
+    "Scripts/Install-UEProjectTools.ps1",
+    "Scripts/Init-Repo.ps1",
+    "Scripts/Unreal/UnrealSync.ps1",
+    "Scripts/Docs/DocsTools.ps1",
+    "Scripts/git-tools/GitConflictHelpers.ps1",
+    "Scripts/UETools/ue-tools.ps1",
+    "Scripts/AI/Get-AIStartupPrompt.ps1",
+    "Scripts/Unreal/New-ArtSourcePath.ps1",
+    "Scripts/git-tools/conflicts.ps1",
+    "Scripts/Unreal/ProjectShellAliases.ps1",
+    "Scripts/Unreal/UESyncShellAliases.ps1"
   ]
 }

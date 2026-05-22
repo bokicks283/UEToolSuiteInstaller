@@ -178,16 +178,17 @@ try {
   }
 
   Step "CLI surface stability"
-  $aliasHelperPath = Join-Path $repoRoot "payload\Scripts\Unreal\ProjectShellAliases.ps1"
-  if (-not (Test-Path -LiteralPath $aliasHelperPath -PathType Leaf)) {
-    Fail "cli-surface" "Alias helper missing: $aliasHelperPath"
+  $aliasModulePath = Join-Path $repoRoot "payload\Scripts\UETools\UEToolSuite.Aliases.psm1"
+  if (-not (Test-Path -LiteralPath $aliasModulePath -PathType Leaf)) {
+    Fail "cli-surface" "Alias module missing: $aliasModulePath"
   }
   else {
-    . $aliasHelperPath
-    $definitions = @(Get-ProjectAliasDefinitions)
+    Import-Module -Name $aliasModulePath -Force
+    $registered = Register-ProjectShellAliases -ScriptsRoot (Join-Path $repoRoot "payload\Scripts")
+    $definitions = @($registered.Definitions)
     $definitionIds = @($definitions | ForEach-Object { $_.Id })
 
-    $expected = @("ue-tools", "art-tools", "docs-tools", "ai-tools", "ai-prompt")
+    $expected = @("ue-tools", "ue")
     $missing = @($expected | Where-Object { $definitionIds -notcontains $_ })
     if ($missing.Count -gt 0) {
       Fail "cli-surface" ("Missing aliases: {0}" -f ($missing -join ", "))
@@ -196,7 +197,7 @@ try {
       Pass "cli-surface" "Stable alias surface present."
     }
 
-    $legacy = @($definitionIds | Where-Object { $_ -in @("codex-tools", "codex-prompt") })
+    $legacy = @($definitionIds | Where-Object { $_ -in @("codex-tools", "codex-prompt", "docs-tools", "art-tools", "ai-tools", "ai-prompt") })
     if ($legacy.Count -gt 0) {
       Fail "cli-surface" ("Legacy codex aliases still exported: {0}" -f ($legacy -join ", "))
     }

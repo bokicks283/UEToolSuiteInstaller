@@ -117,12 +117,13 @@ try {
       ".gitattributes",
       ".gitignore",
       ".githooks\post-checkout",
-      "Scripts\Init-Repo.ps1",
+      "Scripts\Init-Repo.Runtime.ps1",
       "Scripts\ue-tools.ps1",
       "Scripts\UETools\UEToolSuite.Core.psm1",
-      "Scripts\UETools\ue-tools.ps1",
-      "Scripts\Unreal\UnrealSync.ps1",
-      "Scripts\Docs\DocsTools.ps1",
+      "Scripts\UETools\UEToolSuite.Dispatcher.psm1",
+      "Scripts\UETools\UEToolSuite.Aliases.psm1",
+      "Scripts\Unreal\UnrealSync.Runtime.ps1",
+      "Scripts\Docs\DocsTools.Runtime.ps1",
       "Docs\Setup.md",
       "Docs\Pipeline\README.md",
       "Docs\DocsSite\Docusaurus-Setup.md",
@@ -148,7 +149,7 @@ try {
 
   Step "Case 2: update removes legacy installer and writes backup"
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1") -Content "legacy installer`n"
-  Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Unreal\UnrealSync.ps1") -Content "legacy sync`n"
+  Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Unreal\UnrealSync.Runtime.ps1") -Content "legacy sync`n"
   $gitIgnorePath = Join-Path $targetRepo ".gitignore"
   $existingGitIgnore = Get-Content -LiteralPath $gitIgnorePath -Raw
   Write-Utf8NoBomFile -Path $gitIgnorePath -Content ("local-custom-ignore/`n`n" + $existingGitIgnore)
@@ -167,7 +168,7 @@ try {
   $updateResult = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2 update exits cleanly" ($updateResult.Code -eq 0) "exit=0" "exit=$($updateResult.Code)"
   Assert-PathMissing "case2 legacy installer removed" (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1")
-  $backupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UnrealSync.ps1" })
+  $backupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UnrealSync.Runtime.ps1" })
   Assert-Condition "case2 backup created for replaced tool" ($backupMatches.Count -gt 0) "backup count=$($backupMatches.Count)" "backup missing"
   Assert-FileContains "case2 git ignore preserves local lines" $gitIgnorePath "local-custom-ignore/"
   $gitIgnoreBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq ".gitignore" })
@@ -226,13 +227,13 @@ try {
   $skipWebsiteResult = Invoke-Installer -TargetRoot $skipWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipWebsite")
   Assert-Condition "case5 skip website exits cleanly" ($skipWebsiteResult.Code -eq 0) "exit=0" "exit=$($skipWebsiteResult.Code)"
   Assert-PathMissing "case5 website skipped" (Join-Path $skipWebsiteRepo "website\package.json")
-  Assert-PathExists "case5 docs tooling retained" (Join-Path $skipWebsiteRepo "Scripts\Docs\DocsTools.ps1")
+  Assert-PathExists "case5 docs tooling retained" (Join-Path $skipWebsiteRepo "Scripts\Docs\DocsTools.Runtime.ps1")
   Assert-PathExists "case5 docs retained" (Join-Path $skipWebsiteRepo "Docs\README.md")
 
   Step "Case 6: NoBackup replaces managed paths without writing backup output"
   $noBackupRepo = New-TargetRepo "no backup target"
   Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo ".gitattributes") -Content "custom attributes`n"
-  Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo "Scripts\Unreal\UnrealSync.ps1") -Content "legacy sync`n"
+  Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo "Scripts\Unreal\UnrealSync.Runtime.ps1") -Content "legacy sync`n"
   $noBackupResult = Invoke-Installer -TargetRoot $noBackupRepo -ExtraArgs @("-SkipTests", "-NoBackup")
   Assert-Condition "case6 no backup exits cleanly" ($noBackupResult.Code -eq 0) "exit=0" "exit=$($noBackupResult.Code)"
   Assert-PathMissing "case6 backup root not created" (Join-Path $noBackupRepo ".ue-tools-installer-backups")

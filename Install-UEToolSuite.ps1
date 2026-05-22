@@ -503,12 +503,13 @@ if (-not $NoLegacyCleanup) {
 Ok "Installed/updated UE tool suite paths: $($installed.Count)"
 
 if ($RunInit) {
-  $initScript = Join-Path $resolvedTargetRoot "Scripts\Init-Repo.ps1"
+  $dispatcherScript = Join-Path $resolvedTargetRoot "Scripts\ue-tools.ps1"
   $initArgs = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
-    "-File", $initScript,
+    "-File", $dispatcherScript,
     "-RepoRoot", $resolvedTargetRoot,
+    "init",
     "-UProjectPath", $targetUProject
   )
 
@@ -524,16 +525,16 @@ if ($RunInit) {
   if ($NoRegen) { $initArgs += "-NoRegen" }
 
   Info "Running target bootstrap: pwsh $($initArgs -join ' ')"
-  if ($PSCmdlet.ShouldProcess($resolvedTargetRoot, "Run Init-Repo.ps1 in target repo")) {
+  if ($PSCmdlet.ShouldProcess($resolvedTargetRoot, "Run ue-tools init in target repo")) {
     & pwsh @initArgs
     if ($LASTEXITCODE -ne 0) {
-      throw "Target Init-Repo.ps1 failed with exit code $LASTEXITCODE."
+      throw "Target ue-tools init failed with exit code $LASTEXITCODE."
     }
   }
 }
 else {
   Info "Next step in the target repo:"
-  Write-Host "  pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1 -RepoRoot `"$resolvedTargetRoot`"" -ForegroundColor Cyan
+  Write-Host "  pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/ue-tools.ps1 -RepoRoot `"$resolvedTargetRoot`" init" -ForegroundColor Cyan
 }
 
 Ok "Done."

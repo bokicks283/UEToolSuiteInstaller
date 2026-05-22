@@ -1,4 +1,4 @@
-# Scripts/git-tools/GitConflictHelpers.ps1
+# Scripts/git-tools/GitConflictHelpers.Runtime.ps1
 # Strict Unreal binary conflict helpers for PowerShell 7+
 #
 # Guarded binary = gitattributes: merge=binary -text  (LFS not required)
@@ -15,21 +15,23 @@
 
 $ErrorActionPreference = "Stop"
 
-try {
-  $repoRootForModule = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
-  if (-not [string]::IsNullOrWhiteSpace($repoRootForModule)) {
-    $gitDomainModulePath = Join-Path $repoRootForModule "Scripts\UETools\UEToolSuite.Git.psm1"
-    $facadeManifestPath = Join-Path $repoRootForModule "Scripts\UETools\UETools.psd1"
-    if (Test-Path -LiteralPath $gitDomainModulePath -PathType Leaf) {
-      Import-Module -Name $gitDomainModulePath -Force
-    }
-    elseif (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
-      Import-Module -Name $facadeManifestPath -Force
+if ($env:UE_TOOLS_GIT_HELPERS_NO_MODULE_IMPORT -ne "1") {
+  try {
+    $repoRootForModule = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($repoRootForModule)) {
+      $gitDomainModulePath = Join-Path $repoRootForModule "Scripts\UETools\UEToolSuite.Git.psm1"
+      $facadeManifestPath = Join-Path $repoRootForModule "Scripts\UETools\UETools.psd1"
+      if (Test-Path -LiteralPath $gitDomainModulePath -PathType Leaf) {
+        Import-Module -Name $gitDomainModulePath -Force
+      }
+      elseif (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf) {
+        Import-Module -Name $facadeManifestPath -Force
+      }
     }
   }
-}
-catch {
-  # Keep helper runnable even when module import cannot be resolved.
+  catch {
+    # Keep helper runnable even when module import cannot be resolved.
+  }
 }
 
 if (-not $script:RunMemo) {

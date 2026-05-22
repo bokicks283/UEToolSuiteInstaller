@@ -26,20 +26,20 @@ if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
 else {
   throw "Runtime helper not found: $runtimeHelperPath"
 }
-Set-UEToolSuiteRuntimeContext -ScriptsRoot $script:DocsToolsScriptsRoot -StateKey "docs-tools" -WriteFileEnsureParentDirectory -CommandAvailabilityFunctionName "Test-UEToolSuiteDocsCommandAvailable"
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $script:DocsToolsScriptsRoot -StateKey "ue-tools-docs" -WriteFileEnsureParentDirectory -CommandAvailabilityFunctionName "Test-UEToolSuiteDocsCommandAvailable"
 
 function Get-DocsToolsRepoRoot {
   param([string]$ExplicitRepoRoot)
 
   $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
   if ($runtimeResolver) {
-    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:DocsToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "docs-tools")
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:DocsToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools docs")
   }
 
   if (Import-UEToolSuiteCoreModule) {
     $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
     if ($resolver) {
-      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "docs-tools")
+      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools docs")
     }
   }
 
@@ -49,7 +49,7 @@ function Get-DocsToolsRepoRoot {
 
   $gitRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
   if ([string]::IsNullOrWhiteSpace($gitRoot)) {
-    throw "docs-tools must be run from inside a git repository or passed -RepoRoot."
+    throw "ue-tools docs must be run from inside a git repository or passed -RepoRoot."
   }
 
   return $gitRoot.Trim()
@@ -301,7 +301,7 @@ function Get-DocsToolsRootHelp {
 UE project docs automation.
 
 Usage:
-  docs-tools <command> [options]
+  ue-tools docs <command> [options]
 
 Create:
   new-section, create-section   Create a docs section
@@ -325,19 +325,19 @@ Other:
   help [command]
 
 Examples:
-  docs-tools help new-section
-  docs-tools create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
-  docs-tools create-page Setup -Title "Setup"
-  docs-tools create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
-  docs-tools reorder Art-Source 4
-  docs-tools start --port 3001
-  docs-tools start --background --port 3001
-  docs-tools docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs help new-section
+  ue-tools docs create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
+  ue-tools docs create-page Setup -Title "Setup"
+  ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
+  ue-tools docs reorder Art-Source 4
+  ue-tools docs start --port 3001
+  ue-tools docs start --background --port 3001
+  ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
-  - Use `docs-tools help <command>` for detailed option help.
+  - Use 'ue-tools docs help <command>' for detailed option help.
 "@
 }
 
@@ -363,12 +363,12 @@ function Get-DocsToolsCommandHelp {
   switch ($normalized) {
     "new-page" {
 @"
-docs-tools new-page
-Alias: docs-tools create-page
+ue-tools docs new-page
+Alias: ue-tools docs create-page
 
 Usage:
-  docs-tools new-page <PageName> [options]
-  docs-tools new-page <SectionPath> <PageName> [options]
+  ue-tools docs new-page <PageName> [options]
+  ue-tools docs new-page <SectionPath> <PageName> [options]
 
 Required:
   <PageName>                    File stem source, for example Setup or Fear-Loop
@@ -412,20 +412,20 @@ Generic front matter passthrough:
                                 Arrays/objects/bools/numbers should use -FieldJson
 
 Examples:
-  docs-tools create-page Setup -Title "Setup"
-  docs-tools create-page Workflow Daily-Flow -Title "Daily Flow" -Position 2
-  docs-tools create-page DocsSite Cli-Guide -Slug /docs-site/cli-guide -Keywords docs,cli,docusaurus
-  docs-tools create-page Workflow Release-Checklist -FieldJson last_update={\"date\":\"2026-04-08\",\"author\":\"Team\"}
+  ue-tools docs create-page Setup -Title "Setup"
+  ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -Position 2
+  ue-tools docs create-page DocsSite Cli-Guide -Slug /docs-site/cli-guide -Keywords docs,cli,docusaurus
+  ue-tools docs create-page Workflow Release-Checklist -FieldJson last_update={\"date\":\"2026-04-08\",\"author\":\"Team\"}
 "@
       return
     }
     "new-section" {
 @"
-docs-tools new-section
-Alias: docs-tools create-section
+ue-tools docs new-section
+Alias: ue-tools docs create-section
 
 Usage:
-  docs-tools new-section <SectionPath> [options]
+  ue-tools docs new-section <SectionPath> [options]
 
 Required:
   <SectionPath>                   New Docs/ section path, for example DocsSite
@@ -489,18 +489,18 @@ Scaffold:
   -NoToc                          Skip optional VS Code TOC generation
 
 Examples:
-  docs-tools create-section DocsSite -Title "Docs Site" -Position 8
-  docs-tools create-section DocsSite -LinkType generated-index -GeneratedIndexTitle "Docs Site" -GeneratedIndexSlug /docs-site
-  docs-tools create-section Guides/API -LinkType none -CategoryJson customProps={\"badge\":\"internal\"}
+  ue-tools docs create-section DocsSite -Title "Docs Site" -Position 8
+  ue-tools docs create-section DocsSite -LinkType generated-index -GeneratedIndexTitle "Docs Site" -GeneratedIndexSlug /docs-site
+  ue-tools docs create-section Guides/API -LinkType none -CategoryJson customProps={\"badge\":\"internal\"}
 "@
       return
     }
     "start" {
 @"
-docs-tools start
+ue-tools docs start
 
 Usage:
-  docs-tools start [--background] [docusaurus start args]
+  ue-tools docs start [--background] [docusaurus start args]
 
 Default behavior runs `npm run start -- <args...>` in website/ attached to the current terminal so stdout/stderr stream live.
 
@@ -508,18 +508,18 @@ Options:
   --background                  Run detached and track the server for `status` and `stop`
 
 Examples:
-  docs-tools start
-  docs-tools start --port 3001
-  docs-tools start --background --port 3001
+  ue-tools docs start
+  ue-tools docs start --port 3001
+  ue-tools docs start --background --port 3001
 "@
       return
     }
     "reorder" {
 @"
-docs-tools reorder
+ue-tools docs reorder
 
 Usage:
-  docs-tools reorder <TargetPath> <Position>
+  ue-tools docs reorder <TargetPath> <Position>
 
 Required:
   <TargetPath>                  Docs-relative page or section path
@@ -534,28 +534,28 @@ Behavior:
   - Updates `sidebar_position` for pages and `_category_.json` `position` for sections
 
 Examples:
-  docs-tools reorder Art-Source 4
-  docs-tools reorder Workflow 3
-  docs-tools reorder Workflow/Daily-Flow 2
+  ue-tools docs reorder Art-Source 4
+  ue-tools docs reorder Workflow 3
+  ue-tools docs reorder Workflow/Daily-Flow 2
 "@
       return
     }
     "docusaurus" {
 @"
-docs-tools docusaurus
+ue-tools docs docusaurus
 
 Usage:
-  docs-tools docusaurus <args...>
+  ue-tools docs docusaurus <args...>
 
 Passes all args and flags through to `npm run docusaurus -- <args...>`.
 Example:
-  docs-tools docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
 "@
       return
     }
     "check" {
 @"
-docs-tools check
+ue-tools docs check
 
 Validates docs metadata, catches common docs-site mistakes, and runs the Docusaurus production build.
 "@
@@ -563,7 +563,7 @@ Validates docs metadata, catches common docs-site mistakes, and runs the Docusau
     }
     "status" {
 @"
-docs-tools status
+ue-tools docs status
 
 Shows whether the tracked background docs dev server is running and prints the URL/log paths when state exists.
 "@
@@ -571,7 +571,7 @@ Shows whether the tracked background docs dev server is running and prints the U
     }
     "stop" {
 @"
-docs-tools stop
+ue-tools docs stop
 
 Stops the tracked background docs dev server process tree and removes its saved state.
 "@
@@ -579,7 +579,7 @@ Stops the tracked background docs dev server process tree and removes its saved 
     }
     "doctor" {
 @"
-docs-tools doctor
+ue-tools docs doctor
 
 Checks common local docs prerequisites:
   - node / npm availability
@@ -593,14 +593,14 @@ Checks common local docs prerequisites:
     }
     "install-bridge" {
 @"
-docs-tools install-bridge
+ue-tools docs install-bridge
 
 Installs the optional UE project VS Code bridge used for TOC generation. Markdown All in One still needs to be installed separately.
 "@
       return
     }
     default {
-      throw "Unknown docs-tools help topic '$CommandName'."
+      throw "Unknown ue-tools docs help topic '$CommandName'."
     }
   }
 }
@@ -1130,7 +1130,7 @@ function Get-BridgeRequestDirectory {
   }
 
   $workspaceKey = Get-WorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot
-  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-docs-tools\$workspaceKey")
+  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-ue-tools-docs\$workspaceKey")
 }
 
 function Queue-TocRequest {
@@ -1412,11 +1412,11 @@ function Invoke-NewSection {
     ) `
     -MultiValueNames @("docfield", "docfieldjson", "categoryfield", "categoryjson")
   if ($parsed.Positionals.Count -eq 0) {
-    throw "SectionPath is required. Usage: docs-tools new-section <SectionPath> [options]. Run 'docs-tools help new-section'."
+    throw "SectionPath is required. Usage: ue-tools docs new-section <SectionPath> [options]. Run 'ue-tools docs help new-section'."
   }
 
   if ($parsed.Positionals.Count -gt 1) {
-    throw "Too many positional arguments for new-section. Usage: docs-tools new-section <SectionPath> [options]. Run 'docs-tools help new-section'."
+    throw "Too many positional arguments for new-section. Usage: ue-tools docs new-section <SectionPath> [options]. Run 'ue-tools docs help new-section'."
   }
 
   $sectionPath = $parsed.Positionals[0]
@@ -1523,11 +1523,11 @@ function Invoke-NewPage {
     -ValueNames (Get-CommonDocValueOptionNames) `
     -MultiValueNames @("field", "fieldjson")
   if ($parsed.Positionals.Count -eq 0) {
-    throw "PageName is required. Usage: docs-tools new-page <PageName> [options] or docs-tools new-page <SectionPath> <PageName> [options]. Run 'docs-tools help new-page'."
+    throw "PageName is required. Usage: ue-tools docs new-page <PageName> [options] or ue-tools docs new-page <SectionPath> <PageName> [options]. Run 'ue-tools docs help new-page'."
   }
 
   if ($parsed.Positionals.Count -gt 2) {
-    throw "Too many positional arguments for new-page. Usage: docs-tools new-page <PageName> [options] or docs-tools new-page <SectionPath> <PageName> [options]. Run 'docs-tools help new-page'."
+    throw "Too many positional arguments for new-page. Usage: ue-tools docs new-page <PageName> [options] or ue-tools docs new-page <SectionPath> <PageName> [options]. Run 'ue-tools docs help new-page'."
   }
 
   $sectionPath = $null
@@ -1938,15 +1938,15 @@ function Invoke-DocsReorder {
 
   $argumentList = @($CommandArguments)
   if ($argumentList.Count -eq 0) {
-    throw "TargetPath is required. Usage: docs-tools reorder <TargetPath> <Position>. Run 'docs-tools help reorder'."
+    throw "TargetPath is required. Usage: ue-tools docs reorder <TargetPath> <Position>. Run 'ue-tools docs help reorder'."
   }
 
   if ($argumentList.Count -eq 1) {
-    throw "Position is required. Usage: docs-tools reorder <TargetPath> <Position>. Run 'docs-tools help reorder'."
+    throw "Position is required. Usage: ue-tools docs reorder <TargetPath> <Position>. Run 'ue-tools docs help reorder'."
   }
 
   if ($argumentList.Count -gt 2) {
-    throw "Too many positional arguments for reorder. Usage: docs-tools reorder <TargetPath> <Position>. Run 'docs-tools help reorder'."
+    throw "Too many positional arguments for reorder. Usage: ue-tools docs reorder <TargetPath> <Position>. Run 'ue-tools docs help reorder'."
   }
 
   $docsRoot = Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot
@@ -2224,6 +2224,7 @@ function Invoke-DocsStartBackground {
         LogPath = [string]$existingState.LogPath
         ErrorLogPath = [string]$existingState.ErrorLogPath
         Url = [string]$existingState.Url
+        NpmCommandLine = [string]$existingState.CommandLine
       }
     }
 
@@ -2281,6 +2282,7 @@ function Invoke-DocsStartBackground {
     logPath = $stdoutPath
     errorLogPath = $stderrPath
     url = $url
+    commandLine = $commandLine
     args = $normalizedStartArgs
   }
 
@@ -2295,6 +2297,7 @@ function Invoke-DocsStartBackground {
     ErrorLogPath = $stderrPath
     StatePath = $statePath
     Url = $url
+    NpmCommandLine = $commandLine
   }
 }
 
@@ -2531,7 +2534,7 @@ function Invoke-DocsToolsMain {
       return
     }
     "preview" {
-      Write-Output "preview is deprecated. Use 'docs-tools start' or 'docs-tools start --background'."
+      Write-Output "preview is deprecated. Use 'ue-tools docs start' or 'ue-tools docs start --background'."
       if ($remaining.Count -gt 0) {
         $previewMode = Split-DocsStartArguments -StartArgsInput $remaining
       }
@@ -2546,6 +2549,9 @@ function Invoke-DocsToolsMain {
         Write-Output "Started docs dev server in the background (PID $($result.ProcessId))."
       }
       Write-Output "URL: $($result.Url)"
+      if (-not [string]::IsNullOrWhiteSpace([string]$result.NpmCommandLine)) {
+        Write-Output "Command: $($result.NpmCommandLine)"
+      }
       Write-Output "Stdout log: $($result.LogPath)"
       Write-Output "Stderr log: $($result.ErrorLogPath)"
       return
@@ -2566,6 +2572,9 @@ function Invoke-DocsToolsMain {
           Write-Output "Started docs dev server in the background (PID $($result.ProcessId))."
         }
         Write-Output "URL: $($result.Url)"
+        if (-not [string]::IsNullOrWhiteSpace([string]$result.NpmCommandLine)) {
+          Write-Output "Command: $($result.NpmCommandLine)"
+        }
         Write-Output "Stdout log: $($result.LogPath)"
         Write-Output "Stderr log: $($result.ErrorLogPath)"
         return
@@ -2658,12 +2667,12 @@ function Invoke-DocsToolsMain {
         return
       }
 
-      throw "Unknown docs-tools command '$command'. Run 'docs-tools help'."
+      throw "Unknown ue-tools docs command '$command'. Run 'ue-tools docs help'."
     }
   }
 }
 
-if ($MyInvocation.InvocationName -ne '.') {
+if ($MyInvocation.InvocationName -ne '.' -and $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN -ne "1") {
   try {
     $resolvedRepoRoot = Get-DocsToolsRepoRoot -ExplicitRepoRoot $RepoRoot
     $effectiveCommandArgs = New-Object System.Collections.Generic.List[string]

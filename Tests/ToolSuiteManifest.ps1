@@ -95,7 +95,7 @@ function Get-UEToolSuiteTestManifest {
       -Name "Shell Alias Compatibility" `
       -Path "Scripts/Tests/Test-UESyncShellAliases.ps1" `
       -Category "shell" `
-      -Description "Validates ue-tools, optional art-tools, docs-tools, ai-tools, and profile bootstrap behavior." `
+      -Description "Validates dispatcher alias bootstrap behavior (ue-tools and ue) and repo-at-call-time routing." `
       -RequiresInstalledFixture $true `
       -SupportsNoCleanup $true `
       -SupportsFailFast $true `

@@ -27,6 +27,53 @@ hook_debug() {
   printf "%s[HOOK-DEBUG] %s%s\n" "${CYAN:-}" "$*" "${RESET:-}" 1>&2
 }
 
+hook_append_path_once() {
+  candidate="$1"
+  [ -n "${candidate:-}" ] || return 0
+  [ -d "$candidate" ] || return 0
+  case ":${PATH:-}:" in
+    *":$candidate:"*) ;;
+    *) PATH="$candidate:${PATH:-}" ;;
+  esac
+}
+
+hook_parent_dir() {
+  p="$1"
+  case "$p" in
+    */*) printf "%s" "${p%/*}" ;;
+    *) printf "." ;;
+  esac
+}
+
+hook_ensure_posix_tools() {
+  missing=0
+  for tool in tr sed sort comm awk mktemp grep; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      missing=1
+      break
+    fi
+  done
+
+  [ "$missing" -eq 1 ] || return 0
+
+  git_bin="$(command -v git 2>/dev/null || true)"
+  [ -n "${git_bin:-}" ] || return 0
+
+  if command -v cygpath >/dev/null 2>&1; then
+    git_bin="$(cygpath -u "$git_bin" 2>/dev/null || printf "%s" "$git_bin")"
+  fi
+
+  git_dir="$(hook_parent_dir "$git_bin")"
+  git_root="$(hook_parent_dir "$git_dir")"
+
+  hook_append_path_once "$git_root/usr/bin"
+  hook_append_path_once "$git_root/bin"
+  hook_append_path_once "$git_dir"
+  export PATH
+}
+
+hook_ensure_posix_tools
+
 # Convert git paths into something Git Bash can always write to on Windows.
 hook_git_path() {
   p="$(git rev-parse --git-path "$1" 2>/dev/null || true)"
@@ -909,7 +956,7 @@ hook_run_unrealsync() {
   fi
 
   REPO_ROOT="$(hook_repo_root)"
-  UE_PS_SCRIPT="$REPO_ROOT/Scripts/Unreal/UnrealSync.ps1"
+  UE_PS_SCRIPT="$REPO_ROOT/Scripts/ue-tools.ps1"
   [ -f "$UE_PS_SCRIPT" ] || return 0
 
   NONINTERACTIVE="$(hook_noninteractive_flag)"
@@ -927,18 +974,18 @@ hook_run_unrealsync() {
     # Prefer binding child stdio to the controlling terminal when available.
     # This lets Read-Host consume real user input in Git hook contexts.
     if [ "$HAS_HOOK_TTY" -eq 1 ] && hook_can_bind_tty; then
-      if UE_SYNC_HOOK_HAS_TTY="$HAS_HOOK_TTY" "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -OldRev "$old" -NewRev "$new" -Flag "$flag" </dev/tty >/dev/tty; then
+      if UE_SYNC_HOOK_HAS_TTY="$HAS_HOOK_TTY" "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -RepoRoot "$REPO_ROOT" build -OldRev "$old" -NewRev "$new" -Flag "$flag" </dev/tty >/dev/tty; then
         return 0
       fi
       return $?
     fi
 
-    if UE_SYNC_HOOK_HAS_TTY="$HAS_HOOK_TTY" "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -OldRev "$old" -NewRev "$new" -Flag "$flag"; then
+    if UE_SYNC_HOOK_HAS_TTY="$HAS_HOOK_TTY" "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -RepoRoot "$REPO_ROOT" build -OldRev "$old" -NewRev "$new" -Flag "$flag"; then
       return 0
     fi
     return $?
   else
-    if UE_SYNC_HOOK_HAS_TTY="$HAS_HOOK_TTY" "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -OldRev "$old" -NewRev "$new" -Flag "$flag" $NONINTERACTIVE; then
+    if UE_SYNC_HOOK_HAS_TTY="$HAS_HOOK_TTY" "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$UE_PS_SCRIPT" -RepoRoot "$REPO_ROOT" build -OldRev "$old" -NewRev "$new" -Flag "$flag" $NONINTERACTIVE; then
       return 0
     fi
     return $?

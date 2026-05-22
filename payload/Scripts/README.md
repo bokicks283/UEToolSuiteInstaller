@@ -4,24 +4,22 @@ This folder contains automation that keeps Git/LFS/Unreal workflows consistent f
 
 ## Folder Responsibilities
 
-- `Scripts/AI/`: AI session helpers and prompt-building utilities.
+- `Scripts/AI/`: reserved for AI payload assets (domain execution lives in `Scripts/UETools/`).
 - `Scripts/Docs/`: Docusaurus authoring helpers and the optional VS Code bridge for docs automation.
 - `Scripts/git-hooks/`: shared hook utilities and setup scripts.
 - `Scripts/git-tools/`: conflict helper commands (`git ours`, `git theirs`, `git conflicts`).
-- `Scripts/UETools/`: shared command registry and compatibility wrappers for unified CLI entrypoints.
-- `Scripts/Unreal/`: Unreal sync/build helper scripts and ArtSource scaffolding tools.
+- `Scripts/UETools/`: dispatcher and domain modules for `ue-tools`.
+- `Scripts/Unreal/`: Unreal sync/build helper scripts and project-context resolution helpers.
 - `Scripts/Tests/`: script tests and structured test output folders.
 
 Concrete examples:
 
-- `Scripts/AI/Get-AIStartupPrompt.ps1`
-- `Scripts/Docs/DocsTools.ps1`
+- `Scripts/Docs/DocsTools.Runtime.ps1`
 - `Scripts/ue-tools.ps1`
 - `Scripts/git-hooks/Enable-GitHooks.ps1`
-- `Scripts/git-tools/conflicts.ps1`
-- `Scripts/Unreal/UnrealSync.ps1`
-- `Scripts/Unreal/New-ArtSourcePath.ps1`
-- `Scripts/Unreal/ProjectShellAliases.ps1`
+- `Scripts/git-tools/GitConflictHelpers.Runtime.ps1`
+- `Scripts/Unreal/UnrealSync.Runtime.ps1`
+- `Scripts/UETools/UEToolSuite.Dispatcher.psm1`
 - `Scripts/Tests/Test-BinaryGuard-Fixes.ps1`
 
 ## Do
@@ -46,7 +44,7 @@ Concrete examples:
 
 Good:
 
-- `Scripts/AI/Get-AIStartupPrompt.ps1`
+- `Scripts/UETools/UEToolSuite.AI.psm1`
 - `Scripts/Unreal/Sync-ProjectAssets.ps1`
 - `Scripts/Tests/Test-PluginBootstrap.ps1`
 
@@ -71,19 +69,19 @@ Goal: add a script that validates plugin bootstrap setup.
 
 ## Repo Init Readiness
 
-`Scripts/Init-Repo.ps1` is the first-run bootstrap. It configures Git/LFS, hooks, conflict-helper aliases, project shell aliases, and the optional first `UnrealSync` run.
+`ue-tools init` is the first-run bootstrap command. It configures Git/LFS, hooks, conflict-helper aliases, project shell aliases, and the optional first `UnrealSync` run.
 
 It also prepares installed optional tooling so commands are ready after init:
 
-- If `Scripts/Docs/DocsTools.ps1` and `website/package.json` exist, init verifies Node.js 20+ and npm, runs `npm install` when `website/node_modules` is missing, installs the optional VS Code docs bridge when the `code` CLI is available, and runs `docs-tools doctor`.
-- If `Scripts/Unreal/New-ArtSourcePath.ps1` and `ArtSource/` exist, init checks that `ArtSource/_Template` has the expected `Source`, `Textures`, and `Exports` folders.
+- If `Scripts/Docs/DocsTools.Runtime.ps1` and `website/package.json` exist, init verifies Node.js 20+ and npm, runs `npm install` when `website/node_modules` is missing, installs the optional VS Code docs bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
+- If `Scripts/UETools/UEToolSuite.Art.psm1` and `ArtSource/` exist, init checks that `ArtSource/_Template` has the expected `Source`, `Textures`, and `Exports` folders.
 - If optional tools are not installed in a target UE repo, init reports them as skipped instead of failing the core bootstrap.
 
 Use `-SkipOptionalToolSetup` to skip optional prerequisite work entirely. Use `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, or `-SkipDocsBridgeInstall` for docs-specific control.
 
 ## UE Sync Workflow
 
-`Scripts/Unreal/UnrealSync.ps1` classifies hook-triggered changes before doing work:
+`Scripts/Unreal/UnrealSync.Runtime.ps1` classifies hook-triggered changes before doing work:
 
 - Modified existing C++ source/header files trigger a build only.
 - Project/module/plugin metadata and added/deleted/renamed C++ files trigger project-file regeneration plus a build.

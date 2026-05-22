@@ -31,11 +31,30 @@ try {
   Write-Log "Repo: $repoRoot" Cyan
   Write-Log "Log : $logPath" Cyan
 
-  $scriptPath = Join-Path $repoRoot "Scripts\AI\Get-AIStartupPrompt.ps1"
-  Assert-Condition "script exists" (Test-Path -LiteralPath $scriptPath) "Get-AIStartupPrompt.ps1 found"
+  $entrypointPath = Join-Path $repoRoot "Scripts\ue-tools.ps1"
+  Assert-Condition "dispatcher entrypoint exists" (Test-Path -LiteralPath $entrypointPath) "Scripts\\ue-tools.ps1 found"
+
+  function Invoke-AIPrompt {
+    param([string[]]$CommandArgs = @())
+    $args = @(
+      "-NoLogo",
+      "-NoProfile",
+      "-ExecutionPolicy", "Bypass",
+      "-File", $entrypointPath,
+      "-RepoRoot", $repoRoot,
+      "ai",
+      "prompt"
+    )
+    $args += @($CommandArgs)
+    $output = @(& pwsh @args 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+      throw "ue-tools ai prompt failed with exit code ${LASTEXITCODE}: $($output -join "`n")"
+    }
+    return @($output | ForEach-Object { "$_" })
+  }
 
   Step "Case 1: Default prompt lists repo docs and coding-standard guidance"
-  $defaultPrompt = (& $scriptPath -RepoRoot $repoRoot) -join "`n"
+  $defaultPrompt = (Invoke-AIPrompt) -join "`n"
   Assert-TextContains "case1 reads AGENTS first" $defaultPrompt "Read AGENTS.md first."
   Assert-TextContains "case1 includes docs read line" $defaultPrompt "Then read these repo markdown docs before doing substantial work:"
   Assert-TextContains "case1 includes docs overview" $defaultPrompt "Docs/README.md"
@@ -46,7 +65,7 @@ try {
   Assert-TextNotContains "case1 excludes private context by default" $defaultPrompt ".ai-local/Private-Context.md"
 
   Step "Case 2: Task and private context are included on request"
-  $taskPrompt = (& $scriptPath -RepoRoot $repoRoot -Task "Fix UnrealSync regeneration messaging" -IncludePrivate) -join "`n"
+  $taskPrompt = (Invoke-AIPrompt -CommandArgs @("-Task", "Fix UnrealSync regeneration messaging", "-IncludePrivate")) -join "`n"
   Assert-TextContains "case2 includes task header" $taskPrompt "Task:"
   Assert-TextContains "case2 includes task text" $taskPrompt "Fix UnrealSync regeneration messaging"
   Assert-TextContains "case2 includes private context line" $taskPrompt "Also use .ai-local/Private-Context.md for my local preferences."

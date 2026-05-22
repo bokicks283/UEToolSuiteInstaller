@@ -43,16 +43,16 @@ Installer behavior is data-driven from manifest categories plus install flags.
 
 Current public command surface is intentionally stable:
 - `ue-tools`
-- `art-tools`
-- `docs-tools`
-- `ai-tools`
-- `ai-prompt`
+- `ue-tools art`
+- `ue-tools docs`
+- `ue-tools ai`
+- `ue-tools ai prompt`
 
 Command specs and registry live in:
 - `payload/Scripts/UETools/UEToolSuite.Core.psm1`
 - `payload/Scripts/UETools/UETools.psd1`
 
-Compatibility wrappers are retained (`Scripts/UETools/ue-tools.ps1` forwards to `Scripts/ue-tools.ps1`).
+No secondary wrapper entrypoint is retained; `Scripts/ue-tools.ps1` is the single public script entrypoint.
 
 ## 3) Repository Layout (Maintainer View)
 
@@ -64,14 +64,13 @@ Top-level:
 - `src/UEToolSuiteInstaller.Gui/`: WinForms launcher that invokes installer
 
 Payload structure:
-- `payload/Scripts/Init-Repo.ps1`: first-run bootstrap orchestration
+- `payload/Scripts/Init-Repo.Runtime.ps1`: first-run bootstrap orchestration
 - `payload/Scripts/ue-tools.ps1`: unified entrypoint
-- `payload/Scripts/UETools/`: shared command registry + module manifest + compatibility wrapper
-- `payload/Scripts/Unreal/`: UnrealSync + project context + alias/bootstrap logic + ArtSource tool
-- `payload/Scripts/Docs/DocsTools.ps1`: docs command system
-- `payload/Scripts/AI/Get-AIStartupPrompt.ps1`: AI prompt tool (stable script path)
+- `payload/Scripts/UETools/`: dispatcher + domain module implementations
+- `payload/Scripts/Unreal/`: UnrealSync + project context helpers
+- `payload/Scripts/Docs/DocsTools.Runtime.ps1`: docs command system
 - `payload/Scripts/git-hooks/` + `.githooks/`: hook plumbing
-- `payload/Scripts/git-tools/`: `git ours`, `git theirs`, `git conflicts` support
+- `payload/Scripts/git-tools/`: binary conflict helper internals for `ue-tools git` + git aliases
 - `payload/Scripts/Tests/`: payload-level suites
 - `payload/Docs/`, `payload/website/`: docs content and Docusaurus app
 
@@ -144,7 +143,7 @@ Safety/cleanup:
 
 ## 5) Payload Tooling: What Each Tool Does
 
-### A) `Scripts/Init-Repo.ps1` (bootstrap orchestrator)
+### A) `Scripts/Init-Repo.Runtime.ps1` (bootstrap orchestrator)
 
 Responsibilities:
 - Initializes repo-local Git LFS filters
@@ -169,17 +168,16 @@ Key switches:
 
 Entrypoints:
 - `Scripts/ue-tools.ps1` (primary)
-- `Scripts/UETools/ue-tools.ps1` (compat wrapper)
 
 Current commands:
 - `ue-tools help`
 - `ue-tools build [UnrealSync options]`
 
 Behavior:
-- `build` forwards to `Scripts/Unreal/UnrealSync.ps1` and always includes `-Force`
+- `build` forwards to `Scripts/Unreal/UnrealSync.Runtime.ps1` and always includes `-Force`
 - option-first invocation defaults to `build` (for compatibility)
 
-### C) `Scripts/Unreal/UnrealSync.ps1`
+### C) `Scripts/Unreal/UnrealSync.Runtime.ps1`
 
 Core behavior:
 - Detects project context (`.uproject`, workspace, engine root)
@@ -196,7 +194,7 @@ Important switches:
 - Context: `-RepoRoot`, `-WorkspacePath`, `-UProjectPath`
 - Build: `-Config`, `-Platform`
 
-### D) `Scripts/Unreal/New-ArtSourcePath.ps1` (`art-tools`)
+### D) `ue-tools art` (Art domain module)
 
 Responsibilities:
 - Normalizes ArtSource template shape to canonical `ArtSource/_Template`
@@ -204,9 +202,9 @@ Responsibilities:
 - Handles path/domain selection and folder naming checks
 
 Wrapper command:
-- `art-tools`
+- `ue-tools art`
 
-### E) `Scripts/Docs/DocsTools.ps1` (`docs-tools`)
+### E) `Scripts/Docs/DocsTools.Runtime.ps1` (`ue-tools docs`)
 
 Responsibilities:
 - Docs section/page scaffolding
@@ -225,14 +223,11 @@ Primary command groups:
 - `install-bridge`
 - pass-through: `build`, `clear`, `deploy`, `serve`, `swizzle`, `write-translations`, `write-heading-ids`, `typecheck`, `docusaurus`
 
-### F) AI helpers
-
-Script:
-- `Scripts/AI/Get-AIStartupPrompt.ps1`
+### F) AI helpers (`ue-tools ai prompt`)
 
 Wrapper commands:
-- `ai-prompt`
-- `ai-tools prompt`
+- `ue-tools ai prompt`
+- `ue-tools ai prompt`
 
 Responsibilities:
 - Build startup prompt text from repo markdown context
@@ -248,9 +243,8 @@ Switches:
 
 ### G) Git conflict tooling (`git ours`, `git theirs`, `git conflicts`)
 
-Scripts:
-- `Scripts/git-tools/conflicts.ps1`
-- `Scripts/git-tools/GitConflictHelpers.ps1`
+Script internals:
+- `Scripts/git-tools/GitConflictHelpers.Runtime.ps1`
 
 Responsibilities:
 - Guarded binary conflict workflows for merges/rebases
@@ -416,14 +410,14 @@ ue-tools build -DryRun
 
 Run docs tooling:
 ```powershell
-docs-tools help
-docs-tools check
-docs-tools start --port 3001
+ue-tools docs help
+ue-tools docs check
+ue-tools docs start --port 3001
 ```
 
 Run AI prompt helper:
 ```powershell
-ai-prompt -Task "Investigate UnrealSync regression" -IncludePrivate -CopyToClipboard
+ue-tools ai prompt -Task "Investigate UnrealSync regression" -IncludePrivate -CopyToClipboard
 ```
 
 Run conflict helpers:
@@ -438,4 +432,3 @@ git conflicts continue --skip-editor
 - Full build/release guide: `docs/Usage-Build-Release-Guide.md`
 - Unification architecture: `docs/Tooling-Unification-Architecture.md`
 - Payload script guidance: `payload/Scripts/README.md`
-

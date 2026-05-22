@@ -742,6 +742,110 @@ function Get-UEToolSuiteGitContextLedgerTransition {
   }
 }
 
+function Import-UEToolSuiteGitConflictHelpers {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RepoRoot)
+
+  $helpersPath = Join-Path $RepoRoot "Scripts\git-tools\GitConflictHelpers.Runtime.ps1"
+  if (-not (Test-Path -LiteralPath $helpersPath -PathType Leaf)) {
+    throw "The 'git' domain is not installed for this repo. Missing required path: $helpersPath. Re-run the installer with git helper tooling included."
+  }
+
+  return (Resolve-Path -LiteralPath $helpersPath).Path
+}
+
+function Invoke-UEToolSuiteGitCommand {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $helpersPath = Import-UEToolSuiteGitConflictHelpers -RepoRoot $RepoRoot
+  $previousFlag = $env:UE_TOOLS_GIT_HELPERS_NO_MODULE_IMPORT
+  $env:UE_TOOLS_GIT_HELPERS_NO_MODULE_IMPORT = "1"
+  try {
+    . $helpersPath
+  }
+  finally {
+    if ($null -eq $previousFlag) {
+      Remove-Item Env:UE_TOOLS_GIT_HELPERS_NO_MODULE_IMPORT -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:UE_TOOLS_GIT_HELPERS_NO_MODULE_IMPORT = $previousFlag
+    }
+  }
+
+  $effectiveArgs = if ($null -eq $CommandArguments -or @($CommandArguments).Count -eq 0) {
+    @("help")
+  }
+  else {
+    @($CommandArguments)
+  }
+
+  $command = ([string]$effectiveArgs[0]).Trim().ToLowerInvariant()
+  $argsList = if ($effectiveArgs.Count -gt 1) { @($effectiveArgs[1..($effectiveArgs.Count - 1)]) } else { @() }
+
+  $verboseMode = $PSBoundParameters.ContainsKey('Verbose') -or ($VerbosePreference -ne 'SilentlyContinue')
+  $skipEditor = $false
+  if (Get-Command -Name "Split-UEToolSuiteGitConflictsArguments" -ErrorAction SilentlyContinue) {
+    $argumentSplit = Split-UEToolSuiteGitConflictsArguments -ArgsList $argsList
+    $skipEditor = [bool]$argumentSplit.SkipEditor
+    $argsList = @($argumentSplit.Args)
+  }
+
+  switch ($command) {
+    "help" {
+      Write-UEToolSuiteGitConflictsHelp
+      return
+    }
+    "sync" {
+      [void](Sync-BinaryConflictLock)
+      if ($verboseMode) { Show-ConflictStatus -VerboseMode } else { Show-ConflictSummary }
+      return
+    }
+    "status" {
+      if ($verboseMode) { Show-ConflictStatus -VerboseMode } else { Show-ConflictStatus }
+      return
+    }
+    "continue" {
+      Continue-RebaseWithGuard -SkipEditor:$skipEditor
+      return
+    }
+    "abort" {
+      Abort-ConflictOperation
+      return
+    }
+    "restart" {
+      Restart-ConflictOperation
+      return
+    }
+    "ours" {
+      $patterns = @($argsList | Where-Object { $_ -and $_.Trim() -ne "" })
+      if ($patterns.Count -lt 1) {
+        Write-UEToolSuiteGitConflictsHelp
+        return
+      }
+
+      Resolve-BinaryConflicts -Side "ours" -Patterns $patterns -VerboseMode:$verboseMode
+      return
+    }
+    "theirs" {
+      $patterns = @($argsList | Where-Object { $_ -and $_.Trim() -ne "" })
+      if ($patterns.Count -lt 1) {
+        Write-UEToolSuiteGitConflictsHelp
+        return
+      }
+
+      Resolve-BinaryConflicts -Side "theirs" -Patterns $patterns -VerboseMode:$verboseMode
+      return
+    }
+    default {
+      throw "Unknown ue-tools git command '$command'. Run 'ue-tools help git'."
+    }
+  }
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteGitConflictsHelpLines, `
   Write-UEToolSuiteGitConflictsHelp, `
@@ -771,4 +875,6 @@ Export-ModuleMember -Function `
   Get-UEToolSuiteGitApprovedPathsFromLedger, `
   Get-UEToolSuiteGitRemainingRequiredPaths, `
   Get-UEToolSuiteGitOperationContextId, `
-  Get-UEToolSuiteGitContextLedgerTransition
+  Get-UEToolSuiteGitContextLedgerTransition, `
+  Import-UEToolSuiteGitConflictHelpers, `
+  Invoke-UEToolSuiteGitCommand

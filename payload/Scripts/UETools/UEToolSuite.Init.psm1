@@ -229,9 +229,9 @@ function Get-UEToolSuiteInitArtTemplateReadiness {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $artToolScript = Join-Path $ResolvedRepoRoot "Scripts\Unreal\New-ArtSourcePath.ps1"
-  if (-not (Test-Path -LiteralPath $artToolScript)) {
-    return [pscustomobject]@{ Status = "SKIP"; Detail = "ArtSource helper is not installed in this repo." }
+  $artModulePath = Join-Path $ResolvedRepoRoot "Scripts\UETools\UEToolSuite.Art.psm1"
+  if (-not (Test-Path -LiteralPath $artModulePath -PathType Leaf)) {
+    return [pscustomobject]@{ Status = "SKIP"; Detail = "Art module is not installed in this repo." }
   }
 
   $artSourceRoot = Join-Path $ResolvedRepoRoot "ArtSource"
@@ -248,10 +248,112 @@ function Get-UEToolSuiteInitArtTemplateReadiness {
   }
 
   if ($missing.Count -gt 0) {
-    return [pscustomobject]@{ Status = "WARN"; Detail = "Missing template folder(s): $($missing -join ', '). Run art-tools once after restoring the template." }
+    return [pscustomobject]@{ Status = "WARN"; Detail = "Missing template folder(s): $($missing -join ', '). Run ue-tools art once after restoring the template." }
   }
 
   return [pscustomobject]@{ Status = "OK"; Detail = "ArtSource/_Template contains Source, Textures, and Exports." }
+}
+
+function ConvertTo-UEToolSuiteInitParameters {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $switchMap = @{
+    "skiplfspull" = "SkipLfsPull"
+    "skipunrealsync" = "SkipUnrealSync"
+    "skipshellaliases" = "SkipShellAliases"
+    "skipoptionaltoolsetup" = "SkipOptionalToolSetup"
+    "skipdocssetup" = "SkipDocsSetup"
+    "skipdocsnpminstall" = "SkipDocsNpmInstall"
+    "forcedocsnpminstall" = "ForceDocsNpmInstall"
+    "skipdocsbridgeinstall" = "SkipDocsBridgeInstall"
+    "nobuild" = "NoBuild"
+    "noregen" = "NoRegen"
+  }
+  $valueMap = @{
+    "reporoot" = "RepoRoot"
+    "uprojectpath" = "UProjectPath"
+    "workspacepath" = "WorkspacePath"
+    "config" = "Config"
+    "platform" = "Platform"
+  }
+
+  $parameters = @{
+    RepoRoot = $RepoRoot
+  }
+
+  $argsList = @()
+  foreach ($argument in @($CommandArguments)) {
+    if ($null -eq $argument) { continue }
+    $text = [string]$argument
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $argsList += $text
+  }
+
+  $i = 0
+  while ($i -lt $argsList.Count) {
+    $token = [string]$argsList[$i]
+    if (-not ($token.StartsWith("-") -or $token.StartsWith("/"))) {
+      throw "Unknown init argument '$token'. Run 'ue-tools help init'."
+    }
+
+    $normalized = $token.TrimStart('-', '/').ToLowerInvariant()
+    if ($switchMap.ContainsKey($normalized)) {
+      $parameters[$switchMap[$normalized]] = $true
+      $i += 1
+      continue
+    }
+
+    if ($valueMap.ContainsKey($normalized)) {
+      if (($i + 1) -ge $argsList.Count) {
+        throw "Missing value for init option '$token'."
+      }
+      $parameters[$valueMap[$normalized]] = [string]$argsList[$i + 1]
+      $i += 2
+      continue
+    }
+
+    throw "Unknown init option '$token'. Run 'ue-tools help init'."
+  }
+
+  return $parameters
+}
+
+function Invoke-UEToolSuiteInitCommand {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $resolvedRepoRoot = $RepoRoot
+  $runtimePath = Join-Path $resolvedRepoRoot "Scripts\Init-Repo.Runtime.ps1"
+  if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+    throw "The 'init' domain is not installed for this repo. Missing required path: $runtimePath. Re-run the installer with base tooling."
+  }
+
+  $previousNoAutorun = $env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN
+  $env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN = "1"
+  try {
+    . $runtimePath
+  }
+  finally {
+    if ([string]::IsNullOrEmpty($previousNoAutorun)) {
+      Remove-Item Env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN = $previousNoAutorun
+    }
+  }
+  if (-not (Get-Command -Name "Invoke-UEToolSuiteInitRuntime" -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "Init runtime entrypoint not found after loading $runtimePath."
+  }
+
+  $parameters = ConvertTo-UEToolSuiteInitParameters -RepoRoot $resolvedRepoRoot -CommandArguments $CommandArguments
+  Invoke-UEToolSuiteInitRuntime @parameters
 }
 
 Export-ModuleMember -Function `
@@ -266,4 +368,6 @@ Export-ModuleMember -Function `
   Resolve-UEToolSuiteInitRepoRoot, `
   Show-UEToolSuiteInitToolReadinessSummary, `
   Invoke-UEToolSuiteInitDocusaurusMetadataUpdate, `
-  Get-UEToolSuiteInitArtTemplateReadiness
+  Get-UEToolSuiteInitArtTemplateReadiness, `
+  ConvertTo-UEToolSuiteInitParameters, `
+  Invoke-UEToolSuiteInitCommand

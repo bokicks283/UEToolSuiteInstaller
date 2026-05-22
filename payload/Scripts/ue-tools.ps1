@@ -9,71 +9,53 @@ param(
 $ErrorActionPreference = "Stop"
 
 $runtimeHelperPath = Join-Path $PSScriptRoot "UETools\UEToolSuite.Runtime.ps1"
-if (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf) {
-  . $runtimeHelperPath
-}
-else {
+if (-not (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf)) {
   throw "Runtime helper not found: $runtimeHelperPath"
 }
-Set-UEToolSuiteRuntimeContext -ScriptsRoot $PSScriptRoot -StateKey "ue-tools"
 
-function Write-UEToolsError {
+. $runtimeHelperPath
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $PSScriptRoot -StateKey "ue-tools-dispatcher"
+
+function Write-UEToolSuiteEntrypointError {
   param([Parameter(Mandatory)][string]$Message)
-
   Write-Host "Error: $Message" -ForegroundColor Red
-}
-
-function Resolve-UEToolsRepoRoot {
-  param([string]$ExplicitRepoRoot)
-
-  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
-  if ($runtimeResolver) {
-    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $PSScriptRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools")
-  }
-
-  if (Import-UEToolSuiteCoreModule) {
-    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
-    if ($resolver) {
-      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools")
-    }
-  }
-
-  if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
-    $candidate = [System.IO.Path]::GetFullPath($ExplicitRepoRoot)
-    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
-      throw "RepoRoot does not exist or is not a directory: $candidate"
-    }
-
-    return (Resolve-Path -LiteralPath $candidate).Path
-  }
-
-  $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
-  if ([string]::IsNullOrWhiteSpace($repoRoot)) {
-    throw "ue-tools must be run from inside a git repository or passed -RepoRoot."
-  }
-
-  return $repoRoot.Trim()
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
   try {
-    $resolvedRepoRoot = Resolve-UEToolsRepoRoot -ExplicitRepoRoot $RepoRoot
-    $helpersPath = Join-Path $resolvedRepoRoot "Scripts\Unreal\ProjectShellAliases.ps1"
-    if (-not (Test-Path -LiteralPath $helpersPath -PathType Leaf)) {
-      throw "Project shell alias helper not found: $helpersPath"
+    $modulesToImport = @(
+      "UEToolSuite.Core.psm1",
+      "UEToolSuite.Unreal.psm1",
+      "UEToolSuite.Docs.psm1",
+      "UEToolSuite.Art.psm1",
+      "UEToolSuite.AI.psm1",
+      "UEToolSuite.Init.psm1",
+      "UEToolSuite.Git.psm1",
+      "UEToolSuite.Dispatcher.psm1"
+    ) | ForEach-Object { Join-Path (Join-Path $PSScriptRoot "UETools") $_ }
+
+    foreach ($modulePath in $modulesToImport) {
+      if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+        throw "Required module not found: $modulePath"
+      }
+
+      Import-Module -Name $modulePath -Force -DisableNameChecking
     }
 
-    . $helpersPath
+    $resolvedRepoRoot = Resolve-UEToolSuiteRepoRoot `
+      -ExplicitRepoRoot $RepoRoot `
+      -InvocationName "ue-tools"
+
     Push-Location $resolvedRepoRoot
     try {
-      Invoke-UETools @CommandArgs
+      Invoke-UEToolSuiteDispatcher -RepoRoot $resolvedRepoRoot -CommandArguments $CommandArgs
     }
     finally {
       Pop-Location
     }
   }
   catch {
-    Write-UEToolsError -Message $_.Exception.Message
+    Write-UEToolSuiteEntrypointError -Message $_.Exception.Message
     exit 1
   }
 }

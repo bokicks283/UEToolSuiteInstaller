@@ -11,7 +11,7 @@ $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$syncScript = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.ps1"
+$syncScript = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.Runtime.ps1"
 if (-not (Test-Path -LiteralPath $syncScript)) {
   throw "UnrealSync script not found: $syncScript"
 }

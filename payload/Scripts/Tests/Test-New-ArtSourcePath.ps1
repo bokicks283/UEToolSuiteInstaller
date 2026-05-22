@@ -57,12 +57,13 @@ try {
   Set-Content -LiteralPath (Join-Path $charactersTemplate "Exports\CharacterTemplate.txt") -Value "character template marker" -Encoding UTF8
   Set-Content -LiteralPath (Join-Path $sharedTemplate "Exports\SharedTemplate.txt") -Value "shared template marker" -Encoding UTF8
 
-  $scriptPath = Join-Path $repoRoot "Scripts\Unreal\New-ArtSourcePath.ps1"
-  . $scriptPath
+  $artModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Art.psm1"
+  Assert-Condition -Name "art domain module exists" -Condition (Test-Path -LiteralPath $artModulePath -PathType Leaf) -FailDetail "missing: $artModulePath"
+  Import-Module -Name $artModulePath -Force -DisableNameChecking
 
   Step "Canonical Template Consolidation"
 
-  $canonicalTemplate = Ensure-CanonicalTemplate -ArtSourceRoot $artSourceRoot
+  $canonicalTemplate = Ensure-UEToolSuiteArtCanonicalTemplate -ArtSourceRoot $artSourceRoot
   $canonicalTemplate = [System.IO.Path]::GetFullPath($canonicalTemplate)
 
   Assert-Condition -Name "Canonical template exists" -Condition (Test-Path -LiteralPath $canonicalTemplate) -FailDetail "ArtSource/_Template was not created"
@@ -80,9 +81,9 @@ try {
 
   Step "Create Art Item From Canonical Template"
 
-  $toolsContainer = New-DirectoryChecked -ParentPath (Join-Path $artSourceRoot "Props") -Name "Tools"
+  $toolsContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath (Join-Path $artSourceRoot "Props") -Name "Tools"
   $newArtItemPath = Join-Path $toolsContainer "Hammer_A"
-  [void](New-ArtItemFromTemplate -TemplatePath $canonicalTemplate -DestinationPath $newArtItemPath)
+  [void](New-UEToolSuiteArtItemFromTemplate -TemplatePath $canonicalTemplate -DestinationPath $newArtItemPath)
 
   Assert-Condition -Name "Art item folder created" -Condition (Test-Path -LiteralPath $newArtItemPath) -FailDetail "Art item directory was not created"
 
@@ -95,16 +96,16 @@ try {
 
   Step "Navigable Child Folder Filtering"
 
-  $swordContainer = New-DirectoryChecked -ParentPath $toolsContainer -Name "Sword"
+  $swordContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath $toolsContainer -Name "Sword"
   New-Item -ItemType Directory -Force -Path (Join-Path $swordContainer "Source") | Out-Null
-  $materialsContainer = New-DirectoryChecked -ParentPath $toolsContainer -Name "Materials"
+  $materialsContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath $toolsContainer -Name "Materials"
 
-  Assert-Condition -Name "Hammer_A detected as art item" -Condition (Test-IsArtItemDirectory -Path $newArtItemPath) -FailDetail "Hammer_A should be recognized as an art item"
-  Assert-Condition -Name "Sword detected as container" -Condition (-not (Test-IsArtItemDirectory -Path $swordContainer)) -FailDetail "Sword should remain a container because it is missing required art-item folders"
-  Assert-Condition -Name "Materials detected as container" -Condition (-not (Test-IsArtItemDirectory -Path $materialsContainer)) -FailDetail "Materials should be treated as a container"
+  Assert-Condition -Name "Hammer_A detected as art item" -Condition (Test-UEToolSuiteArtItemDirectory -Path $newArtItemPath) -FailDetail "Hammer_A should be recognized as an art item"
+  Assert-Condition -Name "Sword detected as container" -Condition (-not (Test-UEToolSuiteArtItemDirectory -Path $swordContainer)) -FailDetail "Sword should remain a container because it is missing required art-item folders"
+  Assert-Condition -Name "Materials detected as container" -Condition (-not (Test-UEToolSuiteArtItemDirectory -Path $materialsContainer)) -FailDetail "Materials should be treated as a container"
 
   $navigableNames = @(
-    Get-NavigableChildDirectories -ParentPath $toolsContainer |
+    Get-UEToolSuiteArtNavigableChildDirectories -ParentPath $toolsContainer |
     Select-Object -ExpandProperty Name
   )
 

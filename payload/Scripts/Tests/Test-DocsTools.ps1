@@ -23,7 +23,7 @@ if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
 }
 . $testHarnessPath
 
-$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\Docs\DocsTools.ps1"
+$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\Docs\DocsTools.Runtime.ps1"
 $script:PassCount = 0
 $script:FailCount = 0
 $script:WarnCount = 0
@@ -52,7 +52,7 @@ sidebar_position: 1
 
 # Overview
 
-Minimal docs root for docs-tools testing.
+Minimal docs root for ue-tools docs testing.
 '@
   Write-Utf8NoBomFile -Path (Join-Path $scratchRepo "Docs\README.md") -Content $readmeContent
 
@@ -216,7 +216,7 @@ try {
   Write-Log "Repo: $repoRoot" Cyan
   Write-Log "Log : $logPath" Cyan
 
-  Assert-Condition "script exists" (Test-Path -LiteralPath $script:DocsToolsScriptPath) "DocsTools.ps1 found"
+  Assert-Condition "script exists" (Test-Path -LiteralPath $script:DocsToolsScriptPath) "DocsTools runtime found"
 
   Step "Case 1: Help output lists the supported commands"
   $helpRepo = New-MinimalDocsRepo -Name "repo-help"
@@ -237,7 +237,7 @@ try {
   Assert-TextContains "case1b help shows generated-index" $helpSectionResult.OutputText "-LinkType <doc|generated-index|none>"
   Assert-TextContains "case1b help shows generated index slug" $helpSectionResult.OutputText "-GeneratedIndexSlug <path>"
   Assert-TextContains "case1b help shows category json" $helpSectionResult.OutputText "-CategoryJson <key=json>"
-  Assert-TextContains "case1b help shows detailed syntax" $helpSectionResult.OutputText "docs-tools new-section <SectionPath> [options]"
+  Assert-TextContains "case1b help shows detailed syntax" $helpSectionResult.OutputText "ue-tools docs new-section <SectionPath> [options]"
 
   Step "Case 1c: missing positional arguments return friendly command errors"
   $friendlyErrorRepo = New-MinimalDocsRepo -Name "repo-friendly-errors"
@@ -506,7 +506,7 @@ sidebar_position: 1
     -SandboxRoot (New-ScratchPath "sandbox-missing-section")
   Assert-Condition "case3e new-page fails for missing section" ($missingSectionResult.ExitCode -ne 0) "exit code=$($missingSectionResult.ExitCode)" "expected non-zero exit code"
   Assert-TextContains "case3e output is user-friendly" $missingSectionResult.OutputText "Error: Section does not exist:"
-  Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "DocsTools.ps1:"
+  Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "DocsTools.Runtime.ps1:"
 
   Step "Case 4: install-bridge copies the optional VS Code bridge"
   $bridgeToolset = New-StubToolset -Name "toolset-install-bridge" -CodeExtensions @("yzhang.markdown-all-in-one")
@@ -532,7 +532,7 @@ sidebar_position: 1
     -Toolset $foregroundStartToolset `
     -SandboxRoot (New-ScratchPath "sandbox-start-foreground")
   $foregroundStartStubLog = Get-Content -LiteralPath $foregroundStartToolset.CommandLog -Raw
-  $foregroundStateFiles = @(Get-ChildItem -Path (Join-Path $foregroundStartResult.SandboxTemp "ueproject-docs-tools") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+  $foregroundStateFiles = @(Get-ChildItem -Path (Join-Path $foregroundStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
   Assert-Condition "case5 start exits cleanly" ($foregroundStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($foregroundStartResult.ExitCode)"
   Assert-TextContains "case5 output confirms foreground start" $foregroundStartResult.OutputText "Starting docs dev server in the current terminal."
   Assert-TextContains "case5 output includes requested port url" $foregroundStartResult.OutputText "http://localhost:3001/docs/"
@@ -549,7 +549,7 @@ sidebar_position: 1
     -Toolset $startStopToolset `
     -SandboxRoot $startStopSandbox `
     -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
-  $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-docs-tools") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+  $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
   $serverState = Get-Content -LiteralPath $serverStateFiles[0].FullName -Raw | ConvertFrom-Json
   $startStubLog = Get-Content -LiteralPath $startStopToolset.CommandLog -Raw
   Assert-Condition "case5b start exits cleanly" ($startResult.ExitCode -eq 0) "exit code=0" "exit code=$($startResult.ExitCode)"
@@ -580,7 +580,7 @@ sidebar_position: 1
   Assert-Condition "case5b state file removed after stop" (-not (Test-Path -LiteralPath $serverStateFiles[0].FullName)) "docs-server.json removed"
   Assert-Condition "case5b server pid stopped" (-not (Get-Process -Id $serverState.processId -ErrorAction SilentlyContinue)) "process $($serverState.processId) stopped"
 
-  Step "Case 6: docs-tools can invoke other website package scripts with passthrough flags"
+  Step "Case 6: ue-tools docs can invoke other website package scripts with passthrough flags"
   $scriptRepo = New-MinimalDocsRepo -Name "repo-script-passthrough"
   $scriptToolset = New-StubToolset -Name "toolset-script-passthrough"
   $scriptResult = Invoke-DocsToolsCommand `
@@ -592,7 +592,7 @@ sidebar_position: 1
   Assert-Condition "case6 passthrough command exits cleanly" ($scriptResult.ExitCode -eq 0) "exit code=0" "exit code=$($scriptResult.ExitCode)"
   Assert-TextContains "case6 npm script was invoked" $scriptStubLog "npm run write-heading-ids -- --dry-run"
 
-  Step "Case 6b: docs-tools docusaurus passes raw args and flags through"
+  Step "Case 6b: ue-tools docs docusaurus passes raw args and flags through"
   $docusaurusRepo = New-MinimalDocsRepo -Name "repo-docusaurus-passthrough"
   $docusaurusToolset = New-StubToolset -Name "toolset-docusaurus-passthrough"
   $docusaurusResult = Invoke-DocsToolsCommand `
@@ -638,7 +638,7 @@ sidebar_position: 1
     -SandboxRoot (New-ScratchPath "sandbox-toc")
   $tocPagePath = Join-Path $tocRepo "Docs\GameDesign\Scare-Curve.md"
   $tocPageText = Get-Content -LiteralPath $tocPagePath -Raw
-  $tocRequestFiles = @(Get-ChildItem -Path (Join-Path $tocResult.SandboxTemp "ueproject-docs-tools") -Recurse -Filter *.json -ErrorAction SilentlyContinue)
+  $tocRequestFiles = @(Get-ChildItem -Path (Join-Path $tocResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter *.json -ErrorAction SilentlyContinue)
   $stubLogText = Get-Content -LiteralPath $tocToolset.CommandLog -Raw
   Assert-Condition "case7 toc-ready new-page exits cleanly" ($tocResult.ExitCode -eq 0) "exit code=0" "exit code=$($tocResult.ExitCode)"
   Assert-TextContains "case7 output confirms queued toc" $tocResult.OutputText "TOC request queued through the VS Code bridge."

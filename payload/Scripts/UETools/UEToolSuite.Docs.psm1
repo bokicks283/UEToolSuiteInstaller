@@ -85,7 +85,7 @@ function Get-UEToolSuiteDocsRootHelpText {
 UE project docs automation.
 
 Usage:
-  docs-tools <command> [options]
+  ue-tools docs <command> [options]
 
 Create:
   new-section, create-section   Create a docs section
@@ -109,19 +109,19 @@ Other:
   help [command]
 
 Examples:
-  docs-tools help new-section
-  docs-tools create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
-  docs-tools create-page Setup -Title "Setup"
-  docs-tools create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
-  docs-tools reorder Art-Source 4
-  docs-tools start --port 3001
-  docs-tools start --background --port 3001
-  docs-tools docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs help new-section
+  ue-tools docs create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
+  ue-tools docs create-page Setup -Title "Setup"
+  ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
+  ue-tools docs reorder Art-Source 4
+  ue-tools docs start --port 3001
+  ue-tools docs start --background --port 3001
+  ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
-  - Use docs-tools help <command> for detailed option help.
+  - Use ue-tools docs help <command> for detailed option help.
 "@
 }
 
@@ -292,7 +292,7 @@ function Get-UEToolSuiteDocsBridgeRequestDirectory {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $workspaceKey = Get-UEToolSuiteDocsWorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot
-  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-docs-tools\$workspaceKey")
+  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-ue-tools-docs\$workspaceKey")
 }
 
 function New-UEToolSuiteDocsBridgeStatus {
@@ -309,6 +309,55 @@ function New-UEToolSuiteDocsBridgeStatus {
     BridgeInstalled = [bool]$BridgeInstalled
     TocReady = ([bool]$CodeCliPath -and [bool]$MarkdownAllInOneInstalled -and [bool]$BridgeInstalled)
   }
+}
+
+function Invoke-UEToolSuiteDocsCommand {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $resolvedRepoRoot = $RepoRoot
+  $scriptPath = Join-Path $resolvedRepoRoot "Scripts\Docs\DocsTools.Runtime.ps1"
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "The 'docs' domain is not installed for this repo. Missing required path: $scriptPath. Re-run the installer with docs tooling included."
+  }
+
+  [string[]]$effectiveArgs = @()
+  foreach ($argument in @($CommandArguments)) {
+    if ($null -eq $argument) { continue }
+    $effectiveArgs += [string]$argument
+  }
+
+  # Dot-source the docs runtime definitions without triggering standalone autorun.
+  $previousAutoRunFlag = $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN
+  $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = "1"
+  try {
+    . $scriptPath
+  }
+  finally {
+    if ($null -eq $previousAutoRunFlag) {
+      Remove-Item Env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = $previousAutoRunFlag
+    }
+  }
+
+  $docsMainCommand = Get-Command -Name "Invoke-DocsToolsMain" -CommandType Function -ErrorAction SilentlyContinue
+  if (-not $docsMainCommand) {
+    throw "Docs command entrypoint function not found after loading $scriptPath."
+  }
+
+  $invokeParameters = @{
+    ResolvedRepoRoot = $resolvedRepoRoot
+  }
+  if ($effectiveArgs.Count -gt 0) {
+    $invokeParameters.CommandArguments = @($effectiveArgs)
+  }
+
+  Invoke-DocsToolsMain @invokeParameters
 }
 
 Export-ModuleMember -Function `
@@ -328,4 +377,5 @@ Export-ModuleMember -Function `
   Save-UEToolSuiteDocsServerState, `
   Get-UEToolSuiteDocsWorkspaceRequestKey, `
   Get-UEToolSuiteDocsBridgeRequestDirectory, `
-  New-UEToolSuiteDocsBridgeStatus
+  New-UEToolSuiteDocsBridgeStatus, `
+  Invoke-UEToolSuiteDocsCommand

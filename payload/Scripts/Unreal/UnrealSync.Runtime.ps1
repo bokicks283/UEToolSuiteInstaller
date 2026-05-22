@@ -31,6 +31,41 @@ param(
   [string]$Platform = "Win64"
 )
 
+function Invoke-UEToolSuiteUnrealRuntime {
+[CmdletBinding()]
+param(
+  # Hook parameters (optional for manual use)
+  [string]$OldRev,
+  [string]$NewRev,
+  [int]$Flag = 1,
+
+  # Manual / control flags
+  [switch]$Force,           # Always run regen+build even if no structural triggers detected
+  [switch]$CleanGenerated,  # Delete Binaries and Intermediate before selected actions
+  [switch]$CleanSaved,      # Delete the Saved directory
+  [switch]$CleanCache,      # Delete the DerivedDataCache directory
+  [switch]$NoRegen,         # Skip generating project files
+  [switch]$NoBuild,         # Skip building
+  [switch]$NonInteractive,  # Tells the script to avoid prompting the user
+  [switch]$DryRun,          # Validate detection/prompt flow without cleanup/build
+
+  # Optional: explicitly point at a repo root when running from outside the UE project
+  [string]$RepoRoot,
+
+  # Optional: explicitly point at a .code-workspace file
+  [string]$WorkspacePath,
+
+  # Optional: explicitly point at a .uproject file when the repo has more than one
+  [string]$UProjectPath,
+
+  [ValidateSet("Development", "Debug")]
+  [string]$Config = "Development",
+
+  [ValidateSet("Win64")]
+  [string]$Platform = "Win64"
+)
+
+
 $ErrorActionPreference = "Stop"
 
 $projectContextHelper = Join-Path $PSScriptRoot "ProjectContext.ps1"
@@ -1222,13 +1257,13 @@ $manual = $Force -or $CleanGenerated -or $CleanSaved -or $CleanCache -or $NoRege
 
 # If invoked from hook, only run on branch checkouts.
 if (-not $manual -and $Flag -ne 1) {
-  exit 0
+return
 }
 
 # Rebase can execute hooks at many internal steps. Keep hook execution silent there.
 $reflogAction = [string]$env:GIT_REFLOG_ACTION
 if (-not $manual -and $reflogAction -match 'rebase') {
-  exit 0
+return
 }
 
 # Skip silently during active merge/rebase contexts when running from hooks.
@@ -1246,7 +1281,7 @@ if (-not $manual) {
       (Test-Path (Join-Path $gitDir "CHERRY_PICK_HEAD")) -or
       (Test-Path (Join-Path $gitDir "REVERT_HEAD"))
     ) {
-    exit 0
+return
   }
 }
 
@@ -1261,7 +1296,7 @@ if (-not $manual) {
   $actionPlan = Get-UnrealSyncActionPlan $changedRecords
   if (-not $actionPlan.ShouldBuild -and -not $actionPlan.ShouldRegen) {
     # No UE C++/project trigger => no-op, keep hook output clean.
-    exit 0
+return
   }
 }
 
@@ -1286,7 +1321,7 @@ if (-not $manual) {
   if (-not $isNonInteractive) {
     if ($rootInteractive -and -not $hookHasTty) {
       Warn "Interactive root command detected but this hook has no terminal access. Skipping UE Sync to avoid an unconfirmed rebuild."
-      exit 0
+return
     }
     elseif ($rootInteractive) {
       # Hook layer captured the original git command as interactive.
@@ -1319,7 +1354,7 @@ if (-not $manual) {
     catch {
       if ($promptRequested) {
         Warn "Interactive root command detected but prompt could not be shown. Skipping UE Sync to avoid an unconfirmed rebuild."
-        exit 0
+return
       }
       $isNonInteractive = $true
       $response = $null
@@ -1327,7 +1362,7 @@ if (-not $manual) {
 
     if ($promptRequested -and [string]::IsNullOrWhiteSpace([string]$response)) {
       Warn "Interactive root command detected but no input was received. Skipping UE Sync to avoid an unconfirmed rebuild."
-      exit 0
+return
     }
   }
 
@@ -1335,7 +1370,7 @@ if (-not $manual) {
     $responseText = ([string]$response).Trim()
     if ($responseText -ne 'y' -and $responseText -ne 'Y') {
       Warn "User chose not to proceed. Exiting."
-      exit 0
+return
     }
   }
   else {
@@ -1351,7 +1386,7 @@ else {
 
 if ($DryRun) {
   Info "DryRun enabled. Skipping cleanup/regeneration/build."
-  exit 0
+return
 }
 
 $shouldCleanGeneratedFolders = $shouldRunRegen -or $CleanGenerated -or $CleanSaved -or $CleanCache
@@ -1399,4 +1434,9 @@ else {
 }
 
 Success "Done."
-exit 0
+return
+}
+
+if ($env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN -ne "1") {
+  Invoke-UEToolSuiteUnrealRuntime @PSBoundParameters
+}

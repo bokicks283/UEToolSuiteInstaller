@@ -28,7 +28,7 @@ Use this section to give AI stable repo context without relying on old chat thre
 ## Starter Workflow
 
 1. Start a new AI chat in the repo root.
-2. Generate a startup prompt with `ai-prompt` or `ai-tools prompt`.
+2. Generate a startup prompt with `ue-tools ai prompt` or `ue-tools ai prompt`.
 3. Let `AGENTS.md` drive the startup read order across the repo docs.
 4. Add a project-specific `Docs/AI/Project-Context.md` when you want an explicit shared brief in the prompt.
 5. If you want local-only guidance included, also point AI at `.ai-local/Private-Context.md`.
@@ -37,9 +37,9 @@ Use this section to give AI stable repo context without relying on old chat thre
 ## Command Examples
 
 ```powershell
-ai-tools help
-ai-tools prompt -Task "Fix UnrealSync regeneration output"
-ai-prompt -Task "Review coding standards docs" -IncludePrivate -CopyToClipboard
+ue-tools ai help
+ue-tools ai prompt -Task "Fix UnrealSync regeneration output"
+ue-tools ai prompt -Task "Review coding standards docs" -IncludePrivate -CopyToClipboard
 ```
 
 ## Automatic Loading Reality

@@ -2,7 +2,7 @@ function Resolve-UEToolSuiteAIRepoRoot {
   [CmdletBinding()]
   param(
     [string]$ExplicitRepoRoot,
-    [string]$InvocationName = "Get-AIStartupPrompt.ps1"
+    [string]$InvocationName = "ue-tools ai prompt"
   )
 
   if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
@@ -182,9 +182,94 @@ function New-UEToolSuiteAIStartupPrompt {
   }
 }
 
+function Invoke-UEToolSuiteAIPromptCommand {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $normalizedArgs = New-Object System.Collections.Generic.List[string]
+  foreach ($arg in @($CommandArguments)) {
+    if ($null -eq $arg) { continue }
+    $text = [string]$arg
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $normalizedArgs.Add($text) | Out-Null
+  }
+  $argsList = @($normalizedArgs.ToArray())
+
+  $task = $null
+  $includePrivate = $false
+  $copyToClipboard = $false
+  $showHelp = $false
+  $i = 0
+  while ($i -lt $argsList.Count) {
+    $token = [string]$argsList[$i]
+    $normalized = $token.Trim().ToLowerInvariant()
+    if ($normalized -eq "-task") {
+      if (($i + 1) -ge $argsList.Count) {
+        throw "Missing value for -Task."
+      }
+      $task = [string]$argsList[$i + 1]
+      $i += 2
+      continue
+    }
+    elseif ($normalized -eq "-includeprivate") {
+      $includePrivate = $true
+      $i += 1
+      continue
+    }
+    elseif ($normalized -eq "-copytoclipboard") {
+      $copyToClipboard = $true
+      $i += 1
+      continue
+    }
+    elseif ($normalized -in @("help", "--help", "-help", "-h", "/?", "-?")) {
+      $showHelp = $true
+      break
+    }
+    else {
+      throw "Unknown ai prompt option '$token'. Supported options: -Task <text>, -IncludePrivate, -CopyToClipboard."
+    }
+  }
+
+  if ($showHelp) {
+    @(
+      "Usage: ue-tools ai prompt [options]"
+      "Options:"
+      "  -Task <text>          Optional task context line."
+      "  -IncludePrivate       Include .ai-local/Private-Context.md guidance when present."
+      "  -CopyToClipboard      Copy the generated prompt to clipboard."
+      "Examples:"
+      "  ue-tools ai prompt -Task `"Investigate UnrealSync failures`""
+      "  ue-tools ai prompt -IncludePrivate -CopyToClipboard"
+    ) | Write-Output
+    return
+  }
+
+  $resolvedRepoRoot = Resolve-UEToolSuiteAIRepoRoot -ExplicitRepoRoot $RepoRoot -InvocationName "ue-tools ai prompt"
+  $promptResult = New-UEToolSuiteAIStartupPrompt -ResolvedRepoRoot $resolvedRepoRoot -Task $task -IncludePrivate:$includePrivate
+
+  if ($includePrivate -and -not [bool]$promptResult.PrivateContextExists) {
+    Write-Warning "Private context requested but not found: $($promptResult.PrivateContextPath)"
+  }
+
+  if ($copyToClipboard) {
+    if (-not (Get-Command -Name "Set-Clipboard" -ErrorAction SilentlyContinue)) {
+      throw "Set-Clipboard is not available in this PowerShell session."
+    }
+
+    Set-Clipboard -Value ([string]$promptResult.Prompt)
+    Write-Host "[AI Prompt] Copied startup prompt to clipboard." -ForegroundColor Green
+  }
+
+  Write-Output ([string]$promptResult.Prompt)
+}
+
 Export-ModuleMember -Function `
   Resolve-UEToolSuiteAIRepoRoot, `
   Test-UEToolSuiteAIExcludedMarkdownPath, `
   Get-UEToolSuiteAIRepoMarkdownPaths, `
   Get-UEToolSuiteAICodingStandardsSnapshotInfo, `
-  New-UEToolSuiteAIStartupPrompt
+  New-UEToolSuiteAIStartupPrompt, `
+  Invoke-UEToolSuiteAIPromptCommand
