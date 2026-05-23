@@ -66,6 +66,8 @@ Output:
 ## Related Docs
 
 - [MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md)
+- [docs/Manual-Testing-Checklist.md](docs/Manual-Testing-Checklist.md)
+- [docs/EXE-Code-Signing-Certificate-Guide.md](docs/EXE-Code-Signing-Certificate-Guide.md)
 - [docs/Usage-Build-Release-Guide.md](docs/Usage-Build-Release-Guide.md)
 - [docs/Tooling-Unification-Architecture.md](docs/Tooling-Unification-Architecture.md)
 - [payload/Scripts/README.md](payload/Scripts/README.md)

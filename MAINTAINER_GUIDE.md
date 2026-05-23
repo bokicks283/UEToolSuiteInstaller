@@ -8,7 +8,7 @@ This repo is the source of truth for:
 - Tests for installer + payload behavior
 - GUI `.exe` packaging wrapper (`src/UEToolSuiteInstaller.Gui/`)
 
-The target design is conservative and compatibility-first: stable user commands, thin wrappers, and shared internals.
+The target design is conservative and stability-first: stable user commands and module-owned domain internals.
 
 ## 1) What This Project Delivers
 
@@ -169,9 +169,16 @@ Key switches:
 Entrypoints:
 - `Scripts/ue-tools.ps1` (primary)
 
-Current commands:
+Root commands:
 - `ue-tools help`
 - `ue-tools build [UnrealSync options]`
+
+Domain commands:
+- `ue-tools docs ...`
+- `ue-tools ai prompt ...`
+- `ue-tools art ...`
+- `ue-tools init ...`
+- `ue-tools git ...`
 
 Behavior:
 - `build` forwards to `Scripts/Unreal/UnrealSync.Runtime.ps1` and always includes `-Force`
@@ -201,7 +208,7 @@ Responsibilities:
 - Supports creating new art item folders from canonical template
 - Handles path/domain selection and folder naming checks
 
-Wrapper command:
+Command:
 - `ue-tools art`
 
 ### E) `Scripts/Docs/DocsTools.Runtime.ps1` (`ue-tools docs`)
@@ -225,8 +232,7 @@ Primary command groups:
 
 ### F) AI helpers (`ue-tools ai prompt`)
 
-Wrapper commands:
-- `ue-tools ai prompt`
+Command:
 - `ue-tools ai prompt`
 
 Responsibilities:
@@ -389,7 +395,7 @@ Local signing test cert helper:
 
 For normal maintenance:
 1. Edit payload scripts/docs or installer logic in this repo.
-2. Keep public command names stable unless adding compatibility wrappers.
+2. Keep public command names stable and avoid introducing new wrapper scripts.
 3. Update manifest if payload path membership changes.
 4. Run non-mutating suite, then mutating suite.
 5. Commit in bounded slices.
@@ -430,5 +436,7 @@ git conflicts continue --skip-editor
 ## 12) Related Docs
 
 - Full build/release guide: `docs/Usage-Build-Release-Guide.md`
+- EXE signing certificate guide: `docs/EXE-Code-Signing-Certificate-Guide.md`
 - Unification architecture: `docs/Tooling-Unification-Architecture.md`
+- Manual validation: `docs/Manual-Testing-Checklist.md`
 - Payload script guidance: `payload/Scripts/README.md`

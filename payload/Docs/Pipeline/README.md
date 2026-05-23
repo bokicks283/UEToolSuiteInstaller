@@ -21,7 +21,7 @@ Use that page for:
 ## Required Practices
 
 - Move `.uasset` and `.umap` files in Unreal Editor, not with filesystem tools.
-- Start fresh AI sessions with `ue-tools ai prompt` or `ue-tools ai prompt` when you want the repo docs and local context called out consistently.
+- Start fresh AI sessions with `ue-tools ai prompt` when you want the repo docs and local context called out consistently.
 - Run the relevant script tests before changing hook or automation behavior.
 - Let the automated `ue-sync` hook decide whether a C++ branch switch needs a build, project-file regeneration, or both.
 - Use `ue-tools docs new-section` and `ue-tools docs new-page` for routine docs scaffolding.

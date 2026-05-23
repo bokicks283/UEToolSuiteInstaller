@@ -1,151 +1,124 @@
 # UE Tool Suite Unification Architecture
 
-This document defines the recovery path for making the installed UE tool suite feel like one coherent product while preserving existing project installs.
+This document describes the current architecture after the hard-cut command consolidation and module migration.
 
-## Goals
+## Design Goals
 
-- Keep user-facing commands stable while internals become cleaner.
-- Make each tool domain easy to extend without editing one giant script.
-- Keep installer and updater behavior in this repository, not in installed UE projects.
-- Keep installed payloads limited to usable tools, docs, hook files, setup assets, and compatibility wrappers.
-- Support eventual `.exe` packaging without duplicating installer logic in C#.
+- One command surface for end users (`ue-tools`, plus `ue` alias).
+- Domain behavior owned by module code, not spread across unrelated scripts.
+- Installer/update logic remains in this repository only.
+- Installed payload stays portable and runnable inside any UE5 project repo.
+- Multiple UE repos on one machine must not conflict in shell/profile behavior.
 
-## Compatibility Contract
+## Public Command Contract
 
-The following entrypoints should continue to work during the migration:
+Primary command names:
 
 - `ue-tools`
-- `docs-tools`
-- `art-tools`
-- `ai-tools`
-- `ai-prompt`
-- Direct PowerShell invocation of `Scripts/Unreal/UnrealSync.ps1`
-- Direct PowerShell invocation of `Scripts/Docs/DocsTools.ps1`
-- Direct PowerShell invocation of `Scripts/AI/Get-AIStartupPrompt.ps1`
+- `ue`
 
-## Installed Payload Shape
+Command grammar:
 
-Target shape:
+- Root commands: `ue-tools help`, `ue-tools build ...`
+- Domain commands:
+  - `ue-tools docs ...`
+  - `ue-tools ai prompt ...`
+  - `ue-tools art ...`
+  - `ue-tools init ...`
+  - `ue-tools git ...`
 
-```text
-Scripts/
-  ue-tools.ps1                         stable unified CLI entrypoint
-  Init-Repo.ps1                        repo bootstrap entrypoint
-  UETools/
-    ue-tools.ps1                       compatibility wrapper for older installs/docs
-    UETools.psd1                       module manifest
-    Core.psm1
-    Unreal.psm1
-    Docs.psm1
-    Git.psm1
-    Hooks.psm1
-    Prompt.psm1
-    Art.psm1
-    Crash.psm1
-  Unreal/
-    UnrealSync.ps1                     thin compatibility entrypoint
-    ProjectContext.ps1                 shared project context helpers
-    ProjectShellAliases.ps1            profile/bootstrap installer
-    New-ArtSourcePath.ps1
-  Docs/
-    DocsTools.ps1                      thin compatibility entrypoint
-  AI/
-    Get-AIStartupPrompt.ps1         thin compatibility entrypoint
-  git-hooks/
-    hook-common.sh
-    colors.sh
-    Enable-GitHooks.ps1
-    Test-Hooks.ps1
-  git-tools/
-    conflicts.ps1
-    GitConflictHelpers.ps1
-```
+Git convenience aliases remain supported:
 
-The thin compatibility entrypoints can delegate into modules over time. They should remain as stable public contracts even after the internal code moves.
+- `git ours <pattern...>`
+- `git theirs <pattern...>`
+- `git conflicts <subcommand>`
 
-## Module Rules
+Those aliases route into the same dispatcher-owned git domain behavior.
 
-- A module may depend on `Core`, but cross-domain dependencies should be explicit and rare.
-- The unified CLI should import a module manifest, not rely on accidental import order across loose `.psm1` files.
-- Public commands should parse command names and route to domain functions; domain modules should own domain behavior.
-- Shared path and project context resolution belongs in `Core` or a dedicated project context module, not copied across tools.
-- Bash hook files should stay thin and call PowerShell entrypoints.
-
-## Installer Responsibilities
-
-The installer owns:
-
-- target `.uproject` discovery and validation
-- payload version detection
-- managed path copy/merge/update
-- backups
-- manifest-driven migrations
-- legacy cleanup policy
-- optional target init execution
-- `.exe` orchestration compatibility
-
-The installed payload should not contain update logic for replacing itself.
-
-## Payload Manifest Direction
-
-Add a manifest before broad file moves:
+## Current Payload Runtime Layout
 
 ```text
-payload/ue-tool-suite.manifest.json
+payload/
+  Scripts/
+    ue-tools.ps1                         only public script entrypoint
+    Init-Repo.Runtime.ps1                init runtime implementation
+    UETools/
+      UETools.psd1                       facade manifest
+      UEToolSuite.Core.psm1              shared primitives/helpers
+      UEToolSuite.Dispatcher.psm1        command parse + route
+      UEToolSuite.Aliases.psm1           profile/bootstrap alias install
+      UEToolSuite.Unreal.psm1            build domain adapter + helpers
+      UEToolSuite.Docs.psm1              docs domain adapter + helpers
+      UEToolSuite.Art.psm1               art domain implementation
+      UEToolSuite.AI.psm1                AI prompt domain implementation
+      UEToolSuite.Init.psm1              init domain adapter + helpers
+      UEToolSuite.Git.psm1               git conflict domain adapter + helpers
+      UEToolSuite.Runtime.ps1            shared runtime context glue
+    Unreal/
+      UnrealSync.Runtime.ps1             Unreal runtime implementation
+      ProjectContext.ps1                 project/engine context helpers
+    Docs/
+      DocsTools.Runtime.ps1              docs runtime implementation
+      VSCodeBridge/                      optional docs VS Code bridge
+    git-hooks/
+      hook-common.sh
+      colors.sh
+      Enable-GitHooks.ps1
+      Test-Hooks.ps1
+    git-tools/
+      GitConflictHelpers.Runtime.ps1
 ```
 
-Minimum useful fields:
+## Module Boundaries
 
-- payload version
-- managed file paths
-- managed directory paths
-- compatibility wrapper paths
-- deprecated paths to warn about
-- deprecated paths safe to remove only with explicit cleanup
-- profile bootstrap version
-- supported installer minimum version
+- `UEToolSuite.Core.psm1`: shared path/repo/process/file utilities.
+- `UEToolSuite.Dispatcher.psm1`: command parsing, help text, domain routing, install guidance.
+- Domain modules:
+  - Unreal, Docs, Init, and Git currently call runtime scripts (`*.Runtime.ps1`) through controlled module entrypoints.
+  - AI and Art domains are implemented directly in module code.
+- `UEToolSuite.Aliases.psm1`: managed profile block + bootstrap generation + alias registration.
 
-The installer should use the manifest as data. This avoids hard-coding every future migration directly into installer control flow.
+This boundary keeps user-facing CLI stable while allowing incremental internal migration from runtime scripts into module code.
 
-## Shell Profile Strategy
+## Installer Boundary
 
-Use one managed PowerShell profile block:
+`Install-UEToolSuite.ps1` owns:
 
-```text
-# >>> ue project shell aliases >>>
-# <<< ue project shell aliases <<<
-```
+- target repo + `.uproject` discovery/validation
+- manifest-driven managed-path selection (`payload/ue-tool-suite.manifest.json`)
+- marker-managed root text updates (`.gitattributes`, `.gitignore`)
+- copy/merge/update of managed payload content
+- backups (`.ue-tools-installer-backups/<timestamp>/`)
+- legacy cleanup by explicit path list
+- optional init invocation after install/update
 
-That block should source a stable bootstrap under `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1`. The bootstrap should resolve the current Git repo at command time and call that repo's installed CLI. This avoids pinning a user's profile to whichever UE project was initialized most recently.
+Installed payload scripts do not self-update. Updates always come from rerunning the installer.
 
-Bootstrap updates must remain idempotent and versioned enough that older installed projects can be upgraded safely.
+## Multi-Repo Shell/Profile Behavior
 
-## Testing Requirements Before File Moves
+- One managed profile block is used:
+  - `# >>> ue project shell aliases >>>`
+  - `# <<< ue project shell aliases <<<`
+- The block sources `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1`.
+- The bootstrap resolves the active git repo at invocation time and runs that repo's `Scripts/ue-tools.ps1`.
 
-Before moving entrypoints or converting major scripts into modules, add tests for:
+This prevents cross-project alias conflicts and avoids profile clutter when many UE repos are installed.
 
-- fresh install
-- update from current `main`
-- update from `feat/unify-tools-legacy-cleanup` layout
-- profile bootstrap installed before an entrypoint move
-- `ai-tools` / `ai-prompt` primary behavior
-- `-SkipAITools`
-- direct script invocation compatibility
-- docs tooling command routing
-- Unreal sync dry-run/no-build/no-regen routing
-- target-only docs and tests preserved on normal update
-- explicit legacy cleanup backs up before removal
+## Extension Rules
 
-## Phased Plan
+When adding tooling:
 
-1. Add root-owned compatibility tests and fixture helpers.
-2. Add `Scripts/ue-tools.ps1` while keeping `Scripts/UETools/ue-tools.ps1` as a forwarding wrapper.
-3. Update shell bootstrap to support both old and new CLI locations.
-4. Add a payload manifest and teach the installer to read it for managed paths.
-5. Move one domain at a time behind compatibility entrypoints.
-6. Convert `ProjectContext.ps1` and shared helpers before converting higher-level command tools.
-7. Keep installer `.exe` as an orchestrator over the same PowerShell install engine.
+1. Add/extend module/domain code under `payload/Scripts/UETools/`.
+2. Keep command parsing in dispatcher/domain module entrypoints.
+3. Add payload files under `payload/` only.
+4. Update `payload/ue-tool-suite.manifest.json` for managed install ownership.
+5. Add/adjust tests in `Tests/` and/or `payload/Scripts/Tests/`.
+6. Update docs in the same change.
 
-## First Implementation Step
+Do not add new standalone public script entrypoints unless there is a strong installer/runtime reason.
 
-Start with tests and compatibility wrappers, not module extraction. The first code change should prove that an older installed suite can be updated and still run the old command names while also exposing the new unified CLI path.
+## Packaging Direction
+
+- GUI executable (`src/UEToolSuiteInstaller.Gui/`) remains a thin launcher over `Install-UEToolSuite.ps1`.
+- PowerShell installer remains the single install engine for both CLI and GUI flows.
+- Future packaging should continue bundling installer + payload together rather than duplicating install logic in C#.

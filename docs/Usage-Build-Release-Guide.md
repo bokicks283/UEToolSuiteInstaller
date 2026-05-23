@@ -44,7 +44,7 @@ The installer writes backups under:
 .ue-tools-installer-backups/<timestamp>/
 ```
 
-Backups mirror original relative paths. For example, a backup of `Scripts/Unreal/UnrealSync.ps1` is restored by copying it from the timestamp folder back to `Scripts/Unreal/UnrealSync.ps1`.
+Backups mirror original relative paths. For example, a backup of `Scripts/Unreal/UnrealSync.Runtime.ps1` is restored by copying it from the timestamp folder back to `Scripts/Unreal/UnrealSync.Runtime.ps1`.
 
 ## What Gets Installed
 
@@ -53,11 +53,13 @@ The installer copies managed paths from `payload/` into the selected UE project:
 - `.githooks/`
 - managed `.gitattributes` block
 - managed `.gitignore` block
-- `Scripts/Init-Repo.ps1`
+- `Scripts/Init-Repo.Runtime.ps1`
+- `Scripts/ue-tools.ps1`
 - `Scripts/git-hooks/`
 - `Scripts/git-tools/`
-- `Scripts/Unreal/`
-- optional `Scripts/AI/`
+- `Scripts/UETools/`
+- `Scripts/Unreal/ProjectContext.ps1`
+- `Scripts/Unreal/UnrealSync.Runtime.ps1`
 - optional `Scripts/Docs/`
 - optional `Scripts/Tests/`
 - generic `Docs/`
@@ -74,7 +76,8 @@ Important paths:
 ```text
 Install-UEToolSuite.ps1                    CLI installer/updater engine
 payload/                                   files installed into target UE projects
-payload/Scripts/Init-Repo.ps1              target repo bootstrap
+payload/Scripts/Init-Repo.Runtime.ps1      target repo bootstrap runtime
+payload/Scripts/ue-tools.ps1               unified CLI dispatcher entrypoint
 src/UEToolSuiteInstaller.Gui/              public Windows GUI launcher
 Scripts/Publish-InstallerExe.ps1           local/CI publish script
 Tests/Test-Install-UEToolSuite.ps1         installer regression suite
@@ -170,6 +173,9 @@ git push origin v0.1.0
 6. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
 
 ## GitHub Release Signing
+
+For certificate procurement and operations end-to-end, see:
+- [EXE Code-Signing Certificate Guide](./EXE-Code-Signing-Certificate-Guide.md)
 
 The workflow supports PFX-based signing with these repository secrets:
 
