@@ -267,6 +267,99 @@ function Save-DocsServerState {
   return $statePath
 }
 
+function Get-DocsServerEntries {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not $state) {
+    return @()
+  }
+
+  if ($state.PSObject.Properties["servers"]) {
+    return @($state.servers)
+  }
+
+  return @($state)
+}
+
+function Save-DocsServerEntries {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Entries
+  )
+
+  if (@($Entries).Count -eq 0) {
+    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+    return $null
+  }
+
+  $payload = [ordered]@{
+    version = 2
+    servers = @($Entries)
+  }
+  return (Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $payload)
+}
+
+function Test-DocsStartPromptAvailable {
+  try {
+    if (-not [Environment]::UserInteractive) { return $false }
+    if (-not $Host.UI -or -not $Host.UI.RawUI) { return $false }
+    if ([Console]::IsInputRedirected) { return $false }
+    if ([Console]::IsOutputRedirected) { return $false }
+    return $true
+  }
+  catch {
+    return $false
+  }
+}
+
+function Read-DocsStartContinueChoice {
+  param([Parameter(Mandatory)][string]$Prompt)
+
+  if (-not (Test-DocsStartPromptAvailable)) {
+    return $true
+  }
+
+  while ($true) {
+    $response = ([string](Read-Host "$Prompt [Y/n]")).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($response)) { return $true }
+    switch ($response) {
+      "y" { return $true }
+      "yes" { return $true }
+      "n" { return $false }
+      "no" { return $false }
+      default { Write-Output "Please enter y or n." }
+    }
+  }
+}
+
+function Get-DocsStartPort {
+  param([string[]]$StartArgs = @())
+
+  $url = Get-DocsStartUrl -StartArgs $StartArgs
+  if ($url -match "localhost:(?<port>\d+)/") {
+    return [int]$Matches.port
+  }
+
+  return 3000
+}
+
+function Test-DocsStartPortInUse {
+  param([int]$Port)
+
+  if ($Port -le 0) {
+    return $false
+  }
+
+  try {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop)
+    return ($listeners.Count -gt 0)
+  }
+  catch {
+    return $false
+  }
+}
+
 function Get-WebsitePackageScriptNames {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
@@ -2214,21 +2307,43 @@ function Invoke-DocsStartBackground {
   )
 
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
-  $existingState = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-  if ($existingState) {
-    if (Test-ProcessRunning -ProcessId ([int]$existingState.ProcessId)) {
-      return [pscustomobject]@{
-        Command = "start"
-        AlreadyRunning = $true
-        ProcessId = [int]$existingState.ProcessId
-        LogPath = [string]$existingState.LogPath
-        ErrorLogPath = [string]$existingState.ErrorLogPath
-        Url = [string]$existingState.Url
-        NpmCommandLine = [string]$existingState.CommandLine
+  $existingEntries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  $runningEntries = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in $existingEntries) {
+    $processId = [int]$entry.processId
+    $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+    if ((Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)) {
+      [void]$runningEntries.Add($entry)
+    }
+  }
+
+  if ($runningEntries.Count -ne $existingEntries.Count) {
+    [void](Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries @($runningEntries.ToArray()))
+  }
+
+  $requestedPort = Get-DocsStartPort -StartArgs $normalizedStartArgs
+  $requestedPortInUse = Test-DocsStartPortInUse -Port $requestedPort
+
+  if ($runningEntries.Count -gt 0 -or $requestedPortInUse) {
+    if ($runningEntries.Count -gt 0) {
+      Write-Output "Warning: $($runningEntries.Count) tracked background docs server instance(s) are already running."
+      foreach ($entry in @($runningEntries.ToArray())) {
+        Write-Output ("  - PID {0} URL {1}" -f [int]$entry.processId, [string]$entry.url)
       }
     }
+    if ($requestedPortInUse) {
+      Write-Output "Warning: docs start port $requestedPort appears to already be in use."
+    }
 
-    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+    $shouldContinue = Read-DocsStartContinueChoice -Prompt "Start another docs server instance?"
+    if (-not $shouldContinue) {
+      return [pscustomobject]@{
+        Command = "start"
+        Aborted = $true
+        AlreadyRunning = ($runningEntries.Count -gt 0)
+        ExistingCount = $runningEntries.Count
+      }
+    }
   }
 
   $runtimeDir = Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot
@@ -2273,7 +2388,7 @@ function Invoke-DocsStartBackground {
   }
 
   $url = Get-DocsStartUrl -StartArgs $normalizedStartArgs
-  $state = [ordered]@{
+  $entry = [ordered]@{
     version = 1
     rootProcessId = $process.Id
     processId = $trackedProcessId
@@ -2286,7 +2401,8 @@ function Invoke-DocsStartBackground {
     args = $normalizedStartArgs
   }
 
-  $statePath = Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $state
+  $updatedEntries = @($runningEntries.ToArray()) + @($entry)
+  $statePath = Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries $updatedEntries
 
   return [pscustomobject]@{
     Command = "start-background"
@@ -2298,92 +2414,136 @@ function Invoke-DocsStartBackground {
     StatePath = $statePath
     Url = $url
     NpmCommandLine = $commandLine
+    TrackedServerCount = $updatedEntries.Count
   }
 }
 
 function Invoke-DocsStop {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-  if (-not $state) {
+  $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  if ($entries.Count -eq 0) {
     return [pscustomobject]@{
       Command = "stop"
       Status = "not_running"
     }
   }
 
-  $processId = [int]$state.processId
-  $rootProcessId = if ($null -ne $state.rootProcessId) { [int]$state.rootProcessId } else { $processId }
-  if (-not (Test-ProcessRunning -ProcessId $processId) -and -not (Test-ProcessRunning -ProcessId $rootProcessId)) {
-    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-    return [pscustomobject]@{
-      Command = "stop"
-      Status = "stale_state_removed"
-      ProcessId = $processId
+  $stoppedCount = 0
+  $staleCount = 0
+  $firstProcessId = $null
+
+  foreach ($entry in $entries) {
+    $processId = [int]$entry.processId
+    $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+    if ($null -eq $firstProcessId) {
+      $firstProcessId = $processId
     }
-  }
 
-  $targetPid = if (Test-ProcessRunning -ProcessId $rootProcessId) { $rootProcessId } else { $processId }
-  $taskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
-  if (Test-Path -LiteralPath $taskKillPath) {
-    & $taskKillPath /PID $targetPid /T /F | Out-Null
-  }
-  else {
-    Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
-  }
+    if (-not (Test-ProcessRunning -ProcessId $processId) -and -not (Test-ProcessRunning -ProcessId $rootProcessId)) {
+      $staleCount += 1
+      continue
+    }
 
-  Start-Sleep -Milliseconds 750
-  if (Test-ProcessRunning -ProcessId $processId) {
-    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-  }
-  if (Test-ProcessRunning -ProcessId $rootProcessId) {
-    Stop-Process -Id $rootProcessId -Force -ErrorAction SilentlyContinue
+    $targetPid = if (Test-ProcessRunning -ProcessId $rootProcessId) { $rootProcessId } else { $processId }
+    $taskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
+    if (Test-Path -LiteralPath $taskKillPath) {
+      & $taskKillPath /PID $targetPid /T /F | Out-Null
+    }
+    else {
+      Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Milliseconds 750
+    if (Test-ProcessRunning -ProcessId $processId) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-ProcessRunning -ProcessId $rootProcessId) {
+      Stop-Process -Id $rootProcessId -Force -ErrorAction SilentlyContinue
+    }
+
+    $stoppedCount += 1
   }
 
   Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+
+  $status = if ($stoppedCount -gt 0) {
+    if ($stoppedCount -gt 1) { "stopped_multiple" } else { "stopped" }
+  }
+  else {
+    if ($staleCount -gt 1) { "stale_state_removed_multiple" } else { "stale_state_removed" }
+  }
+
   return [pscustomobject]@{
     Command = "stop"
-    Status = "stopped"
-    ProcessId = $processId
+    Status = $status
+    ProcessId = $firstProcessId
+    StoppedCount = $stoppedCount
+    StaleCount = $staleCount
   }
 }
 
 function Invoke-DocsStatus {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-  if (-not $state) {
+  $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  if ($entries.Count -eq 0) {
     return [pscustomobject]@{
       Command = "status"
       Status = "not_running"
     }
   }
 
-  $processId = [int]$state.processId
-  $rootProcessId = if ($null -ne $state.rootProcessId) { [int]$state.rootProcessId } else { $processId }
-  $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
-  if (-not $isRunning) {
-    return [pscustomobject]@{
-      Command = "status"
-      Status = "stale_state"
-      ProcessId = $processId
-      RootProcessId = $rootProcessId
-      LogPath = [string]$state.logPath
-      ErrorLogPath = [string]$state.errorLogPath
-      Url = [string]$state.url
+  $runningEntries = New-Object System.Collections.Generic.List[object]
+  $staleEntries = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in $entries) {
+    $processId = [int]$entry.processId
+    $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+    $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
+    if ($isRunning) {
+      [void]$runningEntries.Add($entry)
+    }
+    else {
+      [void]$staleEntries.Add($entry)
     }
   }
 
+  if ($staleEntries.Count -gt 0 -and $runningEntries.Count -gt 0) {
+    [void](Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries @($runningEntries.ToArray()))
+  }
+
+  if ($runningEntries.Count -eq 0) {
+    $firstStale = $staleEntries[0]
+    $processId = [int]$firstStale.processId
+    $rootProcessId = if ($null -ne $firstStale.rootProcessId) { [int]$firstStale.rootProcessId } else { $processId }
+    return [pscustomobject]@{
+      Command = "status"
+      Status = if ($staleEntries.Count -gt 1) { "stale_state_multiple" } else { "stale_state" }
+      ProcessId = $processId
+      RootProcessId = $rootProcessId
+      LogPath = [string]$firstStale.logPath
+      ErrorLogPath = [string]$firstStale.errorLogPath
+      Url = [string]$firstStale.url
+      StaleCount = $staleEntries.Count
+    }
+  }
+
+  $firstRunning = $runningEntries[0]
+  $processId = [int]$firstRunning.processId
+  $rootProcessId = if ($null -ne $firstRunning.rootProcessId) { [int]$firstRunning.rootProcessId } else { $processId }
   return [pscustomobject]@{
     Command = "status"
-    Status = "running"
+    Status = if ($runningEntries.Count -gt 1) { "running_multiple" } else { "running" }
     ProcessId = $processId
     RootProcessId = $rootProcessId
-    LogPath = [string]$state.logPath
-    ErrorLogPath = [string]$state.errorLogPath
-    Url = [string]$state.url
-    StartedAt = [string]$state.startedAt
-    Args = @($state.args)
+    LogPath = [string]$firstRunning.logPath
+    ErrorLogPath = [string]$firstRunning.errorLogPath
+    Url = [string]$firstRunning.url
+    StartedAt = [string]$firstRunning.startedAt
+    Args = @($firstRunning.args)
+    RunningCount = $runningEntries.Count
+    StaleCount = $staleEntries.Count
+    RunningEntries = @($runningEntries.ToArray())
   }
 }
 
@@ -2565,7 +2725,14 @@ function Invoke-DocsToolsMain {
       }
       if ($startMode.Background) {
         $result = Invoke-DocsStartBackground -ResolvedRepoRoot $ResolvedRepoRoot -StartArgs $startMode.StartArgs
-        if ($result.AlreadyRunning) {
+        if ($result.Aborted) {
+          Write-Output "Docs dev server start aborted."
+          if ($result.ExistingCount -gt 0) {
+            Write-Output "Tracked running docs server count: $($result.ExistingCount)"
+          }
+          return
+        }
+        elseif ($result.AlreadyRunning) {
           Write-Output "Docs dev server is already running (PID $($result.ProcessId))."
         }
         else {
@@ -2588,6 +2755,8 @@ function Invoke-DocsToolsMain {
       switch ($result.Status) {
         "not_running" { Write-Output "Tracked background docs dev server is not running." }
         "stale_state_removed" { Write-Output "Removed stale background docs dev server state for PID $($result.ProcessId)." }
+        "stale_state_removed_multiple" { Write-Output "Removed stale background docs dev server state entries ($($result.StaleCount))." }
+        "stopped_multiple" { Write-Output "Stopped background docs dev servers ($($result.StoppedCount))." }
         default { Write-Output "Stopped background docs dev server (PID $($result.ProcessId))." }
       }
       return
@@ -2599,6 +2768,20 @@ function Invoke-DocsToolsMain {
         "stale_state" {
           Write-Output "Background docs dev server is not running, but stale state still exists for PID $($result.ProcessId)."
           Write-Output "URL: $($result.Url)"
+          Write-Output "Stdout log: $($result.LogPath)"
+          Write-Output "Stderr log: $($result.ErrorLogPath)"
+        }
+        "stale_state_multiple" {
+          Write-Output "Background docs dev servers are not running, but stale state entries still exist ($($result.StaleCount))."
+          Write-Output "Example URL: $($result.Url)"
+          Write-Output "Example stdout log: $($result.LogPath)"
+          Write-Output "Example stderr log: $($result.ErrorLogPath)"
+        }
+        "running_multiple" {
+          Write-Output "Background docs dev servers are running ($($result.RunningCount) tracked instances)."
+          Write-Output "Primary PID: $($result.ProcessId)"
+          Write-Output "URL: $($result.Url)"
+          Write-Output "Started: $($result.StartedAt)"
           Write-Output "Stdout log: $($result.LogPath)"
           Write-Output "Stderr log: $($result.ErrorLogPath)"
         }

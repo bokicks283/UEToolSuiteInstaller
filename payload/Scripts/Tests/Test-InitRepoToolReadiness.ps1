@@ -81,14 +81,20 @@ function New-InitRepoFixture {
   param(
     [Parameter(Mandatory)][string]$Name,
     [switch]$IncludeDocsSite,
-    [switch]$IncludeArtSourceTool
+    [switch]$IncludeArtSourceTool,
+    [switch]$SkipGitInit
   )
 
   $target = Join-Path $script:TempRoot $Name
   New-Item -ItemType Directory -Force -Path $target | Out-Null
-  & git -C $target init | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    throw "git init failed for target repo: $target"
+  if (-not $SkipGitInit) {
+    & git -C $target init | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "git init failed for target repo: $target"
+    }
+
+    & git -C $target config user.email "init-repo-readiness@example.invalid" | Out-Null
+    & git -C $target config user.name "Init Repo Readiness Test" | Out-Null
   }
 
   Write-Utf8NoBomFile -Path (Join-Path $target "PortableSample.uproject") -Content @'
@@ -244,9 +250,17 @@ function Invoke-InitRepo {
 
   $previousPath = $env:Path
   $previousCommandLog = $env:INIT_REPO_TOOL_READINESS_LOG
+  $previousAuthorName = $env:GIT_AUTHOR_NAME
+  $previousAuthorEmail = $env:GIT_AUTHOR_EMAIL
+  $previousCommitterName = $env:GIT_COMMITTER_NAME
+  $previousCommitterEmail = $env:GIT_COMMITTER_EMAIL
   try {
     $env:Path = "$StubRoot;$env:Path"
     $env:INIT_REPO_TOOL_READINESS_LOG = $CommandLog
+    $env:GIT_AUTHOR_NAME = "Init Repo Readiness Test"
+    $env:GIT_AUTHOR_EMAIL = "init-repo-readiness@example.invalid"
+    $env:GIT_COMMITTER_NAME = "Init Repo Readiness Test"
+    $env:GIT_COMMITTER_EMAIL = "init-repo-readiness@example.invalid"
 
     $pwshArgs = @(
       "-NoLogo",
@@ -284,6 +298,11 @@ function Invoke-InitRepo {
     else {
       $env:INIT_REPO_TOOL_READINESS_LOG = $previousCommandLog
     }
+
+    if ($null -eq $previousAuthorName) { Remove-Item Env:GIT_AUTHOR_NAME -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_NAME = $previousAuthorName }
+    if ($null -eq $previousAuthorEmail) { Remove-Item Env:GIT_AUTHOR_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_EMAIL = $previousAuthorEmail }
+    if ($null -eq $previousCommitterName) { Remove-Item Env:GIT_COMMITTER_NAME -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_NAME = $previousCommitterName }
+    if ($null -eq $previousCommitterEmail) { Remove-Item Env:GIT_COMMITTER_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_EMAIL = $previousCommitterEmail }
   }
 }
 
@@ -344,6 +363,42 @@ try {
   Assert-TextNotContains "case3 npm install not invoked" $commandLog3Text "npm cwd="
   Assert-TextNotContains "case3 bridge install not invoked" $commandLog3Text "ue-tools docs install-bridge"
   Assert-TextNotContains "case3 doctor not invoked" $commandLog3Text "ue-tools docs doctor"
+
+  Step "Case 4: Non-interactive init untracks newly ignored tracked files by default"
+  $commandLog4 = Join-Path $script:TempRoot "case4-commands.log"
+  Write-Utf8NoBomFile -Path $commandLog4 -Content ""
+  $targetRepoTrackedIgnored = New-InitRepoFixture -Name "target tracked ignored files"
+  $trackedIgnoredPath = Join-Path $targetRepoTrackedIgnored "Binaries\Tracked-Ignored-By-Init.txt"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Path $trackedIgnoredPath -Parent) | Out-Null
+  Write-Utf8NoBomFile -Path $trackedIgnoredPath -Content "tracked then ignored`n"
+  & git -C $targetRepoTrackedIgnored add -- "Binaries/Tracked-Ignored-By-Init.txt" | Out-Null
+  & git -C $targetRepoTrackedIgnored commit -m "Add tracked file before ignore rule" | Out-Null
+  Write-Utf8NoBomFile -Path (Join-Path $targetRepoTrackedIgnored ".gitignore") -Content "Binaries/`n"
+  $result4 = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepoTrackedIgnored `
+    -StubRoot $stubRoot `
+    -CommandLog $commandLog4 `
+    -ExtraArgs @("-NonInteractive")
+  Assert-Condition "case4 init exits cleanly" ($result4.ExitCode -eq 0) "exit=0" "exit=$($result4.ExitCode)"
+  Assert-TextContains "case4 output indicates non-interactive untrack" $result4.OutputText "Non-interactive mode: untracking"
+  Assert-Condition "case4 tracked ignored file still exists locally" (Test-Path -LiteralPath $trackedIgnoredPath -PathType Leaf) "local file preserved" "local file was unexpectedly removed"
+  & git -C $targetRepoTrackedIgnored ls-files --error-unmatch -- "Binaries/Tracked-Ignored-By-Init.txt" 2>$null | Out-Null
+  Assert-Condition "case4 tracked ignored file untracked from git" ($LASTEXITCODE -ne 0) "file is no longer tracked" "file is still tracked"
+
+  Step "Case 5: Non-interactive init auto-initializes non-git repo and creates default initial commit"
+  $commandLog5 = Join-Path $script:TempRoot "case5-commands.log"
+  Write-Utf8NoBomFile -Path $commandLog5 -Content ""
+  $targetRepoNoGit = New-InitRepoFixture -Name "target no git" -SkipGitInit
+  $result5 = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepoNoGit `
+    -StubRoot $stubRoot `
+    -CommandLog $commandLog5 `
+    -ExtraArgs @("-NonInteractive")
+  Assert-Condition "case5 init exits cleanly" ($result5.ExitCode -eq 0) "exit=0" "exit=$($result5.ExitCode)"
+  Assert-Condition "case5 git directory created" (Test-Path -LiteralPath (Join-Path $targetRepoNoGit ".git") -PathType Container) ".git created" ".git missing"
+  & git -C $targetRepoNoGit rev-parse --verify HEAD 2>$null | Out-Null
+  Assert-Condition "case5 initial commit created" ($LASTEXITCODE -eq 0) "HEAD exists" "HEAD missing"
+  Assert-TextContains "case5 readiness reports initial commit" $result5.OutputText "[OK] initial commit"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

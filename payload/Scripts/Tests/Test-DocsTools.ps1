@@ -551,6 +551,8 @@ sidebar_position: 1
     -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
   $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
   $serverState = Get-Content -LiteralPath $serverStateFiles[0].FullName -Raw | ConvertFrom-Json
+  $primaryServerState = if ($serverState.PSObject.Properties["servers"]) { @($serverState.servers)[0] } else { $serverState }
+  $primaryServerPid = [int]$primaryServerState.processId
   $startStubLog = Get-Content -LiteralPath $startStopToolset.CommandLog -Raw
   Assert-Condition "case5b start exits cleanly" ($startResult.ExitCode -eq 0) "exit code=0" "exit code=$($startResult.ExitCode)"
   Assert-TextContains "case5b output confirms background start" $startResult.OutputText "Started docs dev server in the background"
@@ -578,7 +580,50 @@ sidebar_position: 1
     $stopResult.OutputText.Contains("Removed stale background docs dev server state")
   ) "stop command reported a handled shutdown path"
   Assert-Condition "case5b state file removed after stop" (-not (Test-Path -LiteralPath $serverStateFiles[0].FullName)) "docs-server.json removed"
-  Assert-Condition "case5b server pid stopped" (-not (Get-Process -Id $serverState.processId -ErrorAction SilentlyContinue)) "process $($serverState.processId) stopped"
+  Assert-Condition "case5b server pid stopped" (-not (Get-Process -Id $primaryServerPid -ErrorAction SilentlyContinue)) "process $primaryServerPid stopped"
+
+  Step "Case 5c: start --background tracks multiple servers and stop stops all tracked instances"
+  $multiServerRepo = New-MinimalDocsRepo -Name "repo-start-stop-multiple"
+  $multiServerToolset = New-StubToolset -Name "toolset-start-stop-multiple"
+  $multiServerSandbox = New-ScratchPath "sandbox-start-stop-multiple"
+  $firstStartResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $multiServerRepo `
+    -CliArgs @("start", "--background") `
+    -Toolset $multiServerToolset `
+    -SandboxRoot $multiServerSandbox `
+    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
+  $secondStartResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $multiServerRepo `
+    -CliArgs @("start", "--background", "--port", "3001") `
+    -Toolset $multiServerToolset `
+    -SandboxRoot $multiServerSandbox `
+    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
+  $multiStateFiles = @(Get-ChildItem -Path (Join-Path $firstStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+  $multiStateRaw = Get-Content -LiteralPath $multiStateFiles[0].FullName -Raw | ConvertFrom-Json
+  $multiEntries = if ($multiStateRaw.PSObject.Properties["servers"]) { @($multiStateRaw.servers) } else { @($multiStateRaw) }
+  $multiPids = @($multiEntries | ForEach-Object { [int]$_.processId } | Select-Object -Unique)
+  Assert-Condition "case5c first start exits cleanly" ($firstStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($firstStartResult.ExitCode)"
+  Assert-Condition "case5c second start exits cleanly" ($secondStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($secondStartResult.ExitCode)"
+  Assert-Condition "case5c state file remains valid after second start" ($multiEntries.Count -ge 1) "tracked servers=$($multiEntries.Count)" "expected at least one tracked server entry"
+  Assert-Condition "case5c second start reports a handled path" (
+    $secondStartResult.OutputText.Contains("Started docs dev server in the background") -or
+    $secondStartResult.OutputText.Contains("Docs dev server start aborted")
+  ) "second start returned a handled result"
+  $multiStopResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $multiServerRepo `
+    -CliArgs @("stop") `
+    -Toolset $multiServerToolset `
+    -SandboxRoot $multiServerSandbox
+  Assert-Condition "case5c stop exits cleanly" ($multiStopResult.ExitCode -eq 0) "exit code=0" "exit code=$($multiStopResult.ExitCode)"
+  Assert-Condition "case5c stop output confirms tracked shutdown" (
+    $multiStopResult.OutputText.Contains("Stopped background docs dev servers") -or
+    $multiStopResult.OutputText.Contains("Stopped background docs dev server") -or
+    $multiStopResult.OutputText.Contains("Removed stale background docs dev server state")
+  ) "multi stop reported server shutdown"
+  Assert-Condition "case5c state file removed after stop" (-not (Test-Path -LiteralPath $multiStateFiles[0].FullName)) "docs-server.json removed"
+  foreach ($serverProcessId in $multiPids) {
+    Assert-Condition "case5c server pid $serverProcessId stopped" (-not (Get-Process -Id $serverProcessId -ErrorAction SilentlyContinue)) "process $serverProcessId stopped"
+  }
 
   Step "Case 6: ue-tools docs can invoke other website package scripts with passthrough flags"
   $scriptRepo = New-MinimalDocsRepo -Name "repo-script-passthrough"

@@ -681,6 +681,30 @@ try {
   Assert-OutputContains "case 10 regen trigger listed" $res.Output "Project-file regeneration triggers:"
   Assert-OutputContains "case 10 build trigger listed" $res.Output "Build triggers:"
 
+  Step "Case 11: Blueprint-only project skips build gracefully"
+  $case11 = New-CaseDir "case 11 blueprint-only skip build"
+  [void](New-UProjectFile $case11 $script:TestEngineAssociation)
+  $engine11 = Join-Path $case11 "Blueprint Fake Engine"
+  New-FakeBuildBat -EngineRoot $engine11 -ExitCode 0
+  $buildCapture11 = Join-Path $case11 "build-capture.txt"
+
+  $res = Invoke-UnrealSyncAt -WorkingDir $case11 -Args @(
+    "-Force",
+    "-NoRegen",
+    "-NonInteractive"
+  ) -Environment @{
+    UE_SYNC_TEST_FALLBACK_CAPTURE = $buildCapture11
+    UE_ENGINE_DIR                 = $engine11
+    UE_ENGINE_ROOT                = $null
+    UNREAL_ENGINE_DIR             = $null
+    UE_ENGINE_DISABLE_COMMON_INSTALL_SCAN = $null
+  }
+
+  Assert-Code "case 11 exit code" $res.Code 0
+  Assert-OutputContains "case 11 blueprint warning" $res.Output "Blueprint-only project detected"
+  Assert-OutputContains "case 11 build skipped" $res.Output "Skipping build..."
+  Assert-Condition "case 11 build tool not invoked" (-not (Test-Path -LiteralPath $buildCapture11)) "Build.bat not called" "Build.bat should not run for blueprint-only project"
+
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan
   if ($script:FailCount -eq 0) {

@@ -192,7 +192,9 @@ function Ensure-UEToolSuiteArtCanonicalTemplate {
 
   if (-not (Test-Path -LiteralPath $canonicalTemplatePath)) {
     if ($domainTemplatePaths.Count -eq 0) {
-      throw "No _Template directory found. Expected either '$(Convert-UEToolSuiteArtToUnixPath -Path $canonicalTemplatePath)' or a domain-level _Template."
+      New-Item -ItemType Directory -Force -Path $canonicalTemplatePath | Out-Null
+      Ensure-UEToolSuiteArtTemplateShape -TemplatePath $canonicalTemplatePath
+      return $canonicalTemplatePath
     }
 
     Copy-Item -LiteralPath $domainTemplatePaths[0] -Destination $canonicalTemplatePath -Recurse -Force
@@ -242,7 +244,8 @@ function Resolve-UEToolSuiteArtSourceRootPath {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$ArtSourcePathInput
+    [Parameter(Mandatory)][string]$ArtSourcePathInput,
+    [switch]$CreateIfMissing
   )
 
   $candidate = $ArtSourcePathInput
@@ -251,7 +254,11 @@ function Resolve-UEToolSuiteArtSourceRootPath {
   }
 
   if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
-    throw "ArtSource path does not exist: $(Convert-UEToolSuiteArtToUnixPath -Path $candidate)"
+    if (-not $CreateIfMissing) {
+      throw "ArtSource path does not exist: $(Convert-UEToolSuiteArtToUnixPath -Path $candidate)"
+    }
+
+    New-Item -ItemType Directory -Force -Path $candidate | Out-Null
   }
 
   return (Resolve-Path -LiteralPath $candidate).Path
@@ -520,7 +527,24 @@ function Invoke-UEToolSuiteArtCommand {
     throw "RepoRoot does not exist or is not a directory: $resolvedRepoRoot"
   }
 
-  $artSourceRoot = Resolve-UEToolSuiteArtSourceRootPath -RepoRoot $resolvedRepoRoot -ArtSourcePathInput ([string]$options.ArtSourceRelativePath)
+  $artSourcePathInput = [string]$options.ArtSourceRelativePath
+  $candidateArtSource = $artSourcePathInput
+  if (-not [System.IO.Path]::IsPathRooted($candidateArtSource)) {
+    $candidateArtSource = Join-Path $resolvedRepoRoot $candidateArtSource
+  }
+
+  $createIfMissing = $false
+  if (-not (Test-Path -LiteralPath $candidateArtSource -PathType Container)) {
+    $createIfMissing = Read-UEToolSuiteArtYesNo -Prompt "ArtSource path does not exist. Create it now?"
+    if (-not $createIfMissing) {
+      throw "ArtSource path does not exist: $(Convert-UEToolSuiteArtToUnixPath -Path $candidateArtSource)"
+    }
+  }
+
+  $artSourceRoot = Resolve-UEToolSuiteArtSourceRootPath `
+    -RepoRoot $resolvedRepoRoot `
+    -ArtSourcePathInput $artSourcePathInput `
+    -CreateIfMissing:$createIfMissing
 
   Write-UEToolSuiteArtInfoLine "Repo root: $(Convert-UEToolSuiteArtToUnixPath -Path $resolvedRepoRoot)"
   Write-UEToolSuiteArtInfoLine "ArtSource: $(Convert-UEToolSuiteArtToUnixPath -Path $artSourceRoot)"
@@ -560,4 +584,5 @@ Export-ModuleMember -Function `
   Ensure-UEToolSuiteArtTemplateShape, `
   Ensure-UEToolSuiteArtCanonicalTemplate, `
   New-UEToolSuiteArtItemFromTemplate, `
+  Resolve-UEToolSuiteArtSourceRootPath, `
   Invoke-UEToolSuiteArtCommand

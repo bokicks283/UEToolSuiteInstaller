@@ -146,19 +146,23 @@ Safety/cleanup:
 ### A) `Scripts/Init-Repo.Runtime.ps1` (bootstrap orchestrator)
 
 Responsibilities:
+- Initializes git repo when needed (non-interactive path auto-runs `git init`)
 - Initializes repo-local Git LFS filters
 - Applies recommended local git config
+- Untracks newly ignored tracked files from git index (keeps local files)
 - Enables hooks (`core.hooksPath=.githooks`)
 - Configures git aliases (`ours`, `theirs`, `conflicts`)
 - Installs shell alias bootstrap block (unless skipped)
 - Runs hook self-test
 - Optionally prepares docs tooling prerequisites
 - Optionally validates ArtSource template shape
+- Creates an initial commit when init had to create the git repository
 - Optionally runs initial Unreal sync
 - Emits readiness summary (`OK` / `WARN` / `SKIP`)
 
 Key switches:
 - `-RepoRoot`, `-UProjectPath`, `-WorkspacePath`
+- `-NonInteractive`, `-SkipIgnoredUntrack`
 - `-SkipLfsPull`, `-SkipShellAliases`, `-SkipOptionalToolSetup`
 - `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, `-SkipDocsBridgeInstall`
 - `-SkipUnrealSync`, `-NoBuild`, `-NoRegen`

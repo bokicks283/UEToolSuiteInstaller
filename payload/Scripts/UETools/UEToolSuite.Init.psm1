@@ -134,7 +134,8 @@ function Resolve-UEToolSuiteInitRepoRoot {
   [CmdletBinding()]
   param(
     [string]$ExplicitRepoRoot,
-    [string]$InvocationName = "Init-Repo"
+    [string]$InvocationName = "Init-Repo",
+    [switch]$AllowNonGit
   )
 
   if ([string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
@@ -153,10 +154,44 @@ function Resolve-UEToolSuiteInitRepoRoot {
 
   $gitRootFromCandidate = ((git -C $candidate rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
   if ([string]::IsNullOrWhiteSpace($gitRootFromCandidate)) {
+    if ($AllowNonGit) {
+      return (Resolve-Path -LiteralPath $candidate).Path
+    }
+
     throw "RepoRoot is not inside a git repository: $candidate"
   }
 
   return $gitRootFromCandidate.Trim()
+}
+
+function Test-UEToolSuiteInitGitRepository {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RepoRoot)
+
+  $resolvedRoot = [System.IO.Path]::GetFullPath($RepoRoot)
+  if (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container)) {
+    return $false
+  }
+
+  $gitRoot = ((git -C $resolvedRoot rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
+  return (-not [string]::IsNullOrWhiteSpace($gitRoot))
+}
+
+function Initialize-UEToolSuiteInitGitRepository {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RepoRoot)
+
+  $resolvedRoot = [System.IO.Path]::GetFullPath($RepoRoot)
+  if (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container)) {
+    throw "Repo root does not exist: $resolvedRoot"
+  }
+
+  & git -C $resolvedRoot init | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "git init failed for repo root '$resolvedRoot' (exit $LASTEXITCODE)."
+  }
+
+  return $resolvedRoot
 }
 
 function Show-UEToolSuiteInitToolReadinessSummary {
@@ -272,6 +307,8 @@ function ConvertTo-UEToolSuiteInitParameters {
     "skipdocsbridgeinstall" = "SkipDocsBridgeInstall"
     "nobuild" = "NoBuild"
     "noregen" = "NoRegen"
+    "noninteractive" = "NonInteractive"
+    "skipignoreduntrack" = "SkipIgnoredUntrack"
   }
   $valueMap = @{
     "reporoot" = "RepoRoot"
@@ -366,6 +403,8 @@ Export-ModuleMember -Function `
   ConvertTo-UEToolSuiteInitTypeScriptSingleQuotedString, `
   Set-UEToolSuiteInitTypeScriptStringProperty, `
   Resolve-UEToolSuiteInitRepoRoot, `
+  Test-UEToolSuiteInitGitRepository, `
+  Initialize-UEToolSuiteInitGitRepository, `
   Show-UEToolSuiteInitToolReadinessSummary, `
   Invoke-UEToolSuiteInitDocusaurusMetadataUpdate, `
   Get-UEToolSuiteInitArtTemplateReadiness, `

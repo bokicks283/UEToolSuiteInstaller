@@ -21,6 +21,8 @@ param(
   [switch]$SkipDocsNpmInstall,
   [switch]$ForceDocsNpmInstall,
   [switch]$SkipDocsBridgeInstall,
+  [switch]$NonInteractive,
+  [switch]$SkipIgnoredUntrack,
   [switch]$NoBuild,
   [switch]$NoRegen,
   [string]$RepoRoot,
@@ -45,6 +47,8 @@ function Invoke-UEToolSuiteInitRuntime {
     [switch]$SkipDocsNpmInstall,
     [switch]$ForceDocsNpmInstall,
     [switch]$SkipDocsBridgeInstall,
+    [switch]$NonInteractive,
+    [switch]$SkipIgnoredUntrack,
     [switch]$NoBuild,
     [switch]$NoRegen,
     [string]$RepoRoot,
@@ -137,8 +141,160 @@ function Invoke-UEToolSuiteInitRuntime {
   }
   
   function Resolve-InitRepoRoot {
-    param([string]$ExplicitRepoRoot)
-    return (Resolve-UEToolSuiteInitRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo")
+    param(
+      [string]$ExplicitRepoRoot,
+      [switch]$AllowNonGit
+    )
+
+    return (Resolve-UEToolSuiteInitRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "Init-Repo" -AllowNonGit:$AllowNonGit)
+  }
+
+  function Read-InitYesNo {
+    param(
+      [Parameter(Mandatory)][string]$Prompt,
+      [bool]$DefaultYes = $true
+    )
+
+    while ($true) {
+      $suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+      $response = ([string](Read-Host "$Prompt $suffix")).Trim().ToLowerInvariant()
+      if ([string]::IsNullOrWhiteSpace($response)) {
+        return $DefaultYes
+      }
+
+      switch ($response) {
+        "y" { return $true }
+        "yes" { return $true }
+        "n" { return $false }
+        "no" { return $false }
+        default { Warn "Please enter y or n." }
+      }
+    }
+  }
+
+  function Get-InitDefaultCommitMessage {
+    return "chore: initialize repository with UE Tool Suite defaults"
+  }
+
+  function Get-IgnoredTrackedFiles {
+    param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+    $ignoredTracked = @(& git -C $ResolvedRepoRoot ls-files -ci --exclude-standard 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+      return @()
+    }
+
+    return @(
+      $ignoredTracked |
+        ForEach-Object { [string]$_ } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object { $_.Trim() } |
+        Sort-Object -Unique
+    )
+  }
+
+  function Untrack-IgnoredFiles {
+    param(
+      [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+      [Parameter(Mandatory)][string[]]$Paths
+    )
+
+    $failures = New-Object System.Collections.Generic.List[string]
+    foreach ($path in @($Paths)) {
+      & git -C $ResolvedRepoRoot rm --cached -- $path 2>$null | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        [void]$failures.Add($path)
+      }
+    }
+
+    return [pscustomobject]@{
+      Attempted = @($Paths).Count
+      Failed = @($failures.ToArray())
+    }
+  }
+
+  function Ensure-IgnoredTrackedFilesUntracked {
+    param(
+      [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+      [switch]$NonInteractiveMode,
+      [switch]$SkipUntrack
+    )
+
+    if ($SkipUntrack) {
+      Add-ToolReadiness -Tool "ignored tracked files" -Status "SKIP" -Detail "Ignored tracked file cleanup skipped by parameter."
+      return
+    }
+
+    $ignoredTracked = @(Get-IgnoredTrackedFiles -ResolvedRepoRoot $ResolvedRepoRoot)
+    if ($ignoredTracked.Count -eq 0) {
+      Add-ToolReadiness -Tool "ignored tracked files" -Status "OK" -Detail "No tracked files matched .gitignore rules."
+      return
+    }
+
+    if ($NonInteractiveMode) {
+      Warn "Non-interactive mode: untracking $($ignoredTracked.Count) ignored tracked file(s) from git index."
+    }
+    else {
+      Warn "Found $($ignoredTracked.Count) tracked file(s) now matched by .gitignore rules."
+      foreach ($path in $ignoredTracked) {
+        Write-Host "  - $path" -ForegroundColor Yellow
+      }
+
+      $shouldUntrack = Read-InitYesNo -Prompt "Remove these from git tracking now (keeps local files)?" -DefaultYes $true
+      if (-not $shouldUntrack) {
+        Add-ToolReadiness -Tool "ignored tracked files" -Status "WARN" -Detail "Ignored tracked files remain tracked. Run: git ls-files -ci --exclude-standard | ForEach-Object { git rm --cached -- $_ }"
+        return
+      }
+    }
+
+    $result = Untrack-IgnoredFiles -ResolvedRepoRoot $ResolvedRepoRoot -Paths $ignoredTracked
+    if ($result.Failed.Count -gt 0) {
+      $failedList = ($result.Failed -join ", ")
+      Add-ToolReadiness -Tool "ignored tracked files" -Status "WARN" -Detail "Untracked $($result.Attempted - $result.Failed.Count)/$($result.Attempted) ignored tracked file(s). Failed: $failedList"
+      return
+    }
+
+    Add-ToolReadiness -Tool "ignored tracked files" -Status "OK" -Detail "Untracked $($result.Attempted) ignored tracked file(s) from git index (local files retained)."
+  }
+
+  function Invoke-InitialRepositoryCommit {
+    param(
+      [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+      [switch]$NonInteractiveMode
+    )
+
+    $defaultMessage = Get-InitDefaultCommitMessage
+    $commitMessage = $defaultMessage
+
+    if (-not $NonInteractiveMode) {
+      $customMessage = [string](Read-Host "Enter initial commit message (press Enter for default)")
+      if (-not [string]::IsNullOrWhiteSpace($customMessage)) {
+        $commitMessage = $customMessage.Trim()
+      }
+    }
+    else {
+      Info "Non-interactive mode: using default initial commit message."
+    }
+
+    & git -C $ResolvedRepoRoot add -A
+    if ($LASTEXITCODE -ne 0) {
+      Add-ToolReadiness -Tool "initial commit" -Status "WARN" -Detail "git add -A failed. Commit was not created."
+      return
+    }
+
+    $commitOutput = @(& git -C $ResolvedRepoRoot commit -m $commitMessage 2>&1)
+    $commitText = @($commitOutput | ForEach-Object { [string]$_ }) -join " "
+    if ($LASTEXITCODE -ne 0) {
+      if ($commitText -match "nothing to commit") {
+        Add-ToolReadiness -Tool "initial commit" -Status "SKIP" -Detail "No tracked changes to commit."
+        return
+      }
+
+      Add-ToolReadiness -Tool "initial commit" -Status "WARN" -Detail "git commit failed. Configure git user.name/user.email and commit manually."
+      return
+    }
+
+    Add-ToolReadiness -Tool "initial commit" -Status "OK" -Detail "Created initial commit with message: $commitMessage"
   }
   
   function Test-ArtSourceTemplateReady {
@@ -252,10 +408,37 @@ function Invoke-UEToolSuiteInitRuntime {
   }
   
   # --- Find repo root and move there ---
-  $repoRoot = Resolve-InitRepoRoot -ExplicitRepoRoot $RepoRoot
+  $repoRoot = Resolve-InitRepoRoot -ExplicitRepoRoot $RepoRoot -AllowNonGit
   
   Set-Location $repoRoot
   Info "Repo root: $repoRoot"
+
+  $createdGitRepository = $false
+  $isGitRepository = Test-UEToolSuiteInitGitRepository -RepoRoot $repoRoot
+  if (-not $isGitRepository) {
+    if ($NonInteractive) {
+      Warn "Repo is not initialized with git. Non-interactive mode will run git init."
+      Initialize-UEToolSuiteInitGitRepository -RepoRoot $repoRoot | Out-Null
+      $createdGitRepository = $true
+    }
+    else {
+      Warn "Repo root is not currently a git repository: $repoRoot"
+      $shouldInitGit = Read-InitYesNo -Prompt "Initialize a git repository now?" -DefaultYes $true
+      if (-not $shouldInitGit) {
+        throw "Init-Repo requires a git repository. Initialize git manually or re-run with -NonInteractive."
+      }
+
+      Initialize-UEToolSuiteInitGitRepository -RepoRoot $repoRoot | Out-Null
+      $createdGitRepository = $true
+    }
+  }
+
+  if ($createdGitRepository) {
+    Add-ToolReadiness -Tool "git repository" -Status "OK" -Detail "Initialized git repository at repo root."
+  }
+  else {
+    Add-ToolReadiness -Tool "git repository" -Status "OK" -Detail "Git repository already initialized."
+  }
   
   $projectContextHelpers = Join-Path $repoRoot "Scripts\Unreal\ProjectContext.ps1"
   if (-not (Test-Path -LiteralPath $projectContextHelpers)) {
@@ -316,6 +499,11 @@ function Invoke-UEToolSuiteInitRuntime {
   & git config --local --get core.safecrlf  | ForEach-Object { Write-Host "  core.safecrlf=$_" }
   & git config --local --get advice.mergeConflict | ForEach-Object { Write-Host "  advice.mergeConflict=$_" }
   Add-ToolReadiness -Tool "git config" -Status "OK" -Detail "Hooks path, pull, LFS-safe line ending, and conflict advice settings applied."
+
+  Ensure-IgnoredTrackedFilesUntracked `
+    -ResolvedRepoRoot $repoRoot `
+    -NonInteractiveMode:$NonInteractive `
+    -SkipUntrack:$SkipIgnoredUntrack
   
   $originUrl = ((git remote get-url origin 2>$null) | Select-Object -First 1)
   $repoSlug = Get-GitHubRepoSlugFromRemoteUrl -RemoteUrl $originUrl
@@ -484,6 +672,10 @@ function Invoke-UEToolSuiteInitRuntime {
   }
   else {
     Test-ArtSourceTemplateReady -ResolvedRepoRoot $repoRoot
+  }
+
+  if ($createdGitRepository) {
+    Invoke-InitialRepositoryCommit -ResolvedRepoRoot $repoRoot -NonInteractiveMode:$NonInteractive
   }
   
   # --- Optional: run UE build/sync once for first-time setup ---

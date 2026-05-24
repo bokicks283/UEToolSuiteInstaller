@@ -115,8 +115,26 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
     "init" {
       return @(
         "Usage: ue-tools init [init options]"
+        ""
+        "Common options:"
+        "  -RepoRoot <path>             Target repo root."
+        "  -UProjectPath <path>         Explicit .uproject path when multiple exist."
+        "  -WorkspacePath <path>        Explicit .code-workspace path."
+        "  -SkipLfsPull                 Skip git lfs pull."
+        "  -SkipUnrealSync              Skip first-run ue-tools build."
+        "  -SkipShellAliases            Skip profile alias registration."
+        "  -SkipOptionalToolSetup       Skip optional docs/art setup."
+        "  -SkipDocsSetup               Skip docs setup workflow."
+        "  -SkipDocsNpmInstall          Skip npm install in website/."
+        "  -ForceDocsNpmInstall         Force npm install in website/."
+        "  -SkipDocsBridgeInstall       Skip VS Code docs bridge install."
+        "  -NoBuild                     Skip build phase when ue-tools build runs."
+        "  -NoRegen                     Skip project-file regen phase when ue-tools build runs."
+        "  -NonInteractive              Do not prompt; use safe defaults."
+        "  -SkipIgnoredUntrack          Do not remove tracked files now ignored by .gitignore."
         "Examples:"
         "  ue-tools init -SkipUnrealSync -SkipOptionalToolSetup"
+        "  ue-tools init -NonInteractive"
       )
     }
     "git" {

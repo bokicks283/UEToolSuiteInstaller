@@ -927,6 +927,29 @@ function Build-Editor([string]$engineRoot, [string]$uprojectPath, [string]$proje
   & $buildBat $target $platform $config -Project="`"$uprojectPath`"" -WaitMutex | Out-Host
 }
 
+function Test-BlueprintOnlyProject {
+  param([Parameter(Mandatory)]$ProjectContext)
+
+  $modules = @($ProjectContext.Modules)
+  if ($modules.Count -gt 0) {
+    return $false
+  }
+
+  $sourceRoot = Join-Path $ProjectContext.RepoRoot "Source"
+  if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
+    return $true
+  }
+
+  $nativeBuildMarkers = @(
+    Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Include "*.Target.cs", "*.Build.cs" -ErrorAction SilentlyContinue
+  )
+  if ($nativeBuildMarkers.Count -gt 0) {
+    return $false
+  }
+
+  return $true
+}
+
 function Test-GitTrackedPath([string]$RelativePath) {
   [void](Import-UEToolSuiteCoreModule)
   $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealGitTrackedPath" -ErrorAction SilentlyContinue
@@ -1306,6 +1329,12 @@ $projectName = $projectContext.ProjectName
 
 $shouldRunRegen = -not $NoRegen -and ($manual -or $actionPlan.ShouldRegen)
 $shouldRunBuild = -not $NoBuild -and ($manual -or $actionPlan.ShouldBuild)
+
+if ($shouldRunBuild -and (Test-BlueprintOnlyProject -ProjectContext $projectContext)) {
+  Warn "Blueprint-only project detected (no C++ modules/targets). Skipping build step."
+  Warn "Add a C++ module first if you want ue-tools build to compile an editor target."
+  $shouldRunBuild = $false
+}
 
 Info "UProject Path: $uprojectPath"
 if (-not $manual) {

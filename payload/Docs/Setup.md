@@ -35,6 +35,11 @@ ue-tools docs start
 
 `ue-tools init` prepares installed optional tool prerequisites during first-run setup. When `website/package.json` is present, it verifies Node.js 20+ and npm, runs `npm install` if `website/node_modules` is missing, installs the optional docs VS Code bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
 
+Init also handles repository bootstrap safety:
+- If the target folder is not a git repo, `ue-tools init -NonInteractive` runs `git init` automatically.
+- Newly ignored tracked files are untracked from the git index by default (local files are kept).
+- In non-interactive mode this untrack step runs automatically unless `-SkipIgnoredUntrack` is passed.
+
 After init installs project shell aliases, open a new PowerShell session or reload the profile path printed by the script before using commands like `ue-tools`, `ue-tools art`, `ue-tools docs`, or `ue-tools ai prompt`.
 
 The Docusaurus site is already set up in `website/`. You do not need to create a new site scaffold for this repo. See [Docusaurus Setup](./DocsSite/Docusaurus-Setup.md) for the edit/preview/build workflow.
@@ -72,6 +77,8 @@ Set `UE_ENGINE_COMMON_INSTALL_ROOTS` to a semicolon-separated list when this mac
 
 - Use `-NoBuild` when you only want hooks, aliases, and repo config without a first build.
 - Use `-SkipUnrealSync` when the local engine path is not resolved yet.
+- Use `-NonInteractive` for CI/automated first-run setup. This mode applies safe defaults and automatically untracks newly ignored tracked files.
+- Use `-SkipIgnoredUntrack` only when you intentionally want newly ignored tracked files to remain tracked.
 - Use `-SkipShellAliases` on CI or any environment where PowerShell profiles should remain untouched.
 - Use `-SkipOptionalToolSetup` when you want only the core git/hook/Unreal bootstrap without optional tool prerequisite work.
 - Use `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, or `-SkipDocsBridgeInstall` to control the docs-specific setup steps.

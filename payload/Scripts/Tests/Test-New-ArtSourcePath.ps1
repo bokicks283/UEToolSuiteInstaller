@@ -79,6 +79,18 @@ try {
   Assert-Condition -Name "Merged character template file present" -Condition (Test-Path -LiteralPath (Join-Path $canonicalTemplate "Exports\CharacterTemplate.txt")) -FailDetail "Character template marker missing from canonical template"
   Assert-Condition -Name "Merged shared template file present" -Condition (Test-Path -LiteralPath (Join-Path $canonicalTemplate "Exports\SharedTemplate.txt")) -FailDetail "Shared template marker missing from canonical template"
 
+  Step "Create Missing ArtSource Root On Demand"
+
+  $missingArtSource = Join-Path $tempRoot "MissingArtSource"
+  $resolvedMissingArtSource = Resolve-UEToolSuiteArtSourceRootPath -RepoRoot $tempRoot -ArtSourcePathInput "MissingArtSource" -CreateIfMissing
+  Assert-Condition -Name "Missing ArtSource root created" -Condition (Test-Path -LiteralPath $resolvedMissingArtSource -PathType Container) -FailDetail "Missing ArtSource root was not created"
+
+  $missingTemplate = Ensure-UEToolSuiteArtCanonicalTemplate -ArtSourceRoot $resolvedMissingArtSource
+  Assert-Condition -Name "Missing ArtSource canonical template created" -Condition (Test-Path -LiteralPath $missingTemplate -PathType Container) -FailDetail "Canonical template was not created for missing ArtSource root"
+  foreach ($required in @("Source", "Textures", "Exports")) {
+    Assert-Condition -Name "Missing ArtSource canonical includes $required" -Condition (Test-Path -LiteralPath (Join-Path $missingTemplate $required) -PathType Container) -FailDetail "Missing $required under created canonical template"
+  }
+
   Step "Create Art Item From Canonical Template"
 
   $toolsContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath (Join-Path $artSourceRoot "Props") -Name "Tools"
