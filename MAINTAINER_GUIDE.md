@@ -287,7 +287,7 @@ Mechanism:
 - One managed profile block:
   - `# >>> ue project shell aliases >>>`
   - `# <<< ue project shell aliases <<<`
-- Block sources `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1`
+- Block registers lazy aliases (`ue-tools`, `ue`) and loads `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1` only on first command use
 - Bootstrap resolves **current git repo at command runtime** and invokes that repo's scripts
 
 Result:

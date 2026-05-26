@@ -99,7 +99,7 @@ Installed payload scripts do not self-update. Updates always come from rerunning
 - One managed profile block is used:
   - `# >>> ue project shell aliases >>>`
   - `# <<< ue project shell aliases <<<`
-- The block sources `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1`.
+- The block registers lazy aliases (`ue-tools`, `ue`) and loads `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1` on first command use.
 - The bootstrap resolves the active git repo at invocation time and runs that repo's `Scripts/ue-tools.ps1`.
 
 This prevents cross-project alias conflicts and avoids profile clutter when many UE repos are installed.

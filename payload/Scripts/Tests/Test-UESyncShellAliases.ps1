@@ -123,11 +123,27 @@ try {
   $profileText = Get-Content -LiteralPath $profilePath -Raw
   Assert-TextContains "case2 start marker present" $profileText "# >>> ue project shell aliases >>>"
   Assert-TextContains "case2 end marker present" $profileText "# <<< ue project shell aliases <<<"
+  Assert-TextContains "case2 profile defines lazy bootstrap initializer" $profileText "function Initialize-UEToolsShell"
+  Assert-TextContains "case2 profile defines lazy command wrapper" $profileText "function Invoke-UEToolsLazyShellCommand"
+  Assert-TextContains "case2 profile sets ue-tools alias to lazy wrapper" $profileText "Set-Alias -Name `"ue-tools`" -Value `"Invoke-UEToolsLazyShellCommand`" -Scope Global"
+  Assert-TextContains "case2 profile sets ue alias to lazy wrapper" $profileText "Set-Alias -Name `"ue`" -Value `"Invoke-UEToolsLazyShellCommand`" -Scope Global"
   $bootstrapText = Get-Content -LiteralPath $bootstrapPath -Raw
-  Assert-TextContains "case2 bootstrap defines dispatcher function" $bootstrapText "function Invoke-UEToolSuiteShellCommand"
+  Assert-TextContains "case2 bootstrap defines dispatcher function" $bootstrapText "function global:Invoke-UEToolSuiteShellCommand"
   Assert-TextContains "case2 bootstrap registers ue-tools alias" $bootstrapText "Set-Alias -Name `"ue-tools`" -Value `"Invoke-UEToolSuiteShellCommand`" -Scope Global"
   Assert-TextContains "case2 bootstrap registers ue alias" $bootstrapText "Set-Alias -Name `"ue`" -Value `"Invoke-UEToolSuiteShellCommand`" -Scope Global"
   Assert-Condition "case2 metadata aliases" ((@($installed.Aliases) -join ",") -eq "ue-tools,ue") "metadata aliases are ue-tools,ue" ("metadata aliases: " + (@($installed.Aliases) -join ","))
+
+  Step "Case 2b: profile load is lazy; missing bootstrap fails only on command invocation"
+  Remove-Item -LiteralPath $bootstrapPath -Force
+  $lazyMissingScript = @(
+    ". '$profilePath'",
+    "if (Get-Command -Name 'Invoke-UEToolSuiteShellCommand' -CommandType Function -ErrorAction SilentlyContinue) { 'EAGER_BOOTSTRAP_LOADED' } else { 'LAZY_BOOTSTRAP_PENDING' }",
+    "ue-tools help"
+  ) -join "`n"
+  $lazyMissingResult = Invoke-PwshCapture -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $lazyMissingScript)
+  Assert-Condition "case2b profile load succeeds but invocation fails when bootstrap missing" ($lazyMissingResult.ExitCode -ne 0) "non-zero as expected on first invocation" "expected non-zero when bootstrap is missing"
+  Assert-TextContains "case2b no eager bootstrap during profile load" $lazyMissingResult.OutputText "LAZY_BOOTSTRAP_PENDING"
+  Assert-TextContains "case2b missing bootstrap error" $lazyMissingResult.OutputText "UE Tool Suite bootstrap script not found:"
 
   Step "Case 3: profile bootstrap resolves the active repo at command time"
   $repoA = New-TestRepo -Name "multi-repo-a"
@@ -141,10 +157,14 @@ try {
 
   $repoAScript = @(
     ". '$multiProfilePath'",
-    "ue-tools help"
+    "if (Get-Command -Name 'Invoke-UEToolSuiteShellCommand' -CommandType Function -ErrorAction SilentlyContinue) { 'EAGER_BOOTSTRAP_LOADED' } else { 'LAZY_BOOTSTRAP_PENDING' }",
+    "ue-tools help",
+    "if (Get-Command -Name 'Invoke-UEToolSuiteShellCommand' -CommandType Function -ErrorAction SilentlyContinue) { 'LAZY_BOOTSTRAP_LOADED' }"
   ) -join "`n"
   $repoAResult = Invoke-PwshCapture -WorkingDirectory $repoA -Arguments @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $repoAScript)
   Assert-Condition "case3 repoA alias help exits cleanly" ($repoAResult.ExitCode -eq 0) "exit=0" "exit=$($repoAResult.ExitCode)"
+  Assert-TextContains "case3 repoA lazy bootstrap not loaded before first command" $repoAResult.OutputText "LAZY_BOOTSTRAP_PENDING"
+  Assert-TextContains "case3 repoA lazy bootstrap loaded after first command" $repoAResult.OutputText "LAZY_BOOTSTRAP_LOADED"
   Assert-TextContains "case3 repoA alias help output" $repoAResult.OutputText "UE Tool Suite dispatcher."
 
   $repoBScript = @(

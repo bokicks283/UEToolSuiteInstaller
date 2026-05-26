@@ -111,6 +111,11 @@ Install-ProjectShellAliases -ProfilePath '$escapedProfile' -BootstrapScriptPath 
   Assert-TextContains -Name "profile alias metadata includes ue-tools" -Text $result.Output -Needle "ue-tools"
   Assert-TextContains -Name "profile alias metadata includes ue" -Text $result.Output -Needle "`"ue`""
   Assert-Condition -Name "profile alias bootstrap file created" -Condition (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) -PassDetail "bootstrap present" -FailDetail "bootstrap missing: $bootstrapPath"
+  $profileText = Get-Content -LiteralPath $ProfilePath -Raw
+  Assert-TextContains -Name "profile snippet uses lazy bootstrap initializer" -Text $profileText -Needle "function Initialize-UEToolsShell"
+  Assert-TextContains -Name "profile snippet uses lazy wrapper dispatch" -Text $profileText -Needle "function Invoke-UEToolsLazyShellCommand"
+  Assert-TextContains -Name "profile snippet binds ue-tools to lazy wrapper" -Text $profileText -Needle "Set-Alias -Name `"ue-tools`" -Value `"Invoke-UEToolsLazyShellCommand`" -Scope Global"
+  Assert-TextContains -Name "profile snippet binds ue to lazy wrapper" -Text $profileText -Needle "Set-Alias -Name `"ue`" -Value `"Invoke-UEToolsLazyShellCommand`" -Scope Global"
 }
 
 function Invoke-CompatibilityCommand {

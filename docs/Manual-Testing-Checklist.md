@@ -120,6 +120,7 @@ Run these in an initialized target repo shell (Env A).
   - `# <<< ue project shell aliases <<<`
 - [ ] Verify bootstrap file exists:
   - `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1`
+- [ ] Verify profile block uses lazy load wrappers (`Initialize-UEToolsShell` / `Invoke-UEToolsLazyShellCommand`) and does not eagerly dot-source bootstrap on shell startup.
 - [ ] Open a new shell and confirm `ue-tools` and `ue` resolve.
 
 ## 6) Domain Functionality Validation
