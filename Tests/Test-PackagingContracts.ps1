@@ -37,10 +37,12 @@ try {
   Write-Log "Log : $logPath" Cyan
 
   $csprojPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\UEToolSuiteInstaller.Gui.csproj"
+  $programPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\Program.cs"
   $publishScriptPath = Join-Path $repoRoot "Scripts\Publish-InstallerExe.ps1"
   $workflowPath = Join-Path $repoRoot ".github\workflows\release.yml"
 
   Assert-Condition -Name "GUI project file exists" -Condition (Test-Path -LiteralPath $csprojPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $csprojPath"
+  Assert-Condition -Name "GUI runtime file exists" -Condition (Test-Path -LiteralPath $programPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $programPath"
   Assert-Condition -Name "Publish script exists" -Condition (Test-Path -LiteralPath $publishScriptPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $publishScriptPath"
   Assert-Condition -Name "Release workflow exists" -Condition (Test-Path -LiteralPath $workflowPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $workflowPath"
 
@@ -55,6 +57,13 @@ try {
   $contentInclude = @($contentNodes | ForEach-Object { $_.Include })
   Assert-Condition -Name "GUI bundles installer script content" -Condition ($contentInclude -contains "..\..\Install-UEToolSuite.ps1") -PassDetail "installer script content present" -FailDetail "missing installer script content include"
   Assert-Condition -Name "GUI bundles payload content tree" -Condition ($contentInclude -contains "..\..\payload\**\*") -PassDetail "payload content include present" -FailDetail "missing payload content include"
+
+  Step "GUI runtime contract"
+  $programText = Get-Content -LiteralPath $programPath -Raw
+  Assert-HasLiteral -Name "gui run-init requests non-interactive installer init" -Text $programText -Needle "-InitNonInteractive"
+  Assert-HasLiteral -Name "gui exposes terminal output toggle" -Text $programText -Needle "Show terminal output"
+  Assert-HasLiteral -Name "gui includes progress bar" -Text $programText -Needle "ProgressBar"
+  Assert-HasLiteral -Name "gui enforces no-output timeout guard" -Text $programText -Needle "NoOutputTimeout"
 
   Step "Publish script contract"
   $publishScriptText = Get-Content -LiteralPath $publishScriptPath -Raw

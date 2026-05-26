@@ -67,6 +67,7 @@ Each target repo should contain:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 `
   -TargetRepoRoot C:\Temp\UEToolSuiteManual\FreshRepo `
   -RunInit `
+  -InitNonInteractive `
   -SkipUnrealSync
 ```
 
@@ -88,6 +89,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 `
 
 - [ ] Seed Env B with older/legacy suite files (or install a prior tag first).
 - [ ] Run installer update with `-RunInit` and `-SkipUnrealSync`.
+- [ ] Validate `-InitNonInteractive` with `-RunInit` (no init prompts, no hangs waiting for hidden input).
 - [ ] Confirm update succeeds without deleting target-only files under managed directories.
 - [ ] Confirm legacy cleanup paths are removed only when cleanup is enabled.
 - [ ] Confirm replaced files are backed up.
@@ -238,7 +240,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1
 - [ ] Confirm output exists:
   - `dist\UEToolSuiteInstaller-0.1.0-manual-win-x64.exe`
 - [ ] Launch built exe and run a smoke install into a scratch target repo.
-- [ ] Confirm GUI flow executes the same installer behavior as CLI (managed paths + logs + backups).
+- [ ] Confirm GUI flow executes the same installer behavior as CLI (managed paths + backups + init behavior).
+- [ ] Confirm progress bar advances through payload copy, init, and completion.
+- [ ] Confirm terminal log output is hidden by default and visible when `Show terminal output` is enabled.
 
 ## 10) Automated Gate Checklist (Run After Manual)
 

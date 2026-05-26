@@ -199,9 +199,16 @@ try {
   $initRepo = New-TargetRepo "run init target"
   & git -C $initRepo remote add origin "git@github.com:AcmeTools/PortableSample.git" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "git remote add failed for target repo: $initRepo" }
+  $ignoredTrackedRelativePath = "Scripts/Tests/CrashEvidenceResults/preexisting-output.txt"
+  Write-Utf8NoBomFile -Path (Join-Path $initRepo $ignoredTrackedRelativePath) -Content "preexisting generated artifact`n"
+  & git -C $initRepo add -- $ignoredTrackedRelativePath | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "git add failed for tracked ignored fixture file: $ignoredTrackedRelativePath" }
+  & git -C $initRepo commit -m "test: add tracked file that should become ignored after install" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "git commit failed for tracked ignored fixture file: $ignoredTrackedRelativePath" }
   $initResult = Invoke-Installer -TargetRoot $initRepo -ExtraArgs @(
     "-SkipTests",
     "-RunInit",
+    "-InitNonInteractive",
     "-SkipLfsPull",
     "-SkipShellAliases",
     "-SkipOptionalToolSetup",
@@ -209,7 +216,11 @@ try {
     "-SkipUnrealSync"
   )
   Assert-Condition "case3 init install exits cleanly" ($initResult.Code -eq 0) "exit=0" "exit=$($initResult.Code)"
+  Assert-Condition "case3 init bootstrap forced non-interactive" ($initResult.Output -like "*-NonInteractive*") "non-interactive switch present" "non-interactive switch missing"
   Assert-Condition "case3 init ran" ($initResult.Output -like "*Repo initialization complete.*") "init completed" "init output missing completion"
+  $trackedIgnoredListing = @(& git -C $initRepo ls-files --error-unmatch -- $ignoredTrackedRelativePath 2>$null)
+  Assert-Condition "case3 tracked ignored file removed from git index" ($LASTEXITCODE -ne 0) "untracked from index" "still tracked in git index"
+  Assert-PathExists "case3 tracked ignored file remains on disk" (Join-Path $initRepo $ignoredTrackedRelativePath)
   $hooksPath = (& git -C $initRepo config --local --get core.hooksPath 2>$null | Select-Object -First 1)
   Assert-Condition "case3 hooks path configured" ($hooksPath -eq ".githooks") "hooksPath=.githooks" "hooksPath=$hooksPath"
   Assert-FileContains "case3 docusaurus organization metadata set" (Join-Path $initRepo "website\docusaurus.config.ts") "organizationName: 'AcmeTools'"

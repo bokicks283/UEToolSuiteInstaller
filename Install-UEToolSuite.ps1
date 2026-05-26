@@ -6,6 +6,7 @@ param(
   [string]$PayloadRoot,
   [string]$TargetUProjectPath,
   [switch]$RunInit,
+  [switch]$InitNonInteractive,
   [switch]$SkipLfsPull,
   [switch]$SkipDocs,
   [switch]$SkipWebsite,
@@ -523,6 +524,7 @@ if ($RunInit) {
   if ($SkipUnrealSync) { $initArgs += "-SkipUnrealSync" }
   if ($NoBuild) { $initArgs += "-NoBuild" }
   if ($NoRegen) { $initArgs += "-NoRegen" }
+  if ($InitNonInteractive) { $initArgs += "-NonInteractive" }
 
   Info "Running target bootstrap: pwsh $($initArgs -join ' ')"
   if ($PSCmdlet.ShouldProcess($resolvedTargetRoot, "Run ue-tools init in target repo")) {

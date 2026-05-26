@@ -79,6 +79,7 @@ function Invoke-InstallerForUpgradeTest {
   if ($RunInit) {
     $args += @(
       "-RunInit",
+      "-InitNonInteractive",
       "-SkipLfsPull",
       "-SkipShellAliases",
       "-SkipOptionalToolSetup",

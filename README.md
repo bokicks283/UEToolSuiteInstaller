@@ -27,6 +27,7 @@ By default, replaced managed content is backed up under:
 ## Common Installer Switches
 
 - `-RunInit`
+- `-InitNonInteractive` (runs `ue-tools init` without prompts; recommended for automation/GUI)
 - `-SkipLfsPull`
 - `-SkipShellAliases`
 - `-SkipOptionalToolSetup`
@@ -39,6 +40,8 @@ By default, replaced managed content is backed up under:
 - `-SkipDocs`, `-SkipWebsite`, `-SkipTests`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
 - `-NoBackup`
 - `-NoLegacyCleanup`
+
+The GUI installer now runs `-RunInit` with `-InitNonInteractive` by default, shows stage progress in a progress bar, and keeps terminal output available behind a `Show terminal output` toggle.
 
 ## Test Entry Points
 

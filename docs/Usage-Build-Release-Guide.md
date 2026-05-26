@@ -36,7 +36,7 @@ Users do not need to clone this repo.
    - Install the managed PowerShell alias block.
    - Keep backups enabled.
 7. Click `Install`.
-8. Review the log in the installer window.
+8. Watch installer progress in the progress bar. Turn on `Show terminal output` only when you want detailed runtime logs.
 
 The installer writes backups under:
 
@@ -86,6 +86,8 @@ docs/                                      maintainer documentation for this rep
 ```
 
 The GUI executable does not reimplement the installer. It bundles `Install-UEToolSuite.ps1` and `payload/`, opens a `.uproject` picker, then runs the existing PowerShell installer with the selected project path and options.
+
+When `Run repo initialization after install` is enabled (default), the GUI passes `-RunInit -InitNonInteractive` so init runs without interactive prompts. This prevents hidden-prompt hangs in packaged exe runs and keeps behavior deterministic for clean installs.
 
 This keeps the behavior auditable: the CLI installer and GUI installer use the same install engine.
 

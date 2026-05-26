@@ -104,6 +104,7 @@ function New-InstalledToolSuiteFixture {
     "-File", $installerScript,
     "-TargetRepoRoot", $fixtureRepo,
     "-RunInit",
+    "-InitNonInteractive",
     "-SkipLfsPull",
     "-SkipShellAliases",
     "-SkipOptionalToolSetup",
