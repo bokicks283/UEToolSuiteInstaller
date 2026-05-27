@@ -211,7 +211,10 @@ function Invoke-UnrealSyncCapture {
     [hashtable]$Environment
   )
 
-  $scriptPath = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.ps1"
+  $scriptPath = Join-Path $repoRoot "Scripts\ue-tools.ps1"
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "Unreal sync entrypoint not found: $scriptPath"
+  }
   $pwshArgs = @(
     "-NoLogo",
     "-NoProfile"
@@ -221,7 +224,9 @@ function Invoke-UnrealSyncCapture {
   }
   $pwshArgs += @(
     "-ExecutionPolicy", "Bypass",
-    "-File", $scriptPath
+    "-File", $scriptPath,
+    "-RepoRoot", $repoRoot,
+    "build"
   )
   $pwshArgs += $Args
 
@@ -456,7 +461,7 @@ try {
   $postCommitPath = Join-Path $repoRoot ".githooks\post-commit"
   $postRewritePath = Join-Path $repoRoot ".githooks\post-rewrite"
   $hookCommonPath = Join-Path $repoRoot "Scripts\git-hooks\hook-common.sh"
-  $unrealSyncPath = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.ps1"
+  $unrealSyncPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Unreal.psm1"
 
   $postCheckoutText = Get-Content -LiteralPath $postCheckoutPath -Raw
   $postMergeText = Get-Content -LiteralPath $postMergePath -Raw
@@ -546,7 +551,7 @@ try {
       $unrealSyncText -match 'Interactive root command detected but this hook has no terminal access' -and
       $unrealSyncText -match 'Interactive root command detected but no input was received'
     ) `
-    -FailDetail "UnrealSync.ps1 missing root-interactive prompt handling contract"
+    -FailDetail "UnrealSync runtime missing root-interactive prompt handling contract"
 
   Step "Case 6: Structural change detection with DryRun"
   $structRel = "Source/$($projectContext.PrimaryModuleName)/UE_Sync_TestTmp_$((Get-Date).ToString('HHmmss')).cpp"
@@ -708,23 +713,58 @@ exit /b 0
   # Install just enough hook assets for post-checkout + hook-common execution.
   New-Item -ItemType Directory -Force -Path (Join-Path $workRepo ".githooks") | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $workRepo "Scripts\git-hooks") | Out-Null
-  New-Item -ItemType Directory -Force -Path (Join-Path $workRepo "Scripts\Unreal") | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $workRepo "Scripts") | Out-Null
   Copy-Item -LiteralPath (Join-Path $repoRoot ".githooks\post-checkout") -Destination (Join-Path $workRepo ".githooks\post-checkout") -Force
   Copy-Item -LiteralPath (Join-Path $repoRoot "Scripts\git-hooks\hook-common.sh") -Destination (Join-Path $workRepo "Scripts\git-hooks\hook-common.sh") -Force
   Copy-Item -LiteralPath (Join-Path $repoRoot "Scripts\git-hooks\colors.sh") -Destination (Join-Path $workRepo "Scripts\git-hooks\colors.sh") -Force
 
-  # Lightweight UnrealSync shim: capture invocation mode instead of rebuilding UE.
-  Write-TextFileLf -Path (Join-Path $workRepo "Scripts\Unreal\UnrealSync.ps1") -Content @'
+  # Lightweight ue-tools shim: capture forwarded hook arguments instead of rebuilding UE.
+  Write-TextFileLf -Path (Join-Path $workRepo "Scripts\ue-tools.ps1") -Content @'
 [CmdletBinding()]
 param(
-  [string]$OldRev,
-  [string]$NewRev,
-  [int]$Flag = 1,
-  [switch]$NonInteractive
+  [string]$RepoRoot,
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$CommandArgs
 )
 
+$oldRev = ""
+$newRev = ""
+$flag = "1"
+$nonInteractive = $false
+
+for ($index = 0; $index -lt $CommandArgs.Count; $index++) {
+  $token = [string]$CommandArgs[$index]
+  switch ($token) {
+    "-OldRev" {
+      if (($index + 1) -lt $CommandArgs.Count) {
+        $oldRev = [string]$CommandArgs[$index + 1]
+        $index++
+      }
+      continue
+    }
+    "-NewRev" {
+      if (($index + 1) -lt $CommandArgs.Count) {
+        $newRev = [string]$CommandArgs[$index + 1]
+        $index++
+      }
+      continue
+    }
+    "-Flag" {
+      if (($index + 1) -lt $CommandArgs.Count) {
+        $flag = [string]$CommandArgs[$index + 1]
+        $index++
+      }
+      continue
+    }
+    "-NonInteractive" {
+      $nonInteractive = $true
+      continue
+    }
+  }
+}
+
 $logPath = Join-Path (Get-Location).Path "ue-sync-hook-log.txt"
-$line = "OldRev=$OldRev;NewRev=$NewRev;Flag=$Flag;NonInteractive=$($NonInteractive.IsPresent);Root=$env:UE_SYNC_ROOT_INTERACTIVE;HookTTY=$env:UE_SYNC_HOOK_HAS_TTY"
+$line = "OldRev=$oldRev;NewRev=$newRev;Flag=$flag;NonInteractive=$nonInteractive;Root=$env:UE_SYNC_ROOT_INTERACTIVE;HookTTY=$env:UE_SYNC_HOOK_HAS_TTY"
 Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8
 exit 0
 '@

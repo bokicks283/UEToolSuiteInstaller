@@ -4,10 +4,16 @@
 
 $ErrorActionPreference = "Stop"
 
-function Info($m) { Write-Host "[HookTest] $m" -ForegroundColor Cyan }
-function Ok($m)   { Write-Host "[HookTest] $m" -ForegroundColor Green }
-function Warn($m) { Write-Host "[HookTest] $m" -ForegroundColor Yellow }
-function Err($m)  { Write-Host "[HookTest] $m" -ForegroundColor Red }
+$scriptsRoot = Split-Path -Parent $PSScriptRoot
+$coreModuleEntryPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
+if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
+  $coreModuleEntryPath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
+}
+if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
+  throw "Core module entry not found: $coreModuleEntryPath"
+}
+Import-Module -Name $coreModuleEntryPath -Force -DisableNameChecking
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $scriptsRoot -StateKey "hook-tests" -LogPrefix "[HookTest]"
 
 function Get-GitExePath {
   $git = Get-Command git -ErrorAction SilentlyContinue
@@ -118,6 +124,24 @@ Ok "Conflict helper aliases present."
 Info "alias.ours      = $ours"
 Info "alias.theirs    = $theirs"
 Info "alias.conflicts = $conflicts"
+
+$conflictsHelpOutput = @(& git conflicts 2>&1)
+if ($LASTEXITCODE -ne 0) {
+  throw "git conflicts failed (exit $LASTEXITCODE). Output: $($conflictsHelpOutput -join ' | ')"
+}
+if (-not (@($conflictsHelpOutput | ForEach-Object { [string]$_ }) -match '^Unreal Binary Conflict Helpers$')) {
+  throw "git conflicts did not return helper usage output."
+}
+Ok "git conflicts (default help) executes successfully."
+
+$conflictsStatusOutput = @(& git conflicts status 2>&1)
+if ($LASTEXITCODE -ne 0) {
+  throw "git conflicts status failed (exit $LASTEXITCODE). Output: $($conflictsStatusOutput -join ' | ')"
+}
+if (-not (@($conflictsStatusOutput | ForEach-Object { [string]$_ }) -match '^\[conflicts\]')) {
+  throw "git conflicts status did not print conflict status output."
+}
+Ok "git conflicts status executes successfully."
 
 # Validate: Git Bash can source hook-common.sh
 $gitExe = Get-GitExePath

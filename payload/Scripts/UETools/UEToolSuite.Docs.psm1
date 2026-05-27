@@ -1,40 +1,389 @@
-[CmdletBinding()]
-param(
-  [string]$RepoRoot,
+function Get-UEToolSuiteDocsNormalizedArgumentList {
+  [CmdletBinding()]
+  param([AllowNull()][string[]]$Values)
 
-  [string[]]$CommandArgs,
+  $normalized = New-Object System.Collections.Generic.List[string]
+  foreach ($value in @($Values)) {
+    if ($null -eq $value) {
+      continue
+    }
 
-  [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$ExtraArgs
-)
+    $stringValue = [string]$value
+    if ([string]::IsNullOrWhiteSpace($stringValue)) {
+      continue
+    }
 
-$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
-
-$script:DocsToolsBridgeExtensionId = "ueproject.docs-tools-bridge"
-$script:MarkdownAllInOneExtensionId = "yzhang.markdown-all-in-one"
-$script:TocMarker = "<!-- docs-tools-toc -->"
-$script:CodeExtensionList = $null
-$script:CodeCliPath = $null
-$script:WebsitePackageScriptNames = $null
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  $directory = Split-Path -Parent $Path
-  if ($directory -and -not (Test-Path -LiteralPath $directory)) {
-    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    $normalized.Add($stringValue) | Out-Null
   }
 
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+  return $normalized.ToArray()
 }
+
+function Resolve-UEToolSuiteDocsCommandAlias {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CommandName)
+
+  $normalized = $CommandName.Trim().ToLowerInvariant()
+  switch ($normalized) {
+    "create-page" { return "new-page" }
+    "create-section" { return "new-section" }
+    default { return $normalized }
+  }
+}
+
+function Test-UEToolSuiteDocsHelpToken {
+  [CmdletBinding()]
+  param([string]$Token)
+
+  if ([string]::IsNullOrWhiteSpace($Token)) {
+    return $false
+  }
+
+  $normalized = $Token.Trim().ToLowerInvariant()
+  return ($normalized -in @("help", "--help", "-help", "-h", "/?", "-?"))
+}
+
+function Split-UEToolSuiteDocsStartArguments {
+  [CmdletBinding()]
+  param([string[]]$StartArgsInput = @())
+
+  $background = $false
+  $passThroughArgs = New-Object System.Collections.Generic.List[string]
+  foreach ($token in @(Get-UEToolSuiteDocsNormalizedArgumentList -Values $StartArgsInput)) {
+    $normalized = [string]$token
+    if ($normalized -in @("--background", "-background")) {
+      $background = $true
+      continue
+    }
+
+    $passThroughArgs.Add($normalized) | Out-Null
+  }
+
+  return [pscustomobject]@{
+    Background = $background
+    StartArgs = $passThroughArgs.ToArray()
+  }
+}
+
+function Resolve-UEToolSuiteDocsHelpTopicAlias {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CommandName)
+
+  $normalized = $CommandName.Trim().ToLowerInvariant()
+  switch ($normalized) {
+    "create-page" { return "new-page" }
+    "create-section" { return "new-section" }
+    default { return $normalized }
+  }
+}
+
+function Get-UEToolSuiteDocsRootHelpText {
+  [CmdletBinding()]
+  param()
+
+@"
+UE project docs automation.
+
+Usage:
+  ue-tools docs <command> [options]
+
+Create:
+  new-section, create-section   Create a docs section
+  new-page, create-page         Create a page at Docs root or inside a section
+  reorder                       Reorder a page or section and shift sibling positions
+
+Run:
+  start                         Start Docusaurus in the current terminal
+  stop                          Stop the tracked background Docusaurus server
+  status                        Show tracked background server status
+  check                         Validate docs and run the production build
+  doctor                        Check local docs prerequisites
+
+Pass-through:
+  build, clear, deploy, serve, swizzle
+  write-translations, write-heading-ids, typecheck
+  docusaurus <args...>
+
+Other:
+  install-bridge                Install the optional VS Code TOC bridge
+  help [command]
+
+Examples:
+  ue-tools docs help new-section
+  ue-tools docs create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
+  ue-tools docs create-page Setup -Title "Setup"
+  ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
+  ue-tools docs reorder Art-Source 4
+  ue-tools docs start --port 3001
+  ue-tools docs start --background --port 3001
+  ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
+
+Notes:
+  - Docs are authored in Docs/ and rendered by website/.
+  - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
+  - Use ue-tools docs help <command> for detailed option help.
+"@
+}
+
+function Test-UEToolSuiteDocsProcessRunning {
+  [CmdletBinding()]
+  param([int]$ProcessId)
+
+  if ($ProcessId -le 0) {
+    return $false
+  }
+
+  try {
+    Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+    return $true
+  }
+  catch {
+    return $false
+  }
+}
+
+function Get-UEToolSuiteDocsDescendantProcessId {
+  [CmdletBinding()]
+  param([int]$RootProcessId)
+
+  if ($RootProcessId -le 0) {
+    return $null
+  }
+
+  $queue = New-Object System.Collections.Generic.Queue[int]
+  $queue.Enqueue($RootProcessId)
+
+  while ($queue.Count -gt 0) {
+    $parentId = $queue.Dequeue()
+
+    try {
+      $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId" -ErrorAction Stop)
+    }
+    catch {
+      $children = @()
+    }
+
+    foreach ($child in $children) {
+      $childId = [int]$child.ProcessId
+      if (Test-UEToolSuiteDocsProcessRunning -ProcessId $childId) {
+        return $childId
+      }
+
+      $queue.Enqueue($childId)
+    }
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteDocsStartUrl {
+  [CmdletBinding()]
+  param([string[]]$StartArgs = @())
+
+  $normalizedStartArgs = @(Get-UEToolSuiteDocsNormalizedArgumentList -Values $StartArgs)
+  $port = 3000
+  for ($i = 0; $i -lt $normalizedStartArgs.Count; $i++) {
+    $token = [string]$normalizedStartArgs[$i]
+    if ($token -match '^--port=(?<port>\d+)$') {
+      $parsedEqualsPort = 0
+      if ([int]::TryParse($Matches.port, [ref]$parsedEqualsPort)) {
+        $port = $parsedEqualsPort
+      }
+      break
+    }
+
+    if ($token -eq "--port" -or $token -eq "-p") {
+      if (($i + 1) -lt $normalizedStartArgs.Count) {
+        $parsedPort = 0
+        if ([int]::TryParse([string]$normalizedStartArgs[$i + 1], [ref]$parsedPort)) {
+          $port = $parsedPort
+        }
+      }
+      break
+    }
+  }
+
+  return "http://localhost:$port/docs/"
+}
+
+function Test-UEToolSuiteDocsCommandAvailable {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Name)
+
+  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
+}
+
+function ConvertTo-UEToolSuiteDocsCmdArgument {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
+
+  if ($Value.Length -eq 0) {
+    return '""'
+  }
+
+  if ($Value -notmatch '[\s"&|<>^]') {
+    return $Value
+  }
+
+  return '"' + ($Value -replace '"', '""') + '"'
+}
+
+function Get-UEToolSuiteDocsServerState {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$StatePath)
+
+  if (-not (Test-Path -LiteralPath $StatePath)) {
+    return $null
+  }
+
+  return (Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json)
+}
+
+function Remove-UEToolSuiteDocsServerState {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$StatePath)
+
+  if (Test-Path -LiteralPath $StatePath) {
+    Remove-Item -LiteralPath $StatePath -Force
+  }
+}
+
+function Save-UEToolSuiteDocsServerState {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][object]$State
+  )
+
+  $stateDirectory = Split-Path -Parent $StatePath
+  if (-not [string]::IsNullOrWhiteSpace($stateDirectory)) {
+    New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
+  }
+
+  $stateJson = $State | ConvertTo-Json -Depth 6
+  if (Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue) {
+    Write-UEToolSuiteUtf8NoBomFile -Path $StatePath -Content $stateJson
+  }
+  else {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($StatePath, $stateJson, $utf8NoBom)
+  }
+  return $StatePath
+}
+
+function Get-UEToolSuiteDocsWorkspaceRequestKey {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $normalized = [System.IO.Path]::GetFullPath($ResolvedRepoRoot).ToLowerInvariant()
+  $sha1 = [System.Security.Cryptography.SHA1]::Create()
+  try {
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
+    $hash = $sha1.ComputeHash($bytes)
+    return ([System.BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant()
+  }
+  finally {
+    $sha1.Dispose()
+  }
+}
+
+function Get-UEToolSuiteDocsBridgeRequestDirectory {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $workspaceKey = Get-UEToolSuiteDocsWorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-ue-tools-docs\$workspaceKey")
+}
+
+function New-UEToolSuiteDocsBridgeStatus {
+  [CmdletBinding()]
+  param(
+    [string]$CodeCliPath,
+    [bool]$MarkdownAllInOneInstalled = $false,
+    [bool]$BridgeInstalled = $false
+  )
+
+  return [pscustomobject]@{
+    CodeCliPath = $CodeCliPath
+    MarkdownAllInOneInstalled = [bool]$MarkdownAllInOneInstalled
+    BridgeInstalled = [bool]$BridgeInstalled
+    TocReady = ([bool]$CodeCliPath -and [bool]$MarkdownAllInOneInstalled -and [bool]$BridgeInstalled)
+  }
+}
+
+function Invoke-UEToolSuiteDocsCommand {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $resolvedRepoRoot = $RepoRoot
+
+  [string[]]$effectiveArgs = @()
+  foreach ($argument in @($CommandArguments)) {
+    if ($null -eq $argument) { continue }
+    $effectiveArgs += [string]$argument
+  }
+
+  if (-not (Get-Command -Name "Invoke-DocsToolsMain" -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "Docs command entrypoint function is unavailable in UEToolSuite.Docs.psm1."
+  }
+
+  $invokeParameters = @{
+    ResolvedRepoRoot = $resolvedRepoRoot
+  }
+  if ($effectiveArgs.Count -gt 0) {
+    $invokeParameters.CommandArguments = @($effectiveArgs)
+  }
+
+  Invoke-DocsToolsMain @invokeParameters
+}
+
+Export-ModuleMember -Function `
+  Get-UEToolSuiteDocsNormalizedArgumentList, `
+  Resolve-UEToolSuiteDocsCommandAlias, `
+  Test-UEToolSuiteDocsHelpToken, `
+  Split-UEToolSuiteDocsStartArguments, `
+  Resolve-UEToolSuiteDocsHelpTopicAlias, `
+  Get-UEToolSuiteDocsRootHelpText, `
+  Test-UEToolSuiteDocsProcessRunning, `
+  Get-UEToolSuiteDocsDescendantProcessId, `
+  Get-UEToolSuiteDocsStartUrl, `
+  Test-UEToolSuiteDocsCommandAvailable, `
+  ConvertTo-UEToolSuiteDocsCmdArgument, `
+  Get-UEToolSuiteDocsServerState, `
+  Remove-UEToolSuiteDocsServerState, `
+  Save-UEToolSuiteDocsServerState, `
+  Get-UEToolSuiteDocsWorkspaceRequestKey, `
+  Get-UEToolSuiteDocsBridgeRequestDirectory, `
+  New-UEToolSuiteDocsBridgeStatus, `
+  Invoke-UEToolSuiteDocsCommand, `
+  Invoke-DocsToolsMain
+
+# -----------------------------------------------------------------------------
+# Migrated runtime implementation (DocsTools)
+# Source previously lived in: payload/Scripts/UETools/UEToolSuite.Docs.psm1
+# -----------------------------------------------------------------------------
+$script:DocsToolsScriptsRoot = Split-Path -Parent $PSScriptRoot
+$script:MarkdownAllInOneExtensionId = "yzhang.markdown-all-in-one"
+$script:DocsToolsBridgeExtensionId = "ueproject.docs-tools-bridge"
+$script:TocMarker = "<!-- docs-tools-toc -->"
 
 function Get-DocsToolsRepoRoot {
   param([string]$ExplicitRepoRoot)
+
+  $runtimeResolver = Get-Command -Name "Resolve-UEToolSuiteRuntimeRepoRoot" -ErrorAction SilentlyContinue
+  if ($runtimeResolver) {
+    return (Resolve-UEToolSuiteRuntimeRepoRoot -ScriptsRoot $script:DocsToolsScriptsRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools docs")
+  }
+
+  if (Import-UEToolSuiteCoreModule) {
+    $resolver = Get-Command -Name "Resolve-UEToolSuiteRepoRoot" -ErrorAction SilentlyContinue
+    if ($resolver) {
+      return (Resolve-UEToolSuiteRepoRoot -ExplicitRepoRoot $ExplicitRepoRoot -InvocationName "ue-tools docs")
+    }
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
     return [System.IO.Path]::GetFullPath($ExplicitRepoRoot)
@@ -42,7 +391,7 @@ function Get-DocsToolsRepoRoot {
 
   $gitRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
   if ([string]::IsNullOrWhiteSpace($gitRoot)) {
-    throw "docs-tools must be run from inside a git repository or passed -RepoRoot."
+    throw "ue-tools docs must be run from inside a git repository or passed -RepoRoot."
   }
 
   return $gitRoot.Trim()
@@ -71,6 +420,12 @@ function Get-DocsServerStatePath {
 function ConvertTo-CmdArgument {
   param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "ConvertTo-UEToolSuiteDocsCmdArgument" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (ConvertTo-UEToolSuiteDocsCmdArgument -Value $Value)
+  }
+
   if ($Value.Length -eq 0) {
     return '""'
   }
@@ -84,6 +439,12 @@ function ConvertTo-CmdArgument {
 
 function Get-NormalizedArgumentList {
   param([AllowNull()][string[]]$Values)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsNormalizedArgumentList" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return @(Get-UEToolSuiteDocsNormalizedArgumentList -Values $Values)
+  }
 
   $normalized = New-Object System.Collections.Generic.List[string]
   foreach ($value in @($Values)) {
@@ -102,8 +463,48 @@ function Get-NormalizedArgumentList {
   return $normalized.ToArray()
 }
 
+function Resolve-DocsToolsCommandAlias {
+  param([Parameter(Mandatory)][string]$CommandName)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Resolve-UEToolSuiteDocsCommandAlias" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Resolve-UEToolSuiteDocsCommandAlias -CommandName $CommandName)
+  }
+
+  $normalized = $CommandName.Trim().ToLowerInvariant()
+  switch ($normalized) {
+    "create-page" { return "new-page" }
+    "create-section" { return "new-section" }
+    default { return $normalized }
+  }
+}
+
+function Test-DocsToolsHelpToken {
+  param([string]$Token)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteDocsHelpToken" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteDocsHelpToken -Token $Token)
+  }
+
+  if ([string]::IsNullOrWhiteSpace($Token)) {
+    return $false
+  }
+
+  $normalized = $Token.Trim().ToLowerInvariant()
+  return ($normalized -in @("help", "--help", "-help", "-h", "/?", "-?"))
+}
+
 function Test-ProcessRunning {
   param([int]$ProcessId)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteDocsProcessRunning" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteDocsProcessRunning -ProcessId $ProcessId)
+  }
 
   if ($ProcessId -le 0) {
     return $false
@@ -120,6 +521,12 @@ function Test-ProcessRunning {
 
 function Get-DescendantProcessId {
   param([int]$RootProcessId)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsDescendantProcessId" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsDescendantProcessId -RootProcessId $RootProcessId)
+  }
 
   if ($RootProcessId -le 0) {
     return $null
@@ -155,10 +562,13 @@ function Get-DocsServerState {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $statePath = Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot
-  if (-not (Test-Path -LiteralPath $statePath)) {
-    return $null
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsServerState" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsServerState -StatePath $statePath)
   }
 
+  if (-not (Test-Path -LiteralPath $statePath)) { return $null }
   return (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json)
 }
 
@@ -166,6 +576,13 @@ function Remove-DocsServerState {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $statePath = Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Remove-UEToolSuiteDocsServerState" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Remove-UEToolSuiteDocsServerState -StatePath $statePath
+    return
+  }
+
   if (Test-Path -LiteralPath $statePath) {
     Remove-Item -LiteralPath $statePath -Force
   }
@@ -177,6 +594,12 @@ function Save-DocsServerState {
     [Parameter(Mandatory)][object]$State
   )
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Save-UEToolSuiteDocsServerState" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Save-UEToolSuiteDocsServerState -StatePath (Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot) -State $State)
+  }
+
   $runtimeDir = Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot
   New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
@@ -184,6 +607,99 @@ function Save-DocsServerState {
   $json = $State | ConvertTo-Json -Depth 6
   Write-Utf8NoBomFile -Path $statePath -Content $json
   return $statePath
+}
+
+function Get-DocsServerEntries {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not $state) {
+    return @()
+  }
+
+  if ($state.PSObject.Properties["servers"]) {
+    return @($state.servers)
+  }
+
+  return @($state)
+}
+
+function Save-DocsServerEntries {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Entries
+  )
+
+  if (@($Entries).Count -eq 0) {
+    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+    return $null
+  }
+
+  $payload = [ordered]@{
+    version = 2
+    servers = @($Entries)
+  }
+  return (Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $payload)
+}
+
+function Test-DocsStartPromptAvailable {
+  try {
+    if (-not [Environment]::UserInteractive) { return $false }
+    if (-not $Host.UI -or -not $Host.UI.RawUI) { return $false }
+    if ([Console]::IsInputRedirected) { return $false }
+    if ([Console]::IsOutputRedirected) { return $false }
+    return $true
+  }
+  catch {
+    return $false
+  }
+}
+
+function Read-DocsStartContinueChoice {
+  param([Parameter(Mandatory)][string]$Prompt)
+
+  if (-not (Test-DocsStartPromptAvailable)) {
+    return $true
+  }
+
+  while ($true) {
+    $response = ([string](Read-Host "$Prompt [Y/n]")).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($response)) { return $true }
+    switch ($response) {
+      "y" { return $true }
+      "yes" { return $true }
+      "n" { return $false }
+      "no" { return $false }
+      default { Write-Output "Please enter y or n." }
+    }
+  }
+}
+
+function Get-DocsStartPort {
+  param([string[]]$StartArgs = @())
+
+  $url = Get-DocsStartUrl -StartArgs $StartArgs
+  if ($url -match "localhost:(?<port>\d+)/") {
+    return [int]$Matches.port
+  }
+
+  return 3000
+}
+
+function Test-DocsStartPortInUse {
+  param([int]$Port)
+
+  if ($Port -le 0) {
+    return $false
+  }
+
+  try {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop)
+    return ($listeners.Count -gt 0)
+  }
+  catch {
+    return $false
+  }
 }
 
 function Get-WebsitePackageScriptNames {
@@ -210,11 +726,17 @@ function Get-WebsitePackageScriptNames {
 }
 
 function Get-DocsToolsRootHelp {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsRootHelpText" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsRootHelpText)
+  }
+
 @"
 UE project docs automation.
 
 Usage:
-  docs-tools <command> [options]
+  ue-tools docs <command> [options]
 
 Create:
   new-section, create-section   Create a docs section
@@ -238,43 +760,50 @@ Other:
   help [command]
 
 Examples:
-  docs-tools help new-section
-  docs-tools create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
-  docs-tools create-page Setup -Title "Setup"
-  docs-tools create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
-  docs-tools reorder Art-Source 4
-  docs-tools start --port 3001
-  docs-tools start --background --port 3001
-  docs-tools docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs help new-section
+  ue-tools docs create-section DocsSite -LinkType generated-index -GeneratedIndexSlug /docs-site
+  ue-tools docs create-page Setup -Title "Setup"
+  ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
+  ue-tools docs reorder Art-Source 4
+  ue-tools docs start --port 3001
+  ue-tools docs start --background --port 3001
+  ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
-  - Use `docs-tools help <command>` for detailed option help.
+  - Use 'ue-tools docs help <command>' for detailed option help.
 "@
 }
 
 function Get-DocsToolsCommandHelp {
   param([Parameter(Mandatory)][string]$CommandName)
 
-  $normalized = $CommandName.Trim().ToLowerInvariant()
-  switch ($normalized) {
-    "new-page" { break }
-    "create-page" { $normalized = "new-page"; break }
-    "new-section" { break }
-    "create-section" { $normalized = "new-section"; break }
-    default { }
+  [void](Import-UEToolSuiteCoreModule)
+  $topicResolver = Get-Command -Name "Resolve-UEToolSuiteDocsHelpTopicAlias" -ErrorAction SilentlyContinue
+  if ($topicResolver) {
+    $normalized = Resolve-UEToolSuiteDocsHelpTopicAlias -CommandName $CommandName
+  }
+  else {
+    $normalized = $CommandName.Trim().ToLowerInvariant()
+    switch ($normalized) {
+      "new-page" { break }
+      "create-page" { $normalized = "new-page"; break }
+      "new-section" { break }
+      "create-section" { $normalized = "new-section"; break }
+      default { }
+    }
   }
 
   switch ($normalized) {
     "new-page" {
 @"
-docs-tools new-page
-Alias: docs-tools create-page
+ue-tools docs new-page
+Alias: ue-tools docs create-page
 
 Usage:
-  docs-tools new-page <PageName> [options]
-  docs-tools new-page <SectionPath> <PageName> [options]
+  ue-tools docs new-page <PageName> [options]
+  ue-tools docs new-page <SectionPath> <PageName> [options]
 
 Required:
   <PageName>                    File stem source, for example Setup or Fear-Loop
@@ -318,20 +847,20 @@ Generic front matter passthrough:
                                 Arrays/objects/bools/numbers should use -FieldJson
 
 Examples:
-  docs-tools create-page Setup -Title "Setup"
-  docs-tools create-page Workflow Daily-Flow -Title "Daily Flow" -Position 2
-  docs-tools create-page DocsSite Cli-Guide -Slug /docs-site/cli-guide -Keywords docs,cli,docusaurus
-  docs-tools create-page Workflow Release-Checklist -FieldJson last_update={\"date\":\"2026-04-08\",\"author\":\"Team\"}
+  ue-tools docs create-page Setup -Title "Setup"
+  ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -Position 2
+  ue-tools docs create-page DocsSite Cli-Guide -Slug /docs-site/cli-guide -Keywords docs,cli,docusaurus
+  ue-tools docs create-page Workflow Release-Checklist -FieldJson last_update={\"date\":\"2026-04-08\",\"author\":\"Team\"}
 "@
       return
     }
     "new-section" {
 @"
-docs-tools new-section
-Alias: docs-tools create-section
+ue-tools docs new-section
+Alias: ue-tools docs create-section
 
 Usage:
-  docs-tools new-section <SectionPath> [options]
+  ue-tools docs new-section <SectionPath> [options]
 
 Required:
   <SectionPath>                   New Docs/ section path, for example DocsSite
@@ -395,18 +924,18 @@ Scaffold:
   -NoToc                          Skip optional VS Code TOC generation
 
 Examples:
-  docs-tools create-section DocsSite -Title "Docs Site" -Position 8
-  docs-tools create-section DocsSite -LinkType generated-index -GeneratedIndexTitle "Docs Site" -GeneratedIndexSlug /docs-site
-  docs-tools create-section Guides/API -LinkType none -CategoryJson customProps={\"badge\":\"internal\"}
+  ue-tools docs create-section DocsSite -Title "Docs Site" -Position 8
+  ue-tools docs create-section DocsSite -LinkType generated-index -GeneratedIndexTitle "Docs Site" -GeneratedIndexSlug /docs-site
+  ue-tools docs create-section Guides/API -LinkType none -CategoryJson customProps={\"badge\":\"internal\"}
 "@
       return
     }
     "start" {
 @"
-docs-tools start
+ue-tools docs start
 
 Usage:
-  docs-tools start [--background] [docusaurus start args]
+  ue-tools docs start [--background] [docusaurus start args]
 
 Default behavior runs `npm run start -- <args...>` in website/ attached to the current terminal so stdout/stderr stream live.
 
@@ -414,18 +943,18 @@ Options:
   --background                  Run detached and track the server for `status` and `stop`
 
 Examples:
-  docs-tools start
-  docs-tools start --port 3001
-  docs-tools start --background --port 3001
+  ue-tools docs start
+  ue-tools docs start --port 3001
+  ue-tools docs start --background --port 3001
 "@
       return
     }
     "reorder" {
 @"
-docs-tools reorder
+ue-tools docs reorder
 
 Usage:
-  docs-tools reorder <TargetPath> <Position>
+  ue-tools docs reorder <TargetPath> <Position>
 
 Required:
   <TargetPath>                  Docs-relative page or section path
@@ -440,28 +969,28 @@ Behavior:
   - Updates `sidebar_position` for pages and `_category_.json` `position` for sections
 
 Examples:
-  docs-tools reorder Art-Source 4
-  docs-tools reorder Workflow 3
-  docs-tools reorder Workflow/Daily-Flow 2
+  ue-tools docs reorder Art-Source 4
+  ue-tools docs reorder Workflow 3
+  ue-tools docs reorder Workflow/Daily-Flow 2
 "@
       return
     }
     "docusaurus" {
 @"
-docs-tools docusaurus
+ue-tools docs docusaurus
 
 Usage:
-  docs-tools docusaurus <args...>
+  ue-tools docs docusaurus <args...>
 
 Passes all args and flags through to `npm run docusaurus -- <args...>`.
 Example:
-  docs-tools docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
 "@
       return
     }
     "check" {
 @"
-docs-tools check
+ue-tools docs check
 
 Validates docs metadata, catches common docs-site mistakes, and runs the Docusaurus production build.
 "@
@@ -469,7 +998,7 @@ Validates docs metadata, catches common docs-site mistakes, and runs the Docusau
     }
     "status" {
 @"
-docs-tools status
+ue-tools docs status
 
 Shows whether the tracked background docs dev server is running and prints the URL/log paths when state exists.
 "@
@@ -477,7 +1006,7 @@ Shows whether the tracked background docs dev server is running and prints the U
     }
     "stop" {
 @"
-docs-tools stop
+ue-tools docs stop
 
 Stops the tracked background docs dev server process tree and removes its saved state.
 "@
@@ -485,7 +1014,7 @@ Stops the tracked background docs dev server process tree and removes its saved 
     }
     "doctor" {
 @"
-docs-tools doctor
+ue-tools docs doctor
 
 Checks common local docs prerequisites:
   - node / npm availability
@@ -499,14 +1028,14 @@ Checks common local docs prerequisites:
     }
     "install-bridge" {
 @"
-docs-tools install-bridge
+ue-tools docs install-bridge
 
 Installs the optional UE project VS Code bridge used for TOC generation. Markdown All in One still needs to be installed separately.
 "@
       return
     }
     default {
-      throw "Unknown docs-tools help topic '$CommandName'."
+      throw "Unknown ue-tools docs help topic '$CommandName'."
     }
   }
 }
@@ -987,6 +1516,7 @@ function Test-VSCodeExtensionInstalled {
 }
 
 function Get-BridgeStatus {
+  [void](Import-UEToolSuiteCoreModule)
   $codeCliPath = Get-CodeCliPath
   $markdownInstalled = $false
   $bridgeInstalled = $false
@@ -996,16 +1526,22 @@ function Get-BridgeStatus {
     $bridgeInstalled = Test-VSCodeExtensionInstalled -ExtensionId $script:DocsToolsBridgeExtensionId
   }
 
-  return [pscustomobject]@{
-    CodeCliPath = $codeCliPath
-    MarkdownAllInOneInstalled = $markdownInstalled
-    BridgeInstalled = $bridgeInstalled
-    TocReady = ($codeCliPath -and $markdownInstalled -and $bridgeInstalled)
+  $moduleFn = Get-Command -Name "New-UEToolSuiteDocsBridgeStatus" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (New-UEToolSuiteDocsBridgeStatus -CodeCliPath $codeCliPath -MarkdownAllInOneInstalled:$markdownInstalled -BridgeInstalled:$bridgeInstalled)
   }
+
+  return [pscustomobject]@{ CodeCliPath = $codeCliPath; MarkdownAllInOneInstalled = $markdownInstalled; BridgeInstalled = $bridgeInstalled; TocReady = ($codeCliPath -and $markdownInstalled -and $bridgeInstalled) }
 }
 
 function Get-WorkspaceRequestKey {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsWorkspaceRequestKey" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsWorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot)
+  }
 
   $normalized = [System.IO.Path]::GetFullPath($ResolvedRepoRoot).ToLowerInvariant()
   $sha1 = [System.Security.Cryptography.SHA1]::Create()
@@ -1022,8 +1558,14 @@ function Get-WorkspaceRequestKey {
 function Get-BridgeRequestDirectory {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsBridgeRequestDirectory" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsBridgeRequestDirectory -ResolvedRepoRoot $ResolvedRepoRoot)
+  }
+
   $workspaceKey = Get-WorkspaceRequestKey -ResolvedRepoRoot $ResolvedRepoRoot
-  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-docs-tools\$workspaceKey")
+  return (Join-Path ([System.IO.Path]::GetTempPath()) "ueproject-ue-tools-docs\$workspaceKey")
 }
 
 function Queue-TocRequest {
@@ -1305,11 +1847,11 @@ function Invoke-NewSection {
     ) `
     -MultiValueNames @("docfield", "docfieldjson", "categoryfield", "categoryjson")
   if ($parsed.Positionals.Count -eq 0) {
-    throw "SectionPath is required. Usage: docs-tools new-section <SectionPath> [options]. Run 'docs-tools help new-section'."
+    throw "SectionPath is required. Usage: ue-tools docs new-section <SectionPath> [options]. Run 'ue-tools docs help new-section'."
   }
 
   if ($parsed.Positionals.Count -gt 1) {
-    throw "Too many positional arguments for new-section. Usage: docs-tools new-section <SectionPath> [options]. Run 'docs-tools help new-section'."
+    throw "Too many positional arguments for new-section. Usage: ue-tools docs new-section <SectionPath> [options]. Run 'ue-tools docs help new-section'."
   }
 
   $sectionPath = $parsed.Positionals[0]
@@ -1416,11 +1958,11 @@ function Invoke-NewPage {
     -ValueNames (Get-CommonDocValueOptionNames) `
     -MultiValueNames @("field", "fieldjson")
   if ($parsed.Positionals.Count -eq 0) {
-    throw "PageName is required. Usage: docs-tools new-page <PageName> [options] or docs-tools new-page <SectionPath> <PageName> [options]. Run 'docs-tools help new-page'."
+    throw "PageName is required. Usage: ue-tools docs new-page <PageName> [options] or ue-tools docs new-page <SectionPath> <PageName> [options]. Run 'ue-tools docs help new-page'."
   }
 
   if ($parsed.Positionals.Count -gt 2) {
-    throw "Too many positional arguments for new-page. Usage: docs-tools new-page <PageName> [options] or docs-tools new-page <SectionPath> <PageName> [options]. Run 'docs-tools help new-page'."
+    throw "Too many positional arguments for new-page. Usage: ue-tools docs new-page <PageName> [options] or ue-tools docs new-page <SectionPath> <PageName> [options]. Run 'ue-tools docs help new-page'."
   }
 
   $sectionPath = $null
@@ -1831,15 +2373,15 @@ function Invoke-DocsReorder {
 
   $argumentList = @($CommandArguments)
   if ($argumentList.Count -eq 0) {
-    throw "TargetPath is required. Usage: docs-tools reorder <TargetPath> <Position>. Run 'docs-tools help reorder'."
+    throw "TargetPath is required. Usage: ue-tools docs reorder <TargetPath> <Position>. Run 'ue-tools docs help reorder'."
   }
 
   if ($argumentList.Count -eq 1) {
-    throw "Position is required. Usage: docs-tools reorder <TargetPath> <Position>. Run 'docs-tools help reorder'."
+    throw "Position is required. Usage: ue-tools docs reorder <TargetPath> <Position>. Run 'ue-tools docs help reorder'."
   }
 
   if ($argumentList.Count -gt 2) {
-    throw "Too many positional arguments for reorder. Usage: docs-tools reorder <TargetPath> <Position>. Run 'docs-tools help reorder'."
+    throw "Too many positional arguments for reorder. Usage: ue-tools docs reorder <TargetPath> <Position>. Run 'ue-tools docs help reorder'."
   }
 
   $docsRoot = Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot
@@ -2010,6 +2552,12 @@ function Invoke-WebsiteNpmScript {
 function Get-DocsStartUrl {
   param([string[]]$StartArgs = @())
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteDocsStartUrl" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteDocsStartUrl -StartArgs $StartArgs)
+  }
+
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
   $port = 3000
   for ($i = 0; $i -lt $normalizedStartArgs.Count; $i++) {
@@ -2038,6 +2586,12 @@ function Get-DocsStartUrl {
 
 function Split-DocsStartArguments {
   param([string[]]$StartArgsInput = @())
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Split-UEToolSuiteDocsStartArguments" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Split-UEToolSuiteDocsStartArguments -StartArgsInput $StartArgsInput)
+  }
 
   $background = $false
   $passThroughArgs = New-Object System.Collections.Generic.List[string]
@@ -2095,20 +2649,43 @@ function Invoke-DocsStartBackground {
   )
 
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
-  $existingState = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-  if ($existingState) {
-    if (Test-ProcessRunning -ProcessId ([int]$existingState.ProcessId)) {
-      return [pscustomobject]@{
-        Command = "start"
-        AlreadyRunning = $true
-        ProcessId = [int]$existingState.ProcessId
-        LogPath = [string]$existingState.LogPath
-        ErrorLogPath = [string]$existingState.ErrorLogPath
-        Url = [string]$existingState.Url
+  $existingEntries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  $runningEntries = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in $existingEntries) {
+    $processId = [int]$entry.processId
+    $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+    if ((Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)) {
+      [void]$runningEntries.Add($entry)
+    }
+  }
+
+  if ($runningEntries.Count -ne $existingEntries.Count) {
+    [void](Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries @($runningEntries.ToArray()))
+  }
+
+  $requestedPort = Get-DocsStartPort -StartArgs $normalizedStartArgs
+  $requestedPortInUse = Test-DocsStartPortInUse -Port $requestedPort
+
+  if ($runningEntries.Count -gt 0 -or $requestedPortInUse) {
+    if ($runningEntries.Count -gt 0) {
+      Write-Output "Warning: $($runningEntries.Count) tracked background docs server instance(s) are already running."
+      foreach ($entry in @($runningEntries.ToArray())) {
+        Write-Output ("  - PID {0} URL {1}" -f [int]$entry.processId, [string]$entry.url)
       }
     }
+    if ($requestedPortInUse) {
+      Write-Output "Warning: docs start port $requestedPort appears to already be in use."
+    }
 
-    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+    $shouldContinue = Read-DocsStartContinueChoice -Prompt "Start another docs server instance?"
+    if (-not $shouldContinue) {
+      return [pscustomobject]@{
+        Command = "start"
+        Aborted = $true
+        AlreadyRunning = ($runningEntries.Count -gt 0)
+        ExistingCount = $runningEntries.Count
+      }
+    }
   }
 
   $runtimeDir = Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot
@@ -2153,7 +2730,7 @@ function Invoke-DocsStartBackground {
   }
 
   $url = Get-DocsStartUrl -StartArgs $normalizedStartArgs
-  $state = [ordered]@{
+  $entry = [ordered]@{
     version = 1
     rootProcessId = $process.Id
     processId = $trackedProcessId
@@ -2162,10 +2739,12 @@ function Invoke-DocsStartBackground {
     logPath = $stdoutPath
     errorLogPath = $stderrPath
     url = $url
+    commandLine = $commandLine
     args = $normalizedStartArgs
   }
 
-  $statePath = Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $state
+  $updatedEntries = @($runningEntries.ToArray()) + @($entry)
+  $statePath = Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries $updatedEntries
 
   return [pscustomobject]@{
     Command = "start-background"
@@ -2176,98 +2755,138 @@ function Invoke-DocsStartBackground {
     ErrorLogPath = $stderrPath
     StatePath = $statePath
     Url = $url
+    NpmCommandLine = $commandLine
+    TrackedServerCount = $updatedEntries.Count
   }
 }
 
 function Invoke-DocsStop {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-  if (-not $state) {
+  $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  if ($entries.Count -eq 0) {
     return [pscustomobject]@{
       Command = "stop"
       Status = "not_running"
     }
   }
 
-  $processId = [int]$state.processId
-  $rootProcessId = if ($null -ne $state.rootProcessId) { [int]$state.rootProcessId } else { $processId }
-  if (-not (Test-ProcessRunning -ProcessId $processId) -and -not (Test-ProcessRunning -ProcessId $rootProcessId)) {
-    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-    return [pscustomobject]@{
-      Command = "stop"
-      Status = "stale_state_removed"
-      ProcessId = $processId
+  $stoppedCount = 0
+  $staleCount = 0
+  $firstProcessId = $null
+
+  foreach ($entry in $entries) {
+    $processId = [int]$entry.processId
+    $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+    if ($null -eq $firstProcessId) {
+      $firstProcessId = $processId
     }
-  }
 
-  $targetPid = if (Test-ProcessRunning -ProcessId $rootProcessId) { $rootProcessId } else { $processId }
-  $taskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
-  if (Test-Path -LiteralPath $taskKillPath) {
-    & $taskKillPath /PID $targetPid /T /F | Out-Null
-  }
-  else {
-    Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
-  }
+    if (-not (Test-ProcessRunning -ProcessId $processId) -and -not (Test-ProcessRunning -ProcessId $rootProcessId)) {
+      $staleCount += 1
+      continue
+    }
 
-  Start-Sleep -Milliseconds 750
-  if (Test-ProcessRunning -ProcessId $processId) {
-    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-  }
-  if (Test-ProcessRunning -ProcessId $rootProcessId) {
-    Stop-Process -Id $rootProcessId -Force -ErrorAction SilentlyContinue
+    $targetPid = if (Test-ProcessRunning -ProcessId $rootProcessId) { $rootProcessId } else { $processId }
+    $taskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
+    if (Test-Path -LiteralPath $taskKillPath) {
+      & $taskKillPath /PID $targetPid /T /F | Out-Null
+    }
+    else {
+      Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+    }
+
+    Start-Sleep -Milliseconds 750
+    if (Test-ProcessRunning -ProcessId $processId) {
+      Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-ProcessRunning -ProcessId $rootProcessId) {
+      Stop-Process -Id $rootProcessId -Force -ErrorAction SilentlyContinue
+    }
+
+    $stoppedCount += 1
   }
 
   Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+
+  $status = if ($stoppedCount -gt 0) {
+    if ($stoppedCount -gt 1) { "stopped_multiple" } else { "stopped" }
+  }
+  else {
+    if ($staleCount -gt 1) { "stale_state_removed_multiple" } else { "stale_state_removed" }
+  }
+
   return [pscustomobject]@{
     Command = "stop"
-    Status = "stopped"
-    ProcessId = $processId
+    Status = $status
+    ProcessId = $firstProcessId
+    StoppedCount = $stoppedCount
+    StaleCount = $staleCount
   }
 }
 
 function Invoke-DocsStatus {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
-  if (-not $state) {
+  $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  if ($entries.Count -eq 0) {
     return [pscustomobject]@{
       Command = "status"
       Status = "not_running"
     }
   }
 
-  $processId = [int]$state.processId
-  $rootProcessId = if ($null -ne $state.rootProcessId) { [int]$state.rootProcessId } else { $processId }
-  $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
-  if (-not $isRunning) {
-    return [pscustomobject]@{
-      Command = "status"
-      Status = "stale_state"
-      ProcessId = $processId
-      RootProcessId = $rootProcessId
-      LogPath = [string]$state.logPath
-      ErrorLogPath = [string]$state.errorLogPath
-      Url = [string]$state.url
+  $runningEntries = New-Object System.Collections.Generic.List[object]
+  $staleEntries = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in $entries) {
+    $processId = [int]$entry.processId
+    $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+    $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
+    if ($isRunning) {
+      [void]$runningEntries.Add($entry)
+    }
+    else {
+      [void]$staleEntries.Add($entry)
     }
   }
 
+  if ($staleEntries.Count -gt 0 -and $runningEntries.Count -gt 0) {
+    [void](Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries @($runningEntries.ToArray()))
+  }
+
+  if ($runningEntries.Count -eq 0) {
+    $firstStale = $staleEntries[0]
+    $processId = [int]$firstStale.processId
+    $rootProcessId = if ($null -ne $firstStale.rootProcessId) { [int]$firstStale.rootProcessId } else { $processId }
+    return [pscustomobject]@{
+      Command = "status"
+      Status = if ($staleEntries.Count -gt 1) { "stale_state_multiple" } else { "stale_state" }
+      ProcessId = $processId
+      RootProcessId = $rootProcessId
+      LogPath = [string]$firstStale.logPath
+      ErrorLogPath = [string]$firstStale.errorLogPath
+      Url = [string]$firstStale.url
+      StaleCount = $staleEntries.Count
+    }
+  }
+
+  $firstRunning = $runningEntries[0]
+  $processId = [int]$firstRunning.processId
+  $rootProcessId = if ($null -ne $firstRunning.rootProcessId) { [int]$firstRunning.rootProcessId } else { $processId }
   return [pscustomobject]@{
     Command = "status"
-    Status = "running"
+    Status = if ($runningEntries.Count -gt 1) { "running_multiple" } else { "running" }
     ProcessId = $processId
     RootProcessId = $rootProcessId
-    LogPath = [string]$state.logPath
-    ErrorLogPath = [string]$state.errorLogPath
-    Url = [string]$state.url
-    StartedAt = [string]$state.startedAt
-    Args = @($state.args)
+    LogPath = [string]$firstRunning.logPath
+    ErrorLogPath = [string]$firstRunning.errorLogPath
+    Url = [string]$firstRunning.url
+    StartedAt = [string]$firstRunning.startedAt
+    Args = @($firstRunning.args)
+    RunningCount = $runningEntries.Count
+    StaleCount = $staleEntries.Count
+    RunningEntries = @($runningEntries.ToArray())
   }
-}
-
-function Test-CommandAvailable {
-  param([Parameter(Mandatory)][string]$Name)
-  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
 }
 
 function Invoke-DocsDoctor {
@@ -2307,7 +2926,7 @@ function Write-DocsToolsError {
 function Invoke-InstallBridge {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $bridgeSource = Join-Path $PSScriptRoot "VSCodeBridge"
+  $bridgeSource = Join-Path $script:DocsToolsScriptsRoot "Docs\\VSCodeBridge"
   $packagePath = Join-Path $bridgeSource "package.json"
   if (-not (Test-Path -LiteralPath $packagePath)) {
     throw "VS Code bridge package.json not found: $packagePath"
@@ -2351,13 +2970,12 @@ function Invoke-DocsToolsMain {
   )
 
   $allArgs = @(Get-NormalizedArgumentList -Values $CommandArguments)
-  $helpTokens = @("help", "--help", "-help", "-h", "/?", "-?")
   if ($allArgs.Count -eq 0) {
     Write-Output (Get-DocsToolsRootHelp)
     return
   }
 
-  if ($helpTokens -contains ([string]$allArgs[0]).ToLowerInvariant()) {
+  if (Test-DocsToolsHelpToken -Token ([string]$allArgs[0])) {
     if ($allArgs.Count -gt 1) {
       Write-Output (Get-DocsToolsCommandHelp -CommandName $allArgs[1])
     }
@@ -2367,14 +2985,10 @@ function Invoke-DocsToolsMain {
     return
   }
 
-  $command = ([string]$allArgs[0]).ToLowerInvariant()
-  switch ($command) {
-    "create-page" { $command = "new-page"; break }
-    "create-section" { $command = "new-section"; break }
-  }
+  $command = Resolve-DocsToolsCommandAlias -CommandName ([string]$allArgs[0])
 
   $remaining = if ($allArgs.Count -gt 1) { @($allArgs[1..($allArgs.Count - 1)]) } else { @() }
-  if ($remaining.Count -gt 0 -and ($helpTokens -contains ([string]$remaining[0]).ToLowerInvariant())) {
+  if ($remaining.Count -gt 0 -and (Test-DocsToolsHelpToken -Token ([string]$remaining[0]))) {
     Write-Output (Get-DocsToolsCommandHelp -CommandName $command)
     return
   }
@@ -2422,7 +3036,7 @@ function Invoke-DocsToolsMain {
       return
     }
     "preview" {
-      Write-Output "preview is deprecated. Use 'docs-tools start' or 'docs-tools start --background'."
+      Write-Output "preview is deprecated. Use 'ue-tools docs start' or 'ue-tools docs start --background'."
       if ($remaining.Count -gt 0) {
         $previewMode = Split-DocsStartArguments -StartArgsInput $remaining
       }
@@ -2437,6 +3051,9 @@ function Invoke-DocsToolsMain {
         Write-Output "Started docs dev server in the background (PID $($result.ProcessId))."
       }
       Write-Output "URL: $($result.Url)"
+      if (-not [string]::IsNullOrWhiteSpace([string]$result.NpmCommandLine)) {
+        Write-Output "Command: $($result.NpmCommandLine)"
+      }
       Write-Output "Stdout log: $($result.LogPath)"
       Write-Output "Stderr log: $($result.ErrorLogPath)"
       return
@@ -2450,13 +3067,23 @@ function Invoke-DocsToolsMain {
       }
       if ($startMode.Background) {
         $result = Invoke-DocsStartBackground -ResolvedRepoRoot $ResolvedRepoRoot -StartArgs $startMode.StartArgs
-        if ($result.AlreadyRunning) {
+        if ($result.Aborted) {
+          Write-Output "Docs dev server start aborted."
+          if ($result.ExistingCount -gt 0) {
+            Write-Output "Tracked running docs server count: $($result.ExistingCount)"
+          }
+          return
+        }
+        elseif ($result.AlreadyRunning) {
           Write-Output "Docs dev server is already running (PID $($result.ProcessId))."
         }
         else {
           Write-Output "Started docs dev server in the background (PID $($result.ProcessId))."
         }
         Write-Output "URL: $($result.Url)"
+        if (-not [string]::IsNullOrWhiteSpace([string]$result.NpmCommandLine)) {
+          Write-Output "Command: $($result.NpmCommandLine)"
+        }
         Write-Output "Stdout log: $($result.LogPath)"
         Write-Output "Stderr log: $($result.ErrorLogPath)"
         return
@@ -2470,6 +3097,8 @@ function Invoke-DocsToolsMain {
       switch ($result.Status) {
         "not_running" { Write-Output "Tracked background docs dev server is not running." }
         "stale_state_removed" { Write-Output "Removed stale background docs dev server state for PID $($result.ProcessId)." }
+        "stale_state_removed_multiple" { Write-Output "Removed stale background docs dev server state entries ($($result.StaleCount))." }
+        "stopped_multiple" { Write-Output "Stopped background docs dev servers ($($result.StoppedCount))." }
         default { Write-Output "Stopped background docs dev server (PID $($result.ProcessId))." }
       }
       return
@@ -2481,6 +3110,20 @@ function Invoke-DocsToolsMain {
         "stale_state" {
           Write-Output "Background docs dev server is not running, but stale state still exists for PID $($result.ProcessId)."
           Write-Output "URL: $($result.Url)"
+          Write-Output "Stdout log: $($result.LogPath)"
+          Write-Output "Stderr log: $($result.ErrorLogPath)"
+        }
+        "stale_state_multiple" {
+          Write-Output "Background docs dev servers are not running, but stale state entries still exist ($($result.StaleCount))."
+          Write-Output "Example URL: $($result.Url)"
+          Write-Output "Example stdout log: $($result.LogPath)"
+          Write-Output "Example stderr log: $($result.ErrorLogPath)"
+        }
+        "running_multiple" {
+          Write-Output "Background docs dev servers are running ($($result.RunningCount) tracked instances)."
+          Write-Output "Primary PID: $($result.ProcessId)"
+          Write-Output "URL: $($result.Url)"
+          Write-Output "Started: $($result.StartedAt)"
           Write-Output "Stdout log: $($result.LogPath)"
           Write-Output "Stderr log: $($result.ErrorLogPath)"
         }
@@ -2549,29 +3192,10 @@ function Invoke-DocsToolsMain {
         return
       }
 
-      throw "Unknown docs-tools command '$command'. Run 'docs-tools help'."
+      throw "Unknown ue-tools docs command '$command'. Run 'ue-tools docs help'."
     }
   }
 }
 
-if ($MyInvocation.InvocationName -ne '.') {
-  try {
-    $resolvedRepoRoot = Get-DocsToolsRepoRoot -ExplicitRepoRoot $RepoRoot
-    $effectiveCommandArgs = New-Object System.Collections.Generic.List[string]
-    foreach ($argument in @($CommandArgs)) {
-      $effectiveCommandArgs.Add([string]$argument) | Out-Null
-    }
-    foreach ($argument in @($ExtraArgs)) {
-      $effectiveCommandArgs.Add([string]$argument) | Out-Null
-    }
-    foreach ($argument in @($MyInvocation.UnboundArguments)) {
-      $effectiveCommandArgs.Add([string]$argument) | Out-Null
-    }
+Export-ModuleMember -Function Get-DocsToolsRepoRoot, Invoke-DocsToolsMain
 
-    Invoke-DocsToolsMain -ResolvedRepoRoot $resolvedRepoRoot -CommandArguments $effectiveCommandArgs.ToArray()
-  }
-  catch {
-    Write-DocsToolsError -Message $_.Exception.Message
-    exit 1
-  }
-}

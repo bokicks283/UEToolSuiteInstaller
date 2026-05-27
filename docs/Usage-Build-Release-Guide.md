@@ -36,7 +36,7 @@ Users do not need to clone this repo.
    - Install the managed PowerShell alias block.
    - Keep backups enabled.
 7. Click `Install`.
-8. Review the log in the installer window.
+8. Watch installer progress in the progress bar. Turn on `Show terminal output` only when you want detailed runtime logs.
 
 The installer writes backups under:
 
@@ -44,7 +44,7 @@ The installer writes backups under:
 .ue-tools-installer-backups/<timestamp>/
 ```
 
-Backups mirror original relative paths. For example, a backup of `Scripts/Unreal/UnrealSync.ps1` is restored by copying it from the timestamp folder back to `Scripts/Unreal/UnrealSync.ps1`.
+Backups mirror original relative paths. For example, a backup of `Scripts/UETools/UEToolSuite.Unreal.psm1` is restored by copying it from the timestamp folder back to `Scripts/UETools/UEToolSuite.Unreal.psm1`.
 
 ## What Gets Installed
 
@@ -53,11 +53,13 @@ The installer copies managed paths from `payload/` into the selected UE project:
 - `.githooks/`
 - managed `.gitattributes` block
 - managed `.gitignore` block
-- `Scripts/Init-Repo.ps1`
+- `Scripts/UETools/UEToolSuite.Init.psm1`
+- `Scripts/ue-tools.ps1`
 - `Scripts/git-hooks/`
 - `Scripts/git-tools/`
-- `Scripts/Unreal/`
-- optional `Scripts/Codex/`
+- `Scripts/UETools/`
+- `Scripts/Unreal/ProjectContext.ps1`
+- `Scripts/UETools/UEToolSuite.Unreal.psm1`
 - optional `Scripts/Docs/`
 - optional `Scripts/Tests/`
 - generic `Docs/`
@@ -65,7 +67,7 @@ The installer copies managed paths from `payload/` into the selected UE project:
 
 Root `.gitattributes` and `.gitignore` are not replaced wholesale. The installer updates the tool-suite marker blocks and preserves project-specific content outside those blocks.
 
-Managed directories are merged in place when they already exist. The installer replaces payload-owned files under those directories and backs up the replaced files, but it does not delete target-only files that are not in `payload/`. This protects files such as `Docs/Codex/Project-Context.md`, local docs pages, and project-specific tests in repos that already have a similar tool layout.
+Managed directories are merged in place when they already exist. The installer replaces payload-owned files under those directories and backs up the replaced files, but it does not delete target-only files that are not in `payload/`. This protects files such as `Docs/AI/Project-Context.md`, local docs pages, and project-specific tests in repos that already have a similar tool layout.
 
 ## How This Repo Works
 
@@ -74,7 +76,8 @@ Important paths:
 ```text
 Install-UEToolSuite.ps1                    CLI installer/updater engine
 payload/                                   files installed into target UE projects
-payload/Scripts/Init-Repo.ps1              target repo bootstrap
+payload/Scripts/UETools/UEToolSuite.Init.psm1      target repo bootstrap module
+payload/Scripts/ue-tools.ps1               unified CLI dispatcher entrypoint
 src/UEToolSuiteInstaller.Gui/              public Windows GUI launcher
 Scripts/Publish-InstallerExe.ps1           local/CI publish script
 Tests/Test-Install-UEToolSuite.ps1         installer regression suite
@@ -83,6 +86,8 @@ docs/                                      maintainer documentation for this rep
 ```
 
 The GUI executable does not reimplement the installer. It bundles `Install-UEToolSuite.ps1` and `payload/`, opens a `.uproject` picker, then runs the existing PowerShell installer with the selected project path and options.
+
+When `Run repo initialization after install` is enabled (default), the GUI passes `-RunInit -InitNonInteractive` so init runs without interactive prompts. This prevents hidden-prompt hangs in packaged exe runs and keeps behavior deterministic for clean installs.
 
 This keeps the behavior auditable: the CLI installer and GUI installer use the same install engine.
 
@@ -152,7 +157,8 @@ Recommended release flow:
 2. Run:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Test-Install-UEToolSuite.ps1
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -FailFast
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& './Tests/Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
 git add -N .
 git diff --check
 ```
@@ -169,6 +175,9 @@ git push origin v0.1.0
 6. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
 
 ## GitHub Release Signing
+
+For certificate procurement and operations end-to-end, see:
+- [EXE Code-Signing Certificate Guide](./EXE-Code-Signing-Certificate-Guide.md)
 
 The workflow supports PFX-based signing with these repository secrets:
 
@@ -242,3 +251,4 @@ Keep these boundaries:
 - Project-specific game docs, private context, generated output, `node_modules`, Docusaurus build output, and local test logs do not belong in payload.
 
 After payload changes, run the installer tests and verify that a scratch UE project receives only the intended managed paths.
+

@@ -21,17 +21,17 @@ Use that page for:
 ## Required Practices
 
 - Move `.uasset` and `.umap` files in Unreal Editor, not with filesystem tools.
-- Start fresh Codex sessions with `codex-prompt` or `codex-tools prompt` when you want the repo docs and local context called out consistently.
+- Start fresh AI sessions with `ue-tools ai prompt` when you want the repo docs and local context called out consistently.
 - Run the relevant script tests before changing hook or automation behavior.
 - Let the automated `ue-sync` hook decide whether a C++ branch switch needs a build, project-file regeneration, or both.
-- Use `docs-tools new-section` and `docs-tools new-page` for routine docs scaffolding.
-- Use `docs-tools reorder` instead of hand-editing multiple sibling positions when docs nav order changes.
-- Run `docs-tools check` before merging docs-structure or docs-site workflow changes.
-- Preview docs locally when editing navigation or structure-heavy pages with `docs-tools start`, or `docs-tools start --background` when you want detached tracked mode.
+- Use `ue-tools docs new-section` and `ue-tools docs new-page` for routine docs scaffolding.
+- Use `ue-tools docs reorder` instead of hand-editing multiple sibling positions when docs nav order changes.
+- Run `ue-tools docs check` before merging docs-structure or docs-site workflow changes.
+- Preview docs locally when editing navigation or structure-heavy pages with `ue-tools docs start`, or `ue-tools docs start --background` when you want detached tracked mode.
 
 ## UE Sync Actions
 
-`Scripts/Unreal/UnrealSync.ps1` separates project-file regeneration from editor builds so branch changes do only the work they need.
+`Scripts/UETools/UEToolSuite.Unreal.psm1` separates project-file regeneration from editor builds so branch changes do only the work they need.
 
 - Build only: modified existing C++ implementation/header files under `Source/` or `Plugins/`.
 - Regenerate project files and build: `.uproject`, `.uplugin`, `*.Build.cs`, `*.Target.cs`, or added/deleted/renamed C++ files under `Source/` or `Plugins/`.
@@ -65,3 +65,4 @@ Goal: move Unreal assets under a new content folder and document the policy chan
 4. Update the project structure docs if the canonical layout changed.
 5. Run the relevant smoke test in editor.
 6. Commit only the moved assets and docs updates.
+

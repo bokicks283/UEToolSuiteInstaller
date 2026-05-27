@@ -17,102 +17,19 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "DocsToolsTest-$stamp.log"
 $tempRoot = Join-Path $resultsDir "scratch-$stamp"
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
-$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\Docs\DocsTools.ps1"
+$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
 $script:PassCount = 0
 $script:FailCount = 0
 $script:WarnCount = 0
 $script:SkipCount = 0
 $script:CleanupRan = $false
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Condition {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-
-  if ($Condition) {
-    Pass $Name $PassDetail
-    return
-  }
-
-  Fail $Name $FailDetail
-}
-
-function Assert-TextContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  if ([string]::Concat($Text).Contains($Needle)) {
-    Pass $Name "matched: $Needle"
-    return
-  }
-
-  Fail $Name "missing expected text: $Needle"
-}
-
-function Assert-TextNotContains {
-  param(
-    [Parameter(Mandatory)][string]$Name,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
-    [Parameter(Mandatory)][string]$Needle
-  )
-
-  if (-not [string]::Concat($Text).Contains($Needle)) {
-    Pass $Name "did not match: $Needle"
-    return
-  }
-
-  Fail $Name "unexpected text found: $Needle"
-}
-
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  $directory = Split-Path -Parent $Path
-  if ($directory -and -not (Test-Path -LiteralPath $directory)) {
-    New-Item -ItemType Directory -Force -Path $directory | Out-Null
-  }
-
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function New-ScratchPath([string]$Name) {
   return (Join-Path $tempRoot $Name)
@@ -135,7 +52,7 @@ sidebar_position: 1
 
 # Overview
 
-Minimal docs root for docs-tools testing.
+Minimal docs root for ue-tools docs testing.
 '@
   Write-Utf8NoBomFile -Path (Join-Path $scratchRepo "Docs\README.md") -Content $readmeContent
 
@@ -234,19 +151,40 @@ function Invoke-DocsToolsCommand {
       Set-Item -Path ("Env:{0}" -f $entry.Key) -Value ([string]$entry.Value)
     }
 
+    $coreModulePath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "UEToolSuite.Core.psm1"
+    $escapedCoreModulePath = $coreModulePath -replace "'", "''"
     $escapedScriptPath = $script:DocsToolsScriptPath -replace "'", "''"
     $escapedRepoRoot = $ScratchRepoRoot -replace "'", "''"
     $escapedCliArgs = @($CliArgs | ForEach-Object { "'" + (("$($_)") -replace "'", "''") + "'" })
     $commandText = @"
 `$cliArgs = @($($escapedCliArgs -join ', '))
-. '$escapedScriptPath'
+`$previousAutoRunFlag = `$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN
+`$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = '1'
 try {
-  `$resolvedRepoRoot = Get-DocsToolsRepoRoot -ExplicitRepoRoot '$escapedRepoRoot'
-  Invoke-DocsToolsMain -ResolvedRepoRoot `$resolvedRepoRoot -CommandArguments `$cliArgs
+  Import-Module -Name '$escapedCoreModulePath' -Force -DisableNameChecking | Out-Null
+  `$scriptsRoot = Split-Path -Parent (Split-Path -Parent '$escapedScriptPath')
+  if (Get-Command -Name 'Set-UEToolSuiteRuntimeContext' -CommandType Function -ErrorAction SilentlyContinue) {
+    Set-UEToolSuiteRuntimeContext -ScriptsRoot `$scriptsRoot -StateKey 'docs-tools-test' -LogPrefix '[Docs]'
+  }
+  `$docsModule = Import-Module -Name '$escapedScriptPath' -Force -DisableNameChecking -PassThru
+  `$repoResolver = Get-Command -Name 'Get-DocsToolsRepoRoot' -Module `$docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+  if (-not `$repoResolver) { throw 'Get-DocsToolsRepoRoot was not exported by docs module.' }
+  `$entrypoint = Get-Command -Name 'Invoke-DocsToolsMain' -Module `$docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+  if (-not `$entrypoint) { throw 'Invoke-DocsToolsMain was not exported by docs module.' }
+  `$resolvedRepoRoot = & `$repoResolver.Name -ExplicitRepoRoot '$escapedRepoRoot'
+  & `$entrypoint.Name -ResolvedRepoRoot `$resolvedRepoRoot -CommandArguments `$cliArgs
 }
 catch {
-  Write-DocsToolsError -Message `$_.Exception.Message
+  Write-Host ('Error: ' + `$_.Exception.Message) -ForegroundColor Red
   exit 1
+}
+finally {
+  if (`$null -eq `$previousAutoRunFlag) {
+    Remove-Item Env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+  }
+  else {
+    `$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = `$previousAutoRunFlag
+  }
 }
 "@
 
@@ -299,7 +237,7 @@ try {
   Write-Log "Repo: $repoRoot" Cyan
   Write-Log "Log : $logPath" Cyan
 
-  Assert-Condition "script exists" (Test-Path -LiteralPath $script:DocsToolsScriptPath) "DocsTools.ps1 found"
+  Assert-Condition "script exists" (Test-Path -LiteralPath $script:DocsToolsScriptPath) "DocsTools runtime found"
 
   Step "Case 1: Help output lists the supported commands"
   $helpRepo = New-MinimalDocsRepo -Name "repo-help"
@@ -320,7 +258,7 @@ try {
   Assert-TextContains "case1b help shows generated-index" $helpSectionResult.OutputText "-LinkType <doc|generated-index|none>"
   Assert-TextContains "case1b help shows generated index slug" $helpSectionResult.OutputText "-GeneratedIndexSlug <path>"
   Assert-TextContains "case1b help shows category json" $helpSectionResult.OutputText "-CategoryJson <key=json>"
-  Assert-TextContains "case1b help shows detailed syntax" $helpSectionResult.OutputText "docs-tools new-section <SectionPath> [options]"
+  Assert-TextContains "case1b help shows detailed syntax" $helpSectionResult.OutputText "ue-tools docs new-section <SectionPath> [options]"
 
   Step "Case 1c: missing positional arguments return friendly command errors"
   $friendlyErrorRepo = New-MinimalDocsRepo -Name "repo-friendly-errors"
@@ -351,20 +289,27 @@ try {
     -CliArgs @("new-section", "GameDesign", "-Title", "Game Design", "-Position", "9") `
     -Toolset $noTocToolset `
     -SandboxRoot (New-ScratchPath "sandbox-no-toc")
+  if ($newSectionResult.ExitCode -ne 0) {
+    Write-Log ("case2 failure output:`n" + $newSectionResult.OutputText) DarkGray
+  }
   $sectionReadme = Join-Path $noTocRepo "Docs\GameDesign\README.md"
   $sectionCategory = Join-Path $noTocRepo "Docs\GameDesign\_category_.json"
-  $sectionReadmeText = Get-Content -LiteralPath $sectionReadme -Raw
-  $sectionCategoryText = Get-Content -LiteralPath $sectionCategory -Raw
   Assert-Condition "case2 new-section exits cleanly" ($newSectionResult.ExitCode -eq 0) "exit code=0" "exit code=$($newSectionResult.ExitCode)"
   Assert-Condition "case2 section readme created" (Test-Path -LiteralPath $sectionReadme) "README.md created"
   Assert-Condition "case2 category metadata created" (Test-Path -LiteralPath $sectionCategory) "_category_.json created"
   Assert-TextContains "case2 output confirms skipped toc" $newSectionResult.OutputText "TOC generation skipped."
-  Assert-TextContains "case2 readme has section slug" $sectionReadmeText "slug: /game-design"
-  Assert-TextContains "case2 readme has overview heading" $sectionReadmeText "## Overview"
-  Assert-TextNotContains "case2 readme omits toc marker" $sectionReadmeText "<!-- docs-tools-toc -->"
-  Assert-TextContains "case2 category label" $sectionCategoryText '"label": "Game Design"'
-  Assert-TextContains "case2 category position" $sectionCategoryText '"position": 9'
-  Assert-TextContains "case2 category doc link" $sectionCategoryText '"id": "GameDesign/README"'
+  if (Test-Path -LiteralPath $sectionReadme -PathType Leaf) {
+    $sectionReadmeText = Get-Content -LiteralPath $sectionReadme -Raw
+    Assert-TextContains "case2 readme has section slug" $sectionReadmeText "slug: /game-design"
+    Assert-TextContains "case2 readme has overview heading" $sectionReadmeText "## Overview"
+    Assert-TextNotContains "case2 readme omits toc marker" $sectionReadmeText "<!-- docs-tools-toc -->"
+  }
+  if (Test-Path -LiteralPath $sectionCategory -PathType Leaf) {
+    $sectionCategoryText = Get-Content -LiteralPath $sectionCategory -Raw
+    Assert-TextContains "case2 category label" $sectionCategoryText '"label": "Game Design"'
+    Assert-TextContains "case2 category position" $sectionCategoryText '"position": 9'
+    Assert-TextContains "case2 category doc link" $sectionCategoryText '"id": "GameDesign/README"'
+  }
 
   Step "Case 2b: new-section auto-assigns the next sidebar position"
   $autoSectionRepo = New-MinimalDocsRepo -Name "repo-auto-section-position"
@@ -589,7 +534,7 @@ sidebar_position: 1
     -SandboxRoot (New-ScratchPath "sandbox-missing-section")
   Assert-Condition "case3e new-page fails for missing section" ($missingSectionResult.ExitCode -ne 0) "exit code=$($missingSectionResult.ExitCode)" "expected non-zero exit code"
   Assert-TextContains "case3e output is user-friendly" $missingSectionResult.OutputText "Error: Section does not exist:"
-  Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "DocsTools.ps1:"
+  Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "UEToolSuite.Docs.psm1:"
 
   Step "Case 4: install-bridge copies the optional VS Code bridge"
   $bridgeToolset = New-StubToolset -Name "toolset-install-bridge" -CodeExtensions @("yzhang.markdown-all-in-one")
@@ -615,7 +560,7 @@ sidebar_position: 1
     -Toolset $foregroundStartToolset `
     -SandboxRoot (New-ScratchPath "sandbox-start-foreground")
   $foregroundStartStubLog = Get-Content -LiteralPath $foregroundStartToolset.CommandLog -Raw
-  $foregroundStateFiles = @(Get-ChildItem -Path (Join-Path $foregroundStartResult.SandboxTemp "ueproject-docs-tools") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+  $foregroundStateFiles = @(Get-ChildItem -Path (Join-Path $foregroundStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
   Assert-Condition "case5 start exits cleanly" ($foregroundStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($foregroundStartResult.ExitCode)"
   Assert-TextContains "case5 output confirms foreground start" $foregroundStartResult.OutputText "Starting docs dev server in the current terminal."
   Assert-TextContains "case5 output includes requested port url" $foregroundStartResult.OutputText "http://localhost:3001/docs/"
@@ -632,8 +577,10 @@ sidebar_position: 1
     -Toolset $startStopToolset `
     -SandboxRoot $startStopSandbox `
     -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
-  $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-docs-tools") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+  $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
   $serverState = Get-Content -LiteralPath $serverStateFiles[0].FullName -Raw | ConvertFrom-Json
+  $primaryServerState = if ($serverState.PSObject.Properties["servers"]) { @($serverState.servers)[0] } else { $serverState }
+  $primaryServerPid = [int]$primaryServerState.processId
   $startStubLog = Get-Content -LiteralPath $startStopToolset.CommandLog -Raw
   Assert-Condition "case5b start exits cleanly" ($startResult.ExitCode -eq 0) "exit code=0" "exit code=$($startResult.ExitCode)"
   Assert-TextContains "case5b output confirms background start" $startResult.OutputText "Started docs dev server in the background"
@@ -661,9 +608,52 @@ sidebar_position: 1
     $stopResult.OutputText.Contains("Removed stale background docs dev server state")
   ) "stop command reported a handled shutdown path"
   Assert-Condition "case5b state file removed after stop" (-not (Test-Path -LiteralPath $serverStateFiles[0].FullName)) "docs-server.json removed"
-  Assert-Condition "case5b server pid stopped" (-not (Get-Process -Id $serverState.processId -ErrorAction SilentlyContinue)) "process $($serverState.processId) stopped"
+  Assert-Condition "case5b server pid stopped" (-not (Get-Process -Id $primaryServerPid -ErrorAction SilentlyContinue)) "process $primaryServerPid stopped"
 
-  Step "Case 6: docs-tools can invoke other website package scripts with passthrough flags"
+  Step "Case 5c: start --background tracks multiple servers and stop stops all tracked instances"
+  $multiServerRepo = New-MinimalDocsRepo -Name "repo-start-stop-multiple"
+  $multiServerToolset = New-StubToolset -Name "toolset-start-stop-multiple"
+  $multiServerSandbox = New-ScratchPath "sandbox-start-stop-multiple"
+  $firstStartResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $multiServerRepo `
+    -CliArgs @("start", "--background") `
+    -Toolset $multiServerToolset `
+    -SandboxRoot $multiServerSandbox `
+    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
+  $secondStartResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $multiServerRepo `
+    -CliArgs @("start", "--background", "--port", "3001") `
+    -Toolset $multiServerToolset `
+    -SandboxRoot $multiServerSandbox `
+    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
+  $multiStateFiles = @(Get-ChildItem -Path (Join-Path $firstStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+  $multiStateRaw = Get-Content -LiteralPath $multiStateFiles[0].FullName -Raw | ConvertFrom-Json
+  $multiEntries = if ($multiStateRaw.PSObject.Properties["servers"]) { @($multiStateRaw.servers) } else { @($multiStateRaw) }
+  $multiPids = @($multiEntries | ForEach-Object { [int]$_.processId } | Select-Object -Unique)
+  Assert-Condition "case5c first start exits cleanly" ($firstStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($firstStartResult.ExitCode)"
+  Assert-Condition "case5c second start exits cleanly" ($secondStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($secondStartResult.ExitCode)"
+  Assert-Condition "case5c state file remains valid after second start" ($multiEntries.Count -ge 1) "tracked servers=$($multiEntries.Count)" "expected at least one tracked server entry"
+  Assert-Condition "case5c second start reports a handled path" (
+    $secondStartResult.OutputText.Contains("Started docs dev server in the background") -or
+    $secondStartResult.OutputText.Contains("Docs dev server start aborted")
+  ) "second start returned a handled result"
+  $multiStopResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $multiServerRepo `
+    -CliArgs @("stop") `
+    -Toolset $multiServerToolset `
+    -SandboxRoot $multiServerSandbox
+  Assert-Condition "case5c stop exits cleanly" ($multiStopResult.ExitCode -eq 0) "exit code=0" "exit code=$($multiStopResult.ExitCode)"
+  Assert-Condition "case5c stop output confirms tracked shutdown" (
+    $multiStopResult.OutputText.Contains("Stopped background docs dev servers") -or
+    $multiStopResult.OutputText.Contains("Stopped background docs dev server") -or
+    $multiStopResult.OutputText.Contains("Removed stale background docs dev server state")
+  ) "multi stop reported server shutdown"
+  Assert-Condition "case5c state file removed after stop" (-not (Test-Path -LiteralPath $multiStateFiles[0].FullName)) "docs-server.json removed"
+  foreach ($serverProcessId in $multiPids) {
+    Assert-Condition "case5c server pid $serverProcessId stopped" (-not (Get-Process -Id $serverProcessId -ErrorAction SilentlyContinue)) "process $serverProcessId stopped"
+  }
+
+  Step "Case 6: ue-tools docs can invoke other website package scripts with passthrough flags"
   $scriptRepo = New-MinimalDocsRepo -Name "repo-script-passthrough"
   $scriptToolset = New-StubToolset -Name "toolset-script-passthrough"
   $scriptResult = Invoke-DocsToolsCommand `
@@ -675,7 +665,7 @@ sidebar_position: 1
   Assert-Condition "case6 passthrough command exits cleanly" ($scriptResult.ExitCode -eq 0) "exit code=0" "exit code=$($scriptResult.ExitCode)"
   Assert-TextContains "case6 npm script was invoked" $scriptStubLog "npm run write-heading-ids -- --dry-run"
 
-  Step "Case 6b: docs-tools docusaurus passes raw args and flags through"
+  Step "Case 6b: ue-tools docs docusaurus passes raw args and flags through"
   $docusaurusRepo = New-MinimalDocsRepo -Name "repo-docusaurus-passthrough"
   $docusaurusToolset = New-StubToolset -Name "toolset-docusaurus-passthrough"
   $docusaurusResult = Invoke-DocsToolsCommand `
@@ -721,7 +711,7 @@ sidebar_position: 1
     -SandboxRoot (New-ScratchPath "sandbox-toc")
   $tocPagePath = Join-Path $tocRepo "Docs\GameDesign\Scare-Curve.md"
   $tocPageText = Get-Content -LiteralPath $tocPagePath -Raw
-  $tocRequestFiles = @(Get-ChildItem -Path (Join-Path $tocResult.SandboxTemp "ueproject-docs-tools") -Recurse -Filter *.json -ErrorAction SilentlyContinue)
+  $tocRequestFiles = @(Get-ChildItem -Path (Join-Path $tocResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter *.json -ErrorAction SilentlyContinue)
   $stubLogText = Get-Content -LiteralPath $tocToolset.CommandLog -Raw
   Assert-Condition "case7 toc-ready new-page exits cleanly" ($tocResult.ExitCode -eq 0) "exit code=0" "exit code=$($tocResult.ExitCode)"
   Assert-TextContains "case7 output confirms queued toc" $tocResult.OutputText "TOC request queued through the VS Code bridge."

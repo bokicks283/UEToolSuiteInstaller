@@ -1,20 +1,875 @@
-# Scripts/git-tools/GitConflictHelpers.ps1
-# Strict Unreal binary conflict helpers for PowerShell 7+
-#
-# Guarded binary = gitattributes: merge=binary -text  (LFS not required)
-#
-# Ledgers in .git:
-#   - ue_binary_conflicts.context   (context id to prevent stale approvals)
-#   - ue_binary_conflicts.resolved  (approvals written by helpers)
-#   - ue_binary_conflicts.audit     (audit trail)
-#
-# LOCKLESS MODEL:
-#   "Required" guarded files are recomputed each run:
-#     required = guarded(unmerged) ∪ guarded(overlap candidates)
-#   Approvals live in resolved ledger only.
+function Get-UEToolSuiteGitConflictsHelpLines {
+  [CmdletBinding()]
+  param()
 
-$ErrorActionPreference = "Stop"
+  return @(
+    ""
+    "Unreal Binary Conflict Helpers"
+    "--------------------------------"
+    "These commands enforce safe resolution for guarded binary assets (e.g. .uasset/.umap/.png) during merges/rebases."
+    "Use git ours / git theirs to pick a side for guarded files. Use git conflicts status/sync to inspect approvals."
+    ""
+    "Usage:"
+    "  git ours   <pattern> [pattern...] [--verbose|-v]"
+    "  git theirs <pattern> [pattern...] [--verbose|-v]"
+    "  git conflicts <command> [--verbose|-v] [--skip-editor|-se]"
+    ""
+    "Commands:"
+    "  ours"
+    "    Resolve guarded binary conflicts by choosing the OURS side."
+    "    (In a rebase, ours/theirs are flipped to match human meaning.)"
+    "  theirs"
+    "    Resolve guarded binary conflicts by choosing the THEIRS side."
+    "  conflicts status"
+    "    Show current merge/rebase context and approval status."
+    "  conflicts sync"
+    "    Recompute required guarded set and refresh context-bound ledgers."
+    "  conflicts continue"
+    "    Continue rebase after resolving conflicts (enforces guard before continuing)."
+    "  conflicts abort"
+    "    Abort the current merge or rebase operation (no effect if none is active)."
+    "  conflicts restart"
+    "    Abort and attempt to re-run the current merge/rebase using detected args."
+    "  conflicts help"
+    "    Show this help."
+    ""
+    "Notes:"
+    "  - Patterns are PowerShell -like wildcards (not bash globs). Quote patterns with * or **."
+    "  - Example pattern: ""**/*.uasset"" or ""Content/Test/*.png"" or ""*"" for all conflicted files"
+    "  - -v / --verbose prints detailed file lists and internal context info."
+    "  - --skip-editor / -se skips commit message editing during rebase --continue (for automation)."
+    ""
+  )
+}
 
+function Write-UEToolSuiteGitConflictsHelp {
+  [CmdletBinding()]
+  param()
+
+  $lines = @(Get-UEToolSuiteGitConflictsHelpLines)
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    $line = $lines[$i]
+    if ($line -eq "Unreal Binary Conflict Helpers" -or $line -eq "--------------------------------" -or $line -eq "Usage:" -or $line -eq "Commands:" -or $line -eq "Notes:") {
+      Write-Host $line -ForegroundColor Cyan
+      continue
+    }
+
+    if ($line -match "^  ours$|^  theirs$|^  conflicts status$|^  conflicts sync$|^  conflicts continue$|^  conflicts abort$|^  conflicts restart$|^  conflicts help$") {
+      Write-Host $line -ForegroundColor Green
+      continue
+    }
+
+    if ($line -eq "") {
+      Write-Host ""
+      continue
+    }
+
+    Write-Host $line -ForegroundColor Gray
+  }
+}
+
+function Split-UEToolSuiteGitConflictsArguments {
+  [CmdletBinding()]
+  param([string[]]$ArgsList)
+
+  $skipEditor = $false
+  $filteredArgs = New-Object System.Collections.Generic.List[string]
+
+  foreach ($arg in @($ArgsList)) {
+    if ($arg -eq "-SkipEditor" -or $arg -eq "--skip-editor" -or $arg -eq "-se") {
+      $skipEditor = $true
+      continue
+    }
+
+    $filteredArgs.Add($arg) | Out-Null
+  }
+
+  return [pscustomobject]@{
+    SkipEditor = [bool]$skipEditor
+    Args = @($filteredArgs.ToArray())
+  }
+}
+
+function Enable-UEToolSuiteGitHooks {
+  [CmdletBinding()]
+  param(
+    [string]$RepoRoot = (Get-Location).Path,
+    [string]$HooksPath = ".githooks"
+  )
+
+  $resolvedRoot = [System.IO.Path]::GetFullPath($RepoRoot)
+  if (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container)) {
+    throw "Repo root does not exist: $resolvedRoot"
+  }
+
+  & git -C $resolvedRoot config --local core.hooksPath $HooksPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to set git core.hooksPath to '$HooksPath'."
+  }
+
+  $hooksRootPath = Join-Path $resolvedRoot ($HooksPath -replace "/", "\")
+  $postCheckoutPath = Join-Path $hooksRootPath "post-checkout"
+  if (-not (Test-Path -LiteralPath $postCheckoutPath -PathType Leaf)) {
+    Write-Warning "Missing $HooksPath/post-checkout. Did you pull the repo changes?"
+  }
+}
+
+function Get-UEToolSuiteGitDir {
+  [CmdletBinding()]
+  param()
+
+  $gitDir = (git rev-parse --git-dir 2>$null)
+  if (-not $gitDir) {
+    throw "Not inside a git repository."
+  }
+
+  return (Resolve-Path -LiteralPath $gitDir).Path
+}
+
+function Get-UEToolSuiteGitPath {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  $resolved = (git rev-parse --git-path $Path 2>$null).Trim()
+  if (-not $resolved) {
+    return $null
+  }
+
+  return $resolved
+}
+
+function Test-UEToolSuiteGitPathExists {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  $resolved = Get-UEToolSuiteGitPath -Path $Path
+  if (-not $resolved) {
+    return $false
+  }
+
+  return (Test-Path -LiteralPath $resolved)
+}
+
+function Read-UEToolSuiteGitFile {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return $null
+  }
+
+  return (Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue).Trim()
+}
+
+function Get-UEToolSuiteGitContext {
+  [CmdletBinding()]
+  param()
+
+  if (Test-UEToolSuiteGitPathExists -Path "MERGE_HEAD") { return "merge" }
+  if (Test-UEToolSuiteGitPathExists -Path "CHERRY_PICK_HEAD") { return "merge" }
+  if (Test-UEToolSuiteGitPathExists -Path "REVERT_HEAD") { return "merge" }
+  if (Test-UEToolSuiteGitPathExists -Path "rebase-merge") { return "rebase" }
+  if (Test-UEToolSuiteGitPathExists -Path "rebase-apply") { return "rebase" }
+  return "none"
+}
+
+function Test-UEToolSuiteGitRebaseStateDirsPresent {
+  [CmdletBinding()]
+  param()
+
+  $mergeDir = Get-UEToolSuiteGitPath -Path "rebase-merge"
+  if ($mergeDir -and (Test-Path -LiteralPath $mergeDir -PathType Container)) {
+    return $true
+  }
+
+  $applyDir = Get-UEToolSuiteGitPath -Path "rebase-apply"
+  if ($applyDir -and (Test-Path -LiteralPath $applyDir -PathType Container)) {
+    return $true
+  }
+
+  return $false
+}
+
+function Get-UEToolSuiteGitLedgerPaths {
+  [CmdletBinding()]
+  param()
+
+  $gitDir = Get-UEToolSuiteGitDir
+  return [pscustomobject]@{
+    Context  = Join-Path $gitDir "ue_binary_conflicts.context"
+    Resolved = Join-Path $gitDir "ue_binary_conflicts.resolved"
+    Audit    = Join-Path $gitDir "ue_binary_conflicts.audit"
+  }
+}
+
+function Get-UEToolSuiteGitMTimeEpoch {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+
+  try {
+    if (-not (Test-Path -LiteralPath $Path)) {
+      return $null
+    }
+
+    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    return [DateTimeOffset]::new($item.LastWriteTimeUtc).ToUnixTimeSeconds()
+  }
+  catch {
+    return $null
+  }
+}
+
+function Get-UEToolSuiteGitOperationStamp {
+  [CmdletBinding()]
+  param([string]$Context)
+
+  $ctx = $Context
+  if ([string]::IsNullOrWhiteSpace($ctx)) {
+    $ctx = Get-UEToolSuiteGitContext
+  }
+
+  $gitDir = Get-UEToolSuiteGitDir
+
+  if ($ctx -eq "merge") {
+    $mergeHeadPath = Join-Path $gitDir "MERGE_HEAD"
+    $stamp = Get-UEToolSuiteGitMTimeEpoch -Path $mergeHeadPath
+    return $(if ($stamp) { $stamp.ToString() } else { "nostamp" })
+  }
+
+  if ($ctx -eq "rebase") {
+    $rebaseMergeRoot = Join-Path $gitDir "rebase-merge"
+    $rebaseApplyRoot = Join-Path $gitDir "rebase-apply"
+    $candidates = @(
+      (Join-Path $rebaseMergeRoot "onto"),
+      (Join-Path $rebaseMergeRoot "head-name"),
+      (Join-Path $rebaseApplyRoot "orig-head")
+    )
+
+    foreach ($candidate in $candidates) {
+      $stamp = Get-UEToolSuiteGitMTimeEpoch -Path $candidate
+      if ($stamp) {
+        return $stamp.ToString()
+      }
+    }
+
+    return "nostamp"
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitMergeHeadSha {
+  [CmdletBinding()]
+  param()
+
+  $mergeHeadPath = Get-UEToolSuiteGitPath -Path "MERGE_HEAD"
+  if (-not $mergeHeadPath) {
+    return $null
+  }
+
+  return (Read-UEToolSuiteGitFile -Path $mergeHeadPath)
+}
+
+function Get-UEToolSuiteGitRebasePatchSha {
+  [CmdletBinding()]
+  param()
+
+  $patchCandidates = @(
+    (Get-UEToolSuiteGitPath -Path "rebase-merge/patch"),
+    (Get-UEToolSuiteGitPath -Path "rebase-apply/patch")
+  )
+
+  foreach ($candidate in $patchCandidates) {
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate)) {
+      continue
+    }
+
+    $line = Get-Content -LiteralPath $candidate -TotalCount 1 -ErrorAction SilentlyContinue
+    if ($line -match '^From\s+([0-9a-f]{7,40})\b') {
+      return $Matches[1]
+    }
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitRebasePatchPaths {
+  [CmdletBinding()]
+  param()
+
+  $patchCandidates = @(
+    (Get-UEToolSuiteGitPath -Path "rebase-merge/patch"),
+    (Get-UEToolSuiteGitPath -Path "rebase-apply/patch")
+  )
+
+  foreach ($candidate in $patchCandidates) {
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate)) {
+      continue
+    }
+
+    try {
+      if ((Get-Item -LiteralPath $candidate).Length -eq 0) {
+        continue
+      }
+    }
+    catch {
+      continue
+    }
+
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Get-Content -LiteralPath $candidate -ErrorAction SilentlyContinue)) {
+      if ($line -match '^\+\+\+\s+(.+)$') {
+        $pathValue = $Matches[1] -replace '^b/', ''
+        if ($pathValue -and $pathValue -ne '/dev/null') {
+          $paths.Add($pathValue) | Out-Null
+        }
+        continue
+      }
+
+      if ($line -match '^---\s+(.+)$') {
+        $pathValue = $Matches[1] -replace '^a/', ''
+        if ($pathValue -and $pathValue -ne '/dev/null') {
+          $paths.Add($pathValue) | Out-Null
+        }
+      }
+    }
+
+    if ($paths.Count -gt 0) {
+      return @($paths | Sort-Object -Unique)
+    }
+  }
+
+  return @()
+}
+
+function Get-UEToolSuiteGitRebaseSeqCurrentSha {
+  [CmdletBinding()]
+  param()
+
+  $donePath = Get-UEToolSuiteGitPath -Path "rebase-merge/done"
+  $todoPath = Get-UEToolSuiteGitPath -Path "rebase-merge/git-rebase-todo"
+
+  if ($donePath -and (Test-Path -LiteralPath $donePath)) {
+    $doneLines = Get-Content -LiteralPath $donePath -ErrorAction SilentlyContinue |
+      Where-Object { $_ -and ($_ -notmatch '^\s*#') }
+    if ($doneLines) {
+      $lastLine = $doneLines | Select-Object -Last 1
+      if ($lastLine -match '^\s*\S+\s+([0-9a-fA-F]{7,40})\b') {
+        return $Matches[1]
+      }
+    }
+  }
+
+  if ($todoPath -and (Test-Path -LiteralPath $todoPath)) {
+    $todoLines = Get-Content -LiteralPath $todoPath -ErrorAction SilentlyContinue |
+      Where-Object { $_ -and ($_ -notmatch '^\s*#') }
+    if ($todoLines) {
+      $firstLine = $todoLines | Select-Object -First 1
+      if ($firstLine -match '^\s*\S+\s+([0-9a-fA-F]{7,40})\b') {
+        return $Matches[1]
+      }
+    }
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitRebaseHeadSha {
+  [CmdletBinding()]
+  param()
+
+  if (-not (Test-UEToolSuiteGitRebaseStateDirsPresent)) {
+    return $null
+  }
+
+  try {
+    $stoppedShaPath = Get-UEToolSuiteGitPath -Path "rebase-merge/stopped-sha"
+    if ($stoppedShaPath -and (Test-Path -LiteralPath $stoppedShaPath -PathType Leaf)) {
+      $stoppedSha = Get-Content -LiteralPath $stoppedShaPath -Raw -ErrorAction SilentlyContinue
+      if ($stoppedSha) {
+        $stoppedSha = $stoppedSha.Trim()
+        if ($stoppedSha) {
+          return $stoppedSha
+        }
+      }
+    }
+  }
+  catch {
+  }
+
+  try {
+    $rebaseHeadSha = (git rev-parse -q --verify REBASE_HEAD 2>$null)
+    if ($rebaseHeadSha) {
+      $rebaseHeadSha = $rebaseHeadSha.Trim()
+      if ($rebaseHeadSha) {
+        return $rebaseHeadSha
+      }
+    }
+  }
+  catch {
+  }
+
+  $cherryPickHeadPath = Get-UEToolSuiteGitPath -Path "CHERRY_PICK_HEAD"
+  $cherryPickHeadSha = if ($cherryPickHeadPath) { Read-UEToolSuiteGitFile -Path $cherryPickHeadPath } else { $null }
+  if ($cherryPickHeadSha) {
+    return $cherryPickHeadSha
+  }
+
+  $patchSha = Get-UEToolSuiteGitRebasePatchSha
+  if ($patchSha) {
+    return $patchSha
+  }
+
+  $sequenceSha = Get-UEToolSuiteGitRebaseSeqCurrentSha
+  if ($sequenceSha) {
+    return $sequenceSha
+  }
+
+  $origMergePath = Get-UEToolSuiteGitPath -Path "rebase-merge/orig-head"
+  $origMergeSha = if ($origMergePath) { Read-UEToolSuiteGitFile -Path $origMergePath } else { $null }
+  if ($origMergeSha) {
+    return $origMergeSha
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitRebaseOntoSha {
+  [CmdletBinding()]
+  param()
+
+  if (-not (Test-UEToolSuiteGitRebaseStateDirsPresent)) {
+    return $null
+  }
+
+  try {
+    $ontoPath = Get-UEToolSuiteGitPath -Path "rebase-merge/onto"
+    if ($ontoPath -and (Test-Path -LiteralPath $ontoPath -PathType Leaf)) {
+      $ontoValue = Get-Content -LiteralPath $ontoPath -Raw -ErrorAction SilentlyContinue
+      if ($ontoValue) {
+        $ontoValue = $ontoValue.Trim()
+        if ($ontoValue) {
+          return $ontoValue
+        }
+      }
+    }
+  }
+  catch {
+  }
+
+  try {
+    $ontoPath = Get-UEToolSuiteGitPath -Path "rebase-apply/onto"
+    if ($ontoPath -and (Test-Path -LiteralPath $ontoPath -PathType Leaf)) {
+      $ontoValue = Get-Content -LiteralPath $ontoPath -Raw -ErrorAction SilentlyContinue
+      if ($ontoValue) {
+        $ontoValue = $ontoValue.Trim()
+        if ($ontoValue) {
+          return $ontoValue
+        }
+      }
+    }
+  }
+  catch {
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitOtherSideSha {
+  [CmdletBinding()]
+  param([string]$Context)
+
+  $ctx = $Context
+  if ([string]::IsNullOrWhiteSpace($ctx)) {
+    $ctx = Get-UEToolSuiteGitContext
+  }
+
+  if ($ctx -eq "merge") {
+    return (Get-UEToolSuiteGitMergeHeadSha)
+  }
+
+  if ($ctx -eq "rebase") {
+    return (Get-UEToolSuiteGitRebaseHeadSha)
+  }
+
+  return $null
+}
+
+function Get-UEToolSuiteGitNormalizedUniquePaths {
+  [CmdletBinding()]
+  param([AllowNull()][string[]]$Paths)
+
+  return @(
+    foreach ($path in @($Paths)) {
+      if ($null -eq $path) { continue }
+      $normalized = ([string]$path).Trim()
+      if (-not $normalized) { continue }
+      $normalized
+    }
+  ) | Sort-Object -Unique
+}
+
+function Get-UEToolSuiteGitPathIntersection {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][string[]]$Left,
+    [AllowNull()][string[]]$Right
+  )
+
+  $leftPaths = @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $Left)
+  $rightPaths = @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $Right)
+  if ($leftPaths.Count -eq 0 -or $rightPaths.Count -eq 0) {
+    return @()
+  }
+
+  $rightSet = @{}
+  foreach ($path in $rightPaths) {
+    $rightSet[$path] = $true
+  }
+
+  $intersection = New-Object System.Collections.Generic.List[string]
+  foreach ($path in $leftPaths) {
+    if ($rightSet.ContainsKey($path)) {
+      $intersection.Add($path) | Out-Null
+    }
+  }
+
+  return @($intersection | Sort-Object -Unique)
+}
+
+function Get-UEToolSuiteGitMergeOverlapCandidates {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$OtherSideSha)
+
+  $leftRef = "HEAD"
+  $mergeBase = (git merge-base $leftRef $OtherSideSha 2>$null)
+  if ($mergeBase) {
+    $mergeBase = $mergeBase.Trim()
+  }
+  if (-not $mergeBase) {
+    return @()
+  }
+
+  $leftPaths = @((git diff --name-only $mergeBase $leftRef 2>$null) -split "`r?`n")
+  $rightPaths = @((git diff --name-only $mergeBase $OtherSideSha 2>$null) -split "`r?`n")
+  return @(Get-UEToolSuiteGitPathIntersection -Left $leftPaths -Right $rightPaths)
+}
+
+function Get-UEToolSuiteGitRebaseOverlapCandidates {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$OtherSideSha,
+    [string]$RebaseOntoSha
+  )
+
+  $parentSha = $null
+  try {
+    $parentSha = (git rev-parse -q --verify "${OtherSideSha}^" 2>$null)
+    if ($parentSha) {
+      $parentSha = $parentSha.Trim()
+    }
+  }
+  catch {
+  }
+
+  if ($RebaseOntoSha -and $parentSha) {
+    $basePaths = @((git diff --name-only $parentSha $OtherSideSha 2>$null) -split "`r?`n")
+    $targetPaths = @((git diff --name-only $parentSha $RebaseOntoSha 2>$null) -split "`r?`n")
+    return @(Get-UEToolSuiteGitPathIntersection -Left $basePaths -Right $targetPaths)
+  }
+
+  $fallbackBase = if ($parentSha) { $parentSha } else { (git merge-base HEAD $OtherSideSha 2>$null) }
+  if ($fallbackBase) {
+    $fallbackBase = $fallbackBase.Trim()
+  }
+  if (-not $fallbackBase) {
+    return @()
+  }
+
+  $targetRef = if ($RebaseOntoSha) { $RebaseOntoSha } else { "HEAD" }
+  $headPaths = @((git diff --name-only $fallbackBase $targetRef 2>$null) -split "`r?`n")
+  $commitPaths = @((git diff --name-only $fallbackBase $OtherSideSha 2>$null) -split "`r?`n")
+  return @(Get-UEToolSuiteGitPathIntersection -Left $headPaths -Right $commitPaths)
+}
+
+function Get-UEToolSuiteGitRequiredGuardedPaths {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][string[]]$UnmergedGuardedPaths,
+    [AllowNull()][string[]]$OverlapGuardedPaths
+  )
+
+  $required = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($path in @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $UnmergedGuardedPaths)) {
+    if ($path) {
+      [void]$required.Add(($path -replace '\\', '/').Trim())
+    }
+  }
+  foreach ($path in @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $OverlapGuardedPaths)) {
+    if ($path) {
+      [void]$required.Add(($path -replace '\\', '/').Trim())
+    }
+  }
+
+  return @($required) | Sort-Object
+}
+
+function Get-UEToolSuiteGitApprovedPathsFromLedger {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ResolvedLedgerPath)
+
+  if (-not (Test-Path -LiteralPath $ResolvedLedgerPath)) {
+    return @()
+  }
+
+  return @(
+    Get-Content -LiteralPath $ResolvedLedgerPath -ErrorAction SilentlyContinue |
+      ForEach-Object { ($_ -replace '\\', '/').Trim() } |
+      Where-Object { $_ }
+  ) | Sort-Object -Unique
+}
+
+function Get-UEToolSuiteGitRemainingRequiredPaths {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][string[]]$RequiredPaths,
+    [AllowNull()][string[]]$ApprovedPaths
+  )
+
+  $required = @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $RequiredPaths)
+  if ($required.Count -eq 0) {
+    return @()
+  }
+
+  $approvedSet = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($path in @(Get-UEToolSuiteGitNormalizedUniquePaths -Paths $ApprovedPaths)) {
+    if ($path) {
+      [void]$approvedSet.Add(($path -replace '\\', '/').Trim())
+    }
+  }
+
+  $remaining = New-Object System.Collections.Generic.List[string]
+  foreach ($path in $required) {
+    $normalized = ($path -replace '\\', '/').Trim()
+    if (-not $approvedSet.Contains($normalized)) {
+      $remaining.Add($normalized) | Out-Null
+    }
+  }
+
+  return @($remaining | Sort-Object -Unique)
+}
+
+function Get-UEToolSuiteGitOperationContextId {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Context,
+    [string]$Stamp,
+    [string]$OtherSideSha,
+    [string]$MergeBaseSha,
+    [string]$RebaseOntoSha,
+    [string]$RebaseHeadSha
+  )
+
+  if ($Context -eq "none") {
+    return $null
+  }
+
+  $contextStamp = $Stamp
+  if (-not $contextStamp) {
+    $contextStamp = "nostamp"
+  }
+
+  if ($Context -eq "merge") {
+    if (-not $OtherSideSha) {
+      return "${Context}:unknown:unknown:${contextStamp}"
+    }
+
+    if (-not $MergeBaseSha) {
+      return "${Context}:${OtherSideSha}:nobase:${contextStamp}"
+    }
+
+    return "${Context}:${OtherSideSha}:${MergeBaseSha}:${contextStamp}"
+  }
+
+  if ($Context -eq "rebase") {
+    $onto = $(if ($RebaseOntoSha) { $RebaseOntoSha } else { "unknown" })
+    $head = $(if ($RebaseHeadSha) { $RebaseHeadSha } else { "unknown" })
+    return "${Context}:${onto}:${head}:${contextStamp}"
+  }
+
+  if (-not $OtherSideSha) {
+    return "${Context}:unknown:unknown:${contextStamp}"
+  }
+
+  if (-not $MergeBaseSha) {
+    return "${Context}:${OtherSideSha}:nobase:${contextStamp}"
+  }
+
+  return "${Context}:${OtherSideSha}:${MergeBaseSha}:${contextStamp}"
+}
+
+function Get-UEToolSuiteGitContextLedgerTransition {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Context,
+    [string]$CurrentContextId,
+    [string]$PreviousContextId
+  )
+
+  if ($Context -eq "none" -or -not $CurrentContextId) {
+    return [pscustomobject]@{
+      Action = "clear"
+      ContextId = $CurrentContextId
+      PreviousContextId = $PreviousContextId
+      AuditMessage = $null
+    }
+  }
+
+  if ($PreviousContextId -and $PreviousContextId -eq $CurrentContextId) {
+    return [pscustomobject]@{
+      Action = "noop"
+      ContextId = $CurrentContextId
+      PreviousContextId = $PreviousContextId
+      AuditMessage = $null
+    }
+  }
+
+  return [pscustomobject]@{
+    Action = "reset"
+    ContextId = $CurrentContextId
+    PreviousContextId = $PreviousContextId
+    AuditMessage = "context changed -> reset resolved to prevent stale approvals ($CurrentContextId)"
+  }
+}
+
+function Import-UEToolSuiteGitConflictHelpers {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$RepoRoot)
+
+  $domainPath = Join-Path $RepoRoot "Scripts\UETools\UEToolSuite.Git.psm1"
+  if (-not (Test-Path -LiteralPath $domainPath -PathType Leaf)) {
+    throw "The 'git' domain is not installed for this repo. Missing required path: $domainPath. Re-run the installer with git helper tooling included."
+  }
+
+  return (Resolve-Path -LiteralPath $domainPath).Path
+}
+
+function Invoke-UEToolSuiteGitCommand {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  [void](Import-UEToolSuiteGitConflictHelpers -RepoRoot $RepoRoot)
+
+  [string[]]$effectiveArgs = if ($null -eq $CommandArguments -or @($CommandArguments).Count -eq 0) {
+    @("help")
+  }
+  else {
+    @($CommandArguments)
+  }
+
+  $command = ([string]$effectiveArgs[0]).Trim().ToLowerInvariant()
+  $argsList = if ($effectiveArgs.Count -gt 1) { @($effectiveArgs[1..($effectiveArgs.Count - 1)]) } else { @() }
+
+  $verboseMode = $PSBoundParameters.ContainsKey('Verbose') -or ($VerbosePreference -ne 'SilentlyContinue')
+  $skipEditor = $false
+  if (Get-Command -Name "Split-UEToolSuiteGitConflictsArguments" -ErrorAction SilentlyContinue) {
+    $argumentSplit = Split-UEToolSuiteGitConflictsArguments -ArgsList $argsList
+    $skipEditor = [bool]$argumentSplit.SkipEditor
+    $argsList = @($argumentSplit.Args)
+  }
+
+  switch ($command) {
+    "help" {
+      Write-UEToolSuiteGitConflictsHelp
+      return
+    }
+    "sync" {
+      [void](Sync-BinaryConflictLock)
+      if ($verboseMode) { Show-ConflictStatus -VerboseMode } else { Show-ConflictSummary }
+      return
+    }
+    "status" {
+      if ($verboseMode) { Show-ConflictStatus -VerboseMode } else { Show-ConflictStatus }
+      return
+    }
+    "continue" {
+      Continue-RebaseWithGuard -SkipEditor:$skipEditor
+      return
+    }
+    "abort" {
+      Abort-ConflictOperation
+      return
+    }
+    "restart" {
+      Restart-ConflictOperation
+      return
+    }
+    "ours" {
+      $patterns = @($argsList | Where-Object { $_ -and $_.Trim() -ne "" })
+      if ($patterns.Count -lt 1) {
+        Write-UEToolSuiteGitConflictsHelp
+        return
+      }
+
+      Resolve-BinaryConflicts -Side "ours" -Patterns $patterns -VerboseMode:$verboseMode
+      return
+    }
+    "theirs" {
+      $patterns = @($argsList | Where-Object { $_ -and $_.Trim() -ne "" })
+      if ($patterns.Count -lt 1) {
+        Write-UEToolSuiteGitConflictsHelp
+        return
+      }
+
+      Resolve-BinaryConflicts -Side "theirs" -Patterns $patterns -VerboseMode:$verboseMode
+      return
+    }
+    default {
+      throw "Unknown ue-tools git command '$command'. Run 'ue-tools help git'."
+    }
+  }
+}
+
+Export-ModuleMember -Function `
+  Get-UEToolSuiteGitConflictsHelpLines, `
+  Write-UEToolSuiteGitConflictsHelp, `
+  Split-UEToolSuiteGitConflictsArguments, `
+  Enable-UEToolSuiteGitHooks, `
+  Get-UEToolSuiteGitDir, `
+  Get-UEToolSuiteGitPath, `
+  Test-UEToolSuiteGitPathExists, `
+  Read-UEToolSuiteGitFile, `
+  Get-UEToolSuiteGitContext, `
+  Test-UEToolSuiteGitRebaseStateDirsPresent, `
+  Get-UEToolSuiteGitLedgerPaths, `
+  Get-UEToolSuiteGitMTimeEpoch, `
+  Get-UEToolSuiteGitOperationStamp, `
+  Get-UEToolSuiteGitMergeHeadSha, `
+  Get-UEToolSuiteGitRebasePatchSha, `
+  Get-UEToolSuiteGitRebasePatchPaths, `
+  Get-UEToolSuiteGitRebaseSeqCurrentSha, `
+  Get-UEToolSuiteGitRebaseHeadSha, `
+  Get-UEToolSuiteGitRebaseOntoSha, `
+  Get-UEToolSuiteGitOtherSideSha, `
+  Get-UEToolSuiteGitNormalizedUniquePaths, `
+  Get-UEToolSuiteGitPathIntersection, `
+  Get-UEToolSuiteGitMergeOverlapCandidates, `
+  Get-UEToolSuiteGitRebaseOverlapCandidates, `
+  Get-UEToolSuiteGitRequiredGuardedPaths, `
+  Get-UEToolSuiteGitApprovedPathsFromLedger, `
+  Get-UEToolSuiteGitRemainingRequiredPaths, `
+  Get-UEToolSuiteGitOperationContextId, `
+  Get-UEToolSuiteGitContextLedgerTransition, `
+  Import-UEToolSuiteGitConflictHelpers, `
+  Invoke-UEToolSuiteGitCommand
+
+# -----------------------------------------------------------------------------
+# Migrated runtime implementation (Git conflict helpers)
+# Source previously lived in: payload/Scripts/UETools/UEToolSuite.Git.psm1
+# -----------------------------------------------------------------------------
 if (-not $script:RunMemo) {
   $script:RunMemo = @{}
 }
@@ -52,9 +907,7 @@ function Get-GitDir {
     return $script:RunMemo["gitDir"]
   }
 
-  $gitDir = git rev-parse --git-dir 2>$null
-  if (-not $gitDir) { throw "Not inside a git repository." }
-  $resolved = (Resolve-Path -LiteralPath $gitDir).Path
+  $resolved = Get-UEToolSuiteGitDir
   $script:RunMemo["gitDir"] = $resolved
   return $resolved
 }
@@ -66,21 +919,14 @@ function Get-GitPath {
     return $script:RunMemo[$memoKey]
   }
 
-  $p = (git rev-parse --git-path $Path 2>$null).Trim()
-  if (-not $p) {
-    $script:RunMemo[$memoKey] = $null
-    return $null
-  }
-
-  $script:RunMemo[$memoKey] = $p
-  return $p
+  $resolved = Get-UEToolSuiteGitPath -Path $Path
+  $script:RunMemo[$memoKey] = $resolved
+  return $resolved
 }
 
 function Test-GitPathExists {
   param([Parameter(Mandatory)][string]$Path)
-  $p = Get-GitPath -Path $Path
-  if (-not $p) { return $false }
-  Test-Path -LiteralPath $p
+  return (Test-UEToolSuiteGitPathExists -Path $Path)
 }
 
 function Remove-StaleRebaseMarkers {
@@ -109,47 +955,25 @@ function Get-GitContext {
     return $script:RunMemo["ctx"]
   }
 
-  $ctx = "none"
-
-  # Check merge first
-  if (Test-GitPathExists -Path "MERGE_HEAD") { $ctx = "merge" }
-  elseif (Test-GitPathExists -Path "CHERRY_PICK_HEAD") { $ctx = "merge" }
-  elseif (Test-GitPathExists -Path "REVERT_HEAD") { $ctx = "merge" }
-
-  # Check Git's rebase DIRECTORIES ONLY
-  elseif (Test-GitPathExists -Path "rebase-merge") { $ctx = "rebase" }
-  elseif (Test-GitPathExists -Path "rebase-apply") { $ctx = "rebase" }
-
-  $script:RunMemo["ctx"] = $ctx
-  return $ctx
+  $resolved = Get-UEToolSuiteGitContext
+  $script:RunMemo["ctx"] = $resolved
+  return $resolved
 }
 
 function Test-RebaseStateDirsPresent {
-  $rbm = Get-GitPath -Path "rebase-merge"
-  if ($rbm -and (Test-Path -LiteralPath $rbm -PathType Container)) { return $true }
-
-  $rba = Get-GitPath -Path "rebase-apply"
-  if ($rba -and (Test-Path -LiteralPath $rba -PathType Container)) { return $true }
-
-  return $false
+  return (Test-UEToolSuiteGitRebaseStateDirsPresent)
 }
 
 # Back-compat (some of your functions referenced Get-Context)
 function Get-Context { Get-GitContext }
 
 function Get-LedgerPaths {
-  $gitDir = Get-GitDir
-  [pscustomobject]@{
-    Context  = Join-Path $gitDir "ue_binary_conflicts.context"
-    Resolved = Join-Path $gitDir "ue_binary_conflicts.resolved"
-    Audit    = Join-Path $gitDir "ue_binary_conflicts.audit"
-  }
+  return (Get-UEToolSuiteGitLedgerPaths)
 }
 
 function Read-GitFile {
   param([Parameter(Mandatory)][string]$Path)
-  if (-not (Test-Path -LiteralPath $Path)) { return $null }
-  (Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue).Trim()
+  return (Read-UEToolSuiteGitFile -Path $Path)
 }
 
 function Write-Audit {
@@ -331,84 +1155,19 @@ function Get-UnmergedPaths {
 # Merge/Rebase operation refs
 # -----------------------------
 function Get-MergeHeadSha {
-  $p = Get-GitPath -Path "MERGE_HEAD"
-  if (-not $p) { return $null }
-  Read-GitFile $p
+  return (Get-UEToolSuiteGitMergeHeadSha)
 }
 
 function Get-RebasePatchSha {
-  $patches = @(
-    (Get-GitPath -Path "rebase-merge/patch"),
-    (Get-GitPath -Path "rebase-apply/patch")
-  )
-
-  foreach ($p in $patches) {
-    if (-not $p) { continue }
-    if (-not (Test-Path -LiteralPath $p)) { continue }
-    $line = Get-Content -LiteralPath $p -TotalCount 1 -ErrorAction SilentlyContinue
-    if ($line -match '^From\s+([0-9a-f]{7,40})\b') { return $Matches[1] }
-  }
-
-  return $null
+  return (Get-UEToolSuiteGitRebasePatchSha)
 }
 
 function Get-RebasePatchPaths {
-  $patches = @(
-    (Get-GitPath -Path "rebase-merge/patch"),
-    (Get-GitPath -Path "rebase-apply/patch")
-  )
-
-  foreach ($p in $patches) {
-    if (-not $p) { continue }
-    if (-not (Test-Path -LiteralPath $p)) { continue }
-    try {
-      if ((Get-Item -LiteralPath $p).Length -eq 0) { continue }
-    }
-    catch { continue }
-
-    $paths = New-Object System.Collections.Generic.List[string]
-    foreach ($line in (Get-Content -LiteralPath $p -ErrorAction SilentlyContinue)) {
-      if ($line -match '^\+\+\+\s+(.+)$') {
-        $f = $Matches[1] -replace '^b/', ''
-        if ($f -and $f -ne '/dev/null') { $paths.Add($f) | Out-Null }
-        continue
-      }
-      if ($line -match '^---\s+(.+)$') {
-        $f = $Matches[1] -replace '^a/', ''
-        if ($f -and $f -ne '/dev/null') { $paths.Add($f) | Out-Null }
-        continue
-      }
-    }
-
-    if ($paths.Count -gt 0) { return ($paths | Sort-Object -Unique) }
-  }
-
-  return @()
+  return @(Get-UEToolSuiteGitRebasePatchPaths)
 }
 
 function Get-RebaseSeqCurrentSha {
-  $done = Get-GitPath -Path "rebase-merge/done"
-  $todo = Get-GitPath -Path "rebase-merge/git-rebase-todo"
-
-  if ($done -and (Test-Path -LiteralPath $done)) {
-    $lines = Get-Content -LiteralPath $done -ErrorAction SilentlyContinue |
-    Where-Object { $_ -and ($_ -notmatch '^\s*#') }
-    if ($lines) {
-      $last = $lines | Select-Object -Last 1
-      if ($last -match '^\s*\S+\s+([0-9a-fA-F]{7,40})\b') { return $Matches[1] }
-    }
-  }
-
-  if ($todo -and (Test-Path -LiteralPath $todo)) {
-    $lines = Get-Content -LiteralPath $todo -ErrorAction SilentlyContinue |
-    Where-Object { $_ -and ($_ -notmatch '^\s*#') }
-    if ($lines) {
-      $first = $lines | Select-Object -First 1
-      if ($first -match '^\s*\S+\s+([0-9a-fA-F]{7,40})\b') { return $Matches[1] }
-    }
-  }
-
-  return $null
+  return (Get-UEToolSuiteGitRebaseSeqCurrentSha)
 }
 
 function Get-RebaseHeadSha {
@@ -416,78 +1175,9 @@ function Get-RebaseHeadSha {
     return $script:RunMemo["rebaseHead"]
   }
 
-  if (-not (Test-RebaseStateDirsPresent)) {
-    $script:RunMemo["rebaseHead"] = $null
-    return $null
-  }
-
-  # Get the SHA of the commit being applied during rebase
-
-  # Prefer stopped-sha if rebase is stopped
-  try {
-    $stoppedFile = Get-GitPath -Path "rebase-merge/stopped-sha"
-    if ($stoppedFile -and (Test-Path $stoppedFile -PathType Leaf)) {
-      $stopped = (Get-Content $stoppedFile -Raw -ErrorAction SilentlyContinue)
-      if ($stopped) {
-        $stopped = $stopped.Trim()
-        if ($stopped) {
-          $script:RunMemo["rebaseHead"] = $stopped
-          return $stopped
-        }
-      }
-    }
-  }
-  catch {
-    # Ignore errors
-  }
-
-  # Fall back to REBASE_HEAD
-  try {
-    $sha = (git rev-parse -q --verify REBASE_HEAD 2>$null)
-    if ($sha) {
-      $sha = $sha.Trim()
-      if ($sha) {
-        $script:RunMemo["rebaseHead"] = $sha
-        return $sha
-      }
-    }
-  }
-  catch {
-    # Ignore errors
-  }
-
-  # Try CHERRY_PICK_HEAD
-  $cp = Get-GitPath -Path "CHERRY_PICK_HEAD"
-  $sha = if ($cp) { Read-GitFile $cp } else { $null }
-  if ($sha) {
-    $script:RunMemo["rebaseHead"] = $sha
-    return $sha
-  }
-
-  # Try patch file
-  $sha = Get-RebasePatchSha
-  if ($sha) {
-    $script:RunMemo["rebaseHead"] = $sha
-    return $sha
-  }
-
-  # Try sequence file
-  $sha = Get-RebaseSeqCurrentSha
-  if ($sha) {
-    $script:RunMemo["rebaseHead"] = $sha
-    return $sha
-  }
-
-  # Last resort: orig-head
-  $origMerge = Get-GitPath -Path "rebase-merge/orig-head"
-  $sha = if ($origMerge) { Read-GitFile $origMerge } else { $null }
-  if ($sha) {
-    $script:RunMemo["rebaseHead"] = $sha
-    return $sha
-  }
-
-  $script:RunMemo["rebaseHead"] = $null
-  return $null
+  $resolved = Get-UEToolSuiteGitRebaseHeadSha
+  $script:RunMemo["rebaseHead"] = $resolved
+  return $resolved
 }
 
 function Get-RebaseOntoSha {
@@ -495,108 +1185,22 @@ function Get-RebaseOntoSha {
     return $script:RunMemo["rebaseOnto"]
   }
 
-  if (-not (Test-RebaseStateDirsPresent)) {
-    $script:RunMemo["rebaseOnto"] = $null
-    return $null
-  }
-
-  # During rebase, HEAD moves as commits are applied.
-  # Using HEAD for overlap checks causes false positives because it already contains
-  # the in-progress commit's changes. The stable "onto" SHA is stored by git.
-
-  # Try rebase-merge/onto first
-  try {
-    $ontoFile = Get-GitPath -Path "rebase-merge/onto"
-    if ($ontoFile -and (Test-Path $ontoFile -PathType Leaf)) {
-      $onto = (Get-Content $ontoFile -Raw -ErrorAction SilentlyContinue)
-      if ($onto) {
-        $onto = $onto.Trim()
-        if ($onto) {
-          $script:RunMemo["rebaseOnto"] = $onto
-          return $onto
-        }
-      }
-    }
-  }
-  catch {
-    # Ignore errors
-  }
-
-  # Try rebase-apply/onto
-  try {
-    $ontoFile = Get-GitPath -Path "rebase-apply/onto"
-    if ($ontoFile -and (Test-Path $ontoFile -PathType Leaf)) {
-      $onto = (Get-Content $ontoFile -Raw -ErrorAction SilentlyContinue)
-      if ($onto) {
-        $onto = $onto.Trim()
-        if ($onto) {
-          $script:RunMemo["rebaseOnto"] = $onto
-          return $onto
-        }
-      }
-    }
-  }
-  catch {
-    # Ignore errors
-  }
-
-  # Soft-fail: return null instead of error
-  # This allows calling code to continue with fallback logic
-  $script:RunMemo["rebaseOnto"] = $null
-  return $null
+  $resolved = Get-UEToolSuiteGitRebaseOntoSha
+  $script:RunMemo["rebaseOnto"] = $resolved
+  return $resolved
 }
 
 function Get-OtherSideSha {
-  $ctx = Get-GitContext
-  if ($ctx -eq "merge") { return Get-MergeHeadSha }
-  if ($ctx -eq "rebase") { return Get-RebaseHeadSha }
-  return $null
+  return (Get-UEToolSuiteGitOtherSideSha -Context (Get-GitContext))
 }
 
 function Get-MTimeEpoch {
   param([Parameter(Mandatory)][string]$Path)
-  try {
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
-    # Unix epoch seconds, stable across TZ
-    return [DateTimeOffset]::new($item.LastWriteTimeUtc).ToUnixTimeSeconds()
-  }
-  catch {
-    return $null
-  }
+  return (Get-UEToolSuiteGitMTimeEpoch -Path $Path)
 }
 
 function Get-OperationStamp {
-  $ctx = Get-GitContext
-  $gitDir = Get-GitDir
-
-  if ($ctx -eq "merge") {
-    # MERGE_HEAD rewritten each time a merge starts
-    $s = Get-MTimeEpoch -Path (Join-Path $gitDir "MERGE_HEAD")
-    return ($s ? $s.ToString() : "nostamp")
-  }
-
-  if ($ctx -eq "rebase") {
-    $rm = Join-Path $gitDir "rebase-merge"
-    $ra = Join-Path $gitDir "rebase-apply"
-
-    # IMPORTANT: directory mtimes change during --continue.
-    # Use stable marker files instead so stamp stays constant for the whole rebase.
-    $candidates = @(
-      (Join-Path $rm "onto"),
-      (Join-Path $rm "head-name"),
-      (Join-Path $ra "orig-head")
-    )
-
-    foreach ($c in $candidates) {
-      $s = Get-MTimeEpoch -Path $c
-      if ($s) { return $s.ToString() }
-    }
-
-    return "nostamp"
-  }
-
-  return $null
+  return (Get-UEToolSuiteGitOperationStamp -Context (Get-GitContext))
 }
 
 # -----------------------------
@@ -615,72 +1219,49 @@ function Get-OperationContextId {
 
   $stamp = Get-OperationStamp
   if (-not $stamp) { $stamp = "nostamp" }
+  $other = $null
+  $base = $null
+  $onto = $null
+  $current = $null
 
   if ($ctx -eq "merge") {
-    # Merge: use MERGE_HEAD as the "other" side
     $other = Get-MergeHeadSha
-    if (-not $other) {
-      $id = "${ctx}:unknown:unknown:${stamp}"
-      $script:RunMemo["ctxId"] = $id
-      return $id
+    if ($other) {
+      $base = (git merge-base HEAD $other 2>$null)
+      if ($base) { $base = $base.Trim() }
     }
-
-    $base = (git merge-base HEAD $other 2>$null)
-    if ($base) { $base = $base.Trim() }
-    if (-not $base) {
-      $id = "${ctx}:${other}:nobase:${stamp}"
-      $script:RunMemo["ctxId"] = $id
-      return $id
-    }
-
-    $id = "${ctx}:${other}:${base}:${stamp}"
-    $script:RunMemo["ctxId"] = $id
-    return $id
   }
-
-  if ($ctx -eq "rebase") {
-    # Rebase: scope context to the CURRENT stopped commit so approvals do not
-    # carry from stop N to stop N+1 in a multi-commit rebase.
+  elseif ($ctx -eq "rebase") {
     $onto = Get-RebaseOntoSha
     $current = Get-RebaseHeadSha
 
-    # Fallback for unusual states where rebase head is temporarily unavailable.
     if (-not $current) {
       $origPath = Get-GitPath -Path "rebase-merge/orig-head"
       if (-not $origPath) {
         $origPath = Get-GitPath -Path "rebase-apply/orig-head"
       }
-      if ($origPath -and (Test-Path $origPath)) {
-        $current = (Get-Content $origPath -Raw -ErrorAction SilentlyContinue)
+      if ($origPath -and (Test-Path -LiteralPath $origPath -PathType Leaf)) {
+        $current = Get-Content -LiteralPath $origPath -Raw -ErrorAction SilentlyContinue
         if ($current) { $current = $current.Trim() }
       }
     }
-
-    if (-not $onto) { $onto = "unknown" }
-    if (-not $current) { $current = "unknown" }
-
-    $id = "${ctx}:${onto}:${current}:${stamp}"
-    $script:RunMemo["ctxId"] = $id
-    return $id
+  }
+  else {
+    $other = Get-OtherSideSha
+    if ($other) {
+      $base = (git merge-base HEAD $other 2>$null)
+      if ($base) { $base = $base.Trim() }
+    }
   }
 
-  # Fallback for other contexts
-  $other = Get-OtherSideSha
-  if (-not $other) {
-    $id = "${ctx}:unknown:unknown:${stamp}"
-    $script:RunMemo["ctxId"] = $id
-    return $id
-  }
+  $id = Get-UEToolSuiteGitOperationContextId `
+    -Context $ctx `
+    -Stamp $stamp `
+    -OtherSideSha $other `
+    -MergeBaseSha $base `
+    -RebaseOntoSha $onto `
+    -RebaseHeadSha $current
 
-  $base = (git merge-base HEAD $other 2>$null)
-  if ($base) { $base = $base.Trim() }
-  if (-not $base) {
-    $id = "${ctx}:${other}:nobase:${stamp}"
-    $script:RunMemo["ctxId"] = $id
-    return $id
-  }
-
-  $id = "${ctx}:${other}:${base}:${stamp}"
   $script:RunMemo["ctxId"] = $id
   return $id
 }
@@ -689,24 +1270,26 @@ function Ensure-ContextBoundLedgers {
   $p = Get-LedgerPaths
   $ctx = Get-GitContext
   $id = Get-OperationContextId
+  $prev = Read-GitFile $p.Context
+  $transition = Get-UEToolSuiteGitContextLedgerTransition -Context $ctx -CurrentContextId $id -PreviousContextId $prev
 
-  if ($ctx -eq "none" -or -not $id) {
-    # No active operation: clear ledgers
+  if ($transition.Action -eq "clear") {
     if (Test-Path -LiteralPath $p.Context) { Remove-Item -Force -LiteralPath $p.Context -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $p.Resolved) { Remove-Item -Force -LiteralPath $p.Resolved -ErrorAction SilentlyContinue }
     Clear-GuardMemo -Keys @("approved", "required", "remaining", "unmerged", "conflicted", "overlap", "guardedOverlap", "ctxId", "rebaseHead", "rebaseOnto")
     return
   }
 
-  $prev = Read-GitFile $p.Context
-  if ($prev -and $prev -eq $id) { return }
+  if ($transition.Action -eq "noop") {
+    return
+  }
 
-  # New operation detected → wipe approvals
-  Set-Content -LiteralPath $p.Context -Value $id -Encoding UTF8
+  Set-Content -LiteralPath $p.Context -Value $transition.ContextId -Encoding UTF8
   if (Test-Path -LiteralPath $p.Resolved) { Remove-Item -Force -LiteralPath $p.Resolved -ErrorAction SilentlyContinue }
   Clear-GuardMemo -Keys @("approved", "required", "remaining", "unmerged", "conflicted", "overlap", "guardedOverlap", "ctxId", "rebaseHead", "rebaseOnto")
-
-  Write-Audit -Action "CTXRESET" -Message "context changed -> reset resolved to prevent stale approvals ($id)"
+  if ($transition.AuditMessage) {
+    Write-Audit -Action "CTXRESET" -Message $transition.AuditMessage
+  }
 }
 
 # -----------------------------
@@ -739,122 +1322,16 @@ function Get-OverlapCandidates {
     return @()
   }
 
-  # MERGE: keep existing behavior
   if ($ctx -eq "merge") {
-    $left = "HEAD"
-    $base = (git merge-base $left $other 2>$null)
-    if ($base) { $base = $base.Trim() }
-    if (-not $base) {
-      $script:RunMemo["overlap"] = @()
-      return @()
-    }
-
-    $a = @((git diff --name-only $base $left  2>$null) -split "`r?`n" | Where-Object { $_ })
-    $b = @((git diff --name-only $base $other 2>$null) -split "`r?`n" | Where-Object { $_ })
-
-    if ($a.Count -eq 0 -or $b.Count -eq 0) {
-      $script:RunMemo["overlap"] = @()
-      return @()
-    }
-
-    $setB = @{}
-    foreach ($x in $b) { $setB[$x.Trim()] = $true }
-
-    $over = New-Object System.Collections.Generic.List[string]
-    foreach ($x in $a) {
-      $t = $x.Trim()
-      if ($t -and $setB.ContainsKey($t)) { $over.Add($t) | Out-Null }
-    }
-
-    $out = @($over | Sort-Object -Unique)
-    $script:RunMemo["overlap"] = @($out)
-    return @($out)
+    $mergedOverlap = @(Get-UEToolSuiteGitMergeOverlapCandidates -OtherSideSha $other)
+    $script:RunMemo["overlap"] = @($mergedOverlap)
+    return @($mergedOverlap)
   }
 
-  # REBASE: per-current-commit overlap (NO CACHING)
   if ($ctx -eq "rebase") {
-    $onto = Get-RebaseOntoSha
-    $parent = $null
-    try {
-      $parent = (git rev-parse -q --verify "${other}^" 2>$null)
-      if ($parent) { $parent = $parent.Trim() }
-    }
-    catch {
-      # Ignore errors
-    }
-
-    # Prefer merge-tree for accurate overlap
-    if ($onto -and $parent) {
-      Write-Verbose "Rebase overlap: using merge-tree (parent=$parent onto=$onto other=$other)"
-
-      $basePaths = @(
-        (git diff --name-only $parent $other 2>$null) -split "`r?`n" |
-        ForEach-Object { $_.Trim() } |
-        Where-Object { $_ }
-      ) | Sort-Object -Unique
-
-      $targetPaths = @(
-        (git diff --name-only $parent $onto 2>$null) -split "`r?`n" |
-        ForEach-Object { $_.Trim() } |
-        Where-Object { $_ }
-      ) | Sort-Object -Unique
-
-      # Only include paths modified on BOTH sides
-      $setTarget = @{}
-      foreach ($p in $targetPaths) { $setTarget[$p] = $true }
-
-      $actualOverlap = @(
-        foreach ($p in $basePaths) {
-          if ($setTarget.ContainsKey($p)) { $p }
-        }
-      )
-
-      Write-Verbose "Rebase overlap: found $($actualOverlap.Count) actual overlaps"
-      $out = @($actualOverlap | Sort-Object -Unique)
-      $script:RunMemo["overlap"] = @($out)
-      return @($out)
-    }
-
-    Write-Verbose "Rebase overlap: using fallback diff"
-
-    # Fallback: diff intersection
-    $base = if ($parent) { $parent } else { (git merge-base HEAD $other 2>$null) }
-    if ($base) { $base = $base.Trim() }
-    if (-not $base) {
-      $script:RunMemo["overlap"] = @()
-      return @()
-    }
-
-    $target = if ($onto) { $onto } else { "HEAD" }
-
-    $headPaths = @(
-      (git diff --name-only $base $target 2>$null) -split "`r?`n" |
-      ForEach-Object { $_.Trim() } |
-      Where-Object { $_ }
-    ) | Sort-Object -Unique
-
-    $commitPaths = @(
-      (git diff --name-only $base $other 2>$null) -split "`r?`n" |
-      ForEach-Object { $_.Trim() } |
-      Where-Object { $_ }
-    ) | Sort-Object -Unique
-
-    if ($headPaths.Count -eq 0 -or $commitPaths.Count -eq 0) {
-      $script:RunMemo["overlap"] = @()
-      return @()
-    }
-
-    $setCommit = @{}
-    foreach ($p in $commitPaths) { $setCommit[$p] = $true }
-
-    $over = New-Object System.Collections.Generic.List[string]
-    foreach ($p in $headPaths) {
-      if ($setCommit.ContainsKey($p)) { $over.Add($p) | Out-Null }
-    }
-
-    $out = @($over | Sort-Object -Unique)
-    $script:RunMemo["overlap"] = @($out)
-    return @($out)
+    $rebaseOverlap = @(Get-UEToolSuiteGitRebaseOverlapCandidates -OtherSideSha $other -RebaseOntoSha (Get-RebaseOntoSha))
+    $script:RunMemo["overlap"] = @($rebaseOverlap)
+    return @($rebaseOverlap)
   }
 
   $script:RunMemo["overlap"] = @()
@@ -895,17 +1372,9 @@ function Get-RequiredGuardedPaths {
 
   Ensure-ContextBoundLedgers
 
-  $req = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
-
-  foreach ($p in @(Get-GuardedPathsFromList -Paths @(Get-UnmergedPaths))) {
-    if ($p) { [void]$req.Add($p) }
-  }
-
-  foreach ($p in (Get-GuardedOverlapCandidates)) {
-    if ($p) { [void]$req.Add(($p -replace '\\', '/').Trim()) }
-  }
-
-  $out = @($req) | Sort-Object
+  $out = @(Get-UEToolSuiteGitRequiredGuardedPaths `
+    -UnmergedGuardedPaths @(Get-GuardedPathsFromList -Paths @(Get-UnmergedPaths)) `
+    -OverlapGuardedPaths @(Get-GuardedOverlapCandidates))
   $script:RunMemo["required"] = @($out)
   return @($out)
 }
@@ -916,15 +1385,7 @@ function Get-ApprovedGuardedPaths {
   }
 
   $p = Get-LedgerPaths
-  if (-not (Test-Path -LiteralPath $p.Resolved)) {
-    $script:RunMemo["approved"] = @()
-    return @()
-  }
-  $out = @(
-    Get-Content -LiteralPath $p.Resolved -ErrorAction SilentlyContinue |
-    ForEach-Object { ($_ -replace '\\', '/').Trim() } |
-    Where-Object { $_ }
-  ) | Sort-Object -Unique
+  $out = @(Get-UEToolSuiteGitApprovedPathsFromLedger -ResolvedLedgerPath $p.Resolved)
   $script:RunMemo["approved"] = @($out)
   return @($out)
 }
@@ -941,15 +1402,7 @@ function Get-RemainingRequiredGuardedPaths {
   }
 
   $approved = Get-ApprovedGuardedPaths
-  $set = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
-  foreach ($a in $approved) { [void]$set.Add($a) }
-
-  $remaining = New-Object System.Collections.Generic.List[string]
-  foreach ($r in $required) {
-    if (-not $set.Contains($r)) { $remaining.Add($r) | Out-Null }
-  }
-
-  $out = @($remaining | Sort-Object -Unique)
+  $out = @(Get-UEToolSuiteGitRemainingRequiredPaths -RequiredPaths $required -ApprovedPaths $approved)
   $script:RunMemo["remaining"] = @($out)
   return @($out)
 }
@@ -1548,3 +2001,4 @@ function Sync-BinaryConflictLock {
   # Old behavior returned lock contents; now return the required set
   return @(Get-RequiredGuardedPaths)
 }
+

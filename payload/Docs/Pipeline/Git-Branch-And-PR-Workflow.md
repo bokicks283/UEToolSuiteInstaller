@@ -99,7 +99,7 @@ Work normally on a focused branch such as:
 Example:
 
 ```powershell
-git checkout -b fix/docs-tools
+git checkout -b fix/ue-tools docs
 ```
 
 The branch can have as many commits as needed while the work is in progress.
@@ -112,7 +112,7 @@ Example for docs or tooling work:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-DocsTools.ps1
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Scripts/Docs/DocsTools.ps1 -RepoRoot . check
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Scripts/ue-tools.ps1 -RepoRoot . docs check
 ```
 
 ### 3. Run one interactive rebase onto current `main`

@@ -19,38 +19,15 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "Install-UEToolSuite-$stamp.log"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ue tool suite installer tests " + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+$testHarnessPath = Join-Path $installerRoot "payload\Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
-
-function Write-Log {
-  param([Parameter(Mandatory)][AllowEmptyString()][string]$Message, [ConsoleColor]$Color = [ConsoleColor]::Gray)
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Condition {
-  param([string]$Name, [bool]$Condition, [string]$PassDetail = "ok", [string]$FailDetail = "failed")
-  if ($Condition) { Pass $Name $PassDetail } else { Fail $Name $FailDetail }
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function Assert-PathExists([string]$Name, [string]$Path) {
   Assert-Condition $Name (Test-Path -LiteralPath $Path) "present" "missing: $Path"
@@ -68,20 +45,6 @@ function Assert-FileContains([string]$Name, [string]$Path, [string]$ExpectedText
 
   $content = Get-Content -LiteralPath $Path -Raw
   Assert-Condition $Name ($content.Contains($ExpectedText)) "found expected text" "expected text missing from $Path"
-}
-
-function Write-Utf8NoBomFile {
-  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Content)
-  $parent = Split-Path -Path $Path -Parent
-  if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
-  }
-  [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
-}
-
-function Remove-AnsiEscapeSequences([string]$Text) {
-  if ($null -eq $Text) { return "" }
-  return ([regex]::Replace($Text, "`e\[[0-9;?]*[ -/]*[@-~]", ""))
 }
 
 function Invoke-Installer {
@@ -154,9 +117,13 @@ try {
       ".gitattributes",
       ".gitignore",
       ".githooks\post-checkout",
-      "Scripts\Init-Repo.ps1",
-      "Scripts\Unreal\UnrealSync.ps1",
-      "Scripts\Docs\DocsTools.ps1",
+      "Scripts\UETools\UEToolSuite.Init.psm1",
+      "Scripts\ue-tools.ps1",
+      "Scripts\UETools\UEToolSuite.Core.psm1",
+      "Scripts\UETools\UEToolSuite.Dispatcher.psm1",
+      "Scripts\UETools\UEToolSuite.Aliases.psm1",
+      "Scripts\UETools\UEToolSuite.Unreal.psm1",
+      "Scripts\UETools\UEToolSuite.Docs.psm1",
       "Docs\Setup.md",
       "Docs\Pipeline\README.md",
       "Docs\DocsSite\Docusaurus-Setup.md",
@@ -175,14 +142,14 @@ try {
       "Scripts\Install-UEProjectTools.ps1",
       "Docs\GameDesign\README.md",
       "Docs\ProjectStructure\Target-Structure.md",
-      "Docs\Codex\Project-Context.md"
+      "Docs\AI\Project-Context.md"
     )) {
     Assert-PathMissing "case1 skipped $relativePath" (Join-Path $targetRepo $relativePath)
   }
 
   Step "Case 2: update removes legacy installer and writes backup"
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1") -Content "legacy installer`n"
-  Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Unreal\UnrealSync.ps1") -Content "legacy sync`n"
+  Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\UETools\UEToolSuite.Unreal.psm1") -Content "legacy sync`n"
   $gitIgnorePath = Join-Path $targetRepo ".gitignore"
   $existingGitIgnore = Get-Content -LiteralPath $gitIgnorePath -Raw
   Write-Utf8NoBomFile -Path $gitIgnorePath -Content ("local-custom-ignore/`n`n" + $existingGitIgnore)
@@ -190,7 +157,7 @@ try {
   Remove-Item -LiteralPath (Join-Path $targetRepo "website\src\css") -Recurse -Force
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "website\src\css") -Content "stale file blocking managed directory`n"
   $projectSpecificFiles = @(
-    [pscustomobject]@{ RelativePath = "Docs\Codex\Project-Context.md"; Content = "project-specific codex context should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\AI\Project-Context.md"; Content = "project-specific ai context should survive`n" },
     [pscustomobject]@{ RelativePath = "Docs\Pipeline\Project-Pipeline-Notes.md"; Content = "project-specific pipeline notes should survive`n" },
     [pscustomobject]@{ RelativePath = "Docs\DocsSite\Local-DocsSite-Notes.md"; Content = "project-specific docs site notes should survive`n" },
     [pscustomobject]@{ RelativePath = "website\src\pages\local-project-page.tsx"; Content = "project-specific docs page should survive`n" }
@@ -201,7 +168,7 @@ try {
   $updateResult = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2 update exits cleanly" ($updateResult.Code -eq 0) "exit=0" "exit=$($updateResult.Code)"
   Assert-PathMissing "case2 legacy installer removed" (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1")
-  $backupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UnrealSync.ps1" })
+  $backupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UEToolSuite.Unreal.psm1" })
   Assert-Condition "case2 backup created for replaced tool" ($backupMatches.Count -gt 0) "backup count=$($backupMatches.Count)" "backup missing"
   Assert-FileContains "case2 git ignore preserves local lines" $gitIgnorePath "local-custom-ignore/"
   $gitIgnoreBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq ".gitignore" })
@@ -232,9 +199,16 @@ try {
   $initRepo = New-TargetRepo "run init target"
   & git -C $initRepo remote add origin "git@github.com:AcmeTools/PortableSample.git" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "git remote add failed for target repo: $initRepo" }
+  $ignoredTrackedRelativePath = "Scripts/Tests/CrashEvidenceResults/preexisting-output.txt"
+  Write-Utf8NoBomFile -Path (Join-Path $initRepo $ignoredTrackedRelativePath) -Content "preexisting generated artifact`n"
+  & git -C $initRepo add -- $ignoredTrackedRelativePath | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "git add failed for tracked ignored fixture file: $ignoredTrackedRelativePath" }
+  & git -C $initRepo commit -m "test: add tracked file that should become ignored after install" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "git commit failed for tracked ignored fixture file: $ignoredTrackedRelativePath" }
   $initResult = Invoke-Installer -TargetRoot $initRepo -ExtraArgs @(
     "-SkipTests",
     "-RunInit",
+    "-InitNonInteractive",
     "-SkipLfsPull",
     "-SkipShellAliases",
     "-SkipOptionalToolSetup",
@@ -242,7 +216,11 @@ try {
     "-SkipUnrealSync"
   )
   Assert-Condition "case3 init install exits cleanly" ($initResult.Code -eq 0) "exit=0" "exit=$($initResult.Code)"
+  Assert-Condition "case3 init bootstrap forced non-interactive" ($initResult.Output -like "*-NonInteractive*") "non-interactive switch present" "non-interactive switch missing"
   Assert-Condition "case3 init ran" ($initResult.Output -like "*Repo initialization complete.*") "init completed" "init output missing completion"
+  $trackedIgnoredListing = @(& git -C $initRepo ls-files --error-unmatch -- $ignoredTrackedRelativePath 2>$null)
+  Assert-Condition "case3 tracked ignored file removed from git index" ($LASTEXITCODE -ne 0) "untracked from index" "still tracked in git index"
+  Assert-PathExists "case3 tracked ignored file remains on disk" (Join-Path $initRepo $ignoredTrackedRelativePath)
   $hooksPath = (& git -C $initRepo config --local --get core.hooksPath 2>$null | Select-Object -First 1)
   Assert-Condition "case3 hooks path configured" ($hooksPath -eq ".githooks") "hooksPath=.githooks" "hooksPath=$hooksPath"
   Assert-FileContains "case3 docusaurus organization metadata set" (Join-Path $initRepo "website\docusaurus.config.ts") "organizationName: 'AcmeTools'"
@@ -260,13 +238,13 @@ try {
   $skipWebsiteResult = Invoke-Installer -TargetRoot $skipWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipWebsite")
   Assert-Condition "case5 skip website exits cleanly" ($skipWebsiteResult.Code -eq 0) "exit=0" "exit=$($skipWebsiteResult.Code)"
   Assert-PathMissing "case5 website skipped" (Join-Path $skipWebsiteRepo "website\package.json")
-  Assert-PathExists "case5 docs tooling retained" (Join-Path $skipWebsiteRepo "Scripts\Docs\DocsTools.ps1")
+  Assert-PathExists "case5 docs tooling retained" (Join-Path $skipWebsiteRepo "Scripts\UETools\UEToolSuite.Docs.psm1")
   Assert-PathExists "case5 docs retained" (Join-Path $skipWebsiteRepo "Docs\README.md")
 
   Step "Case 6: NoBackup replaces managed paths without writing backup output"
   $noBackupRepo = New-TargetRepo "no backup target"
   Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo ".gitattributes") -Content "custom attributes`n"
-  Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo "Scripts\Unreal\UnrealSync.ps1") -Content "legacy sync`n"
+  Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo "Scripts\UETools\UEToolSuite.Unreal.psm1") -Content "legacy sync`n"
   $noBackupResult = Invoke-Installer -TargetRoot $noBackupRepo -ExtraArgs @("-SkipTests", "-NoBackup")
   Assert-Condition "case6 no backup exits cleanly" ($noBackupResult.Code -eq 0) "exit=0" "exit=$($noBackupResult.Code)"
   Assert-PathMissing "case6 backup root not created" (Join-Path $noBackupRepo ".ue-tools-installer-backups")

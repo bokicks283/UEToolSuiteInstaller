@@ -38,7 +38,7 @@ FileOpenOrder/
 *.code-workspace
 .idea/
 *.iml
-.codex-local/
+.ai-local/
 .ue-tools-installer-backups/
 website/node_modules/
 website/build/

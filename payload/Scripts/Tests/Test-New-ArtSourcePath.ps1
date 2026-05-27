@@ -14,51 +14,15 @@ $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-New-ArtSourcePathResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "New-ArtSourcePathTest-$stamp.log"
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-}
-
-function Assert-Condition {
-  param(
-    [string]$Name,
-    [bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-
-  if ($Condition) {
-    Pass $Name $PassDetail
-  }
-  else {
-    Fail $Name $FailDetail
-  }
-}
+Initialize-TestHarness -LogPath $logPath
 
 function New-TemplateSkeleton {
   param(
@@ -93,12 +57,13 @@ try {
   Set-Content -LiteralPath (Join-Path $charactersTemplate "Exports\CharacterTemplate.txt") -Value "character template marker" -Encoding UTF8
   Set-Content -LiteralPath (Join-Path $sharedTemplate "Exports\SharedTemplate.txt") -Value "shared template marker" -Encoding UTF8
 
-  $scriptPath = Join-Path $repoRoot "Scripts\Unreal\New-ArtSourcePath.ps1"
-  . $scriptPath
+  $artModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Art.psm1"
+  Assert-Condition -Name "art domain module exists" -Condition (Test-Path -LiteralPath $artModulePath -PathType Leaf) -FailDetail "missing: $artModulePath"
+  Import-Module -Name $artModulePath -Force -DisableNameChecking
 
   Step "Canonical Template Consolidation"
 
-  $canonicalTemplate = Ensure-CanonicalTemplate -ArtSourceRoot $artSourceRoot
+  $canonicalTemplate = Ensure-UEToolSuiteArtCanonicalTemplate -ArtSourceRoot $artSourceRoot
   $canonicalTemplate = [System.IO.Path]::GetFullPath($canonicalTemplate)
 
   Assert-Condition -Name "Canonical template exists" -Condition (Test-Path -LiteralPath $canonicalTemplate) -FailDetail "ArtSource/_Template was not created"
@@ -114,11 +79,23 @@ try {
   Assert-Condition -Name "Merged character template file present" -Condition (Test-Path -LiteralPath (Join-Path $canonicalTemplate "Exports\CharacterTemplate.txt")) -FailDetail "Character template marker missing from canonical template"
   Assert-Condition -Name "Merged shared template file present" -Condition (Test-Path -LiteralPath (Join-Path $canonicalTemplate "Exports\SharedTemplate.txt")) -FailDetail "Shared template marker missing from canonical template"
 
+  Step "Create Missing ArtSource Root On Demand"
+
+  $missingArtSource = Join-Path $tempRoot "MissingArtSource"
+  $resolvedMissingArtSource = Resolve-UEToolSuiteArtSourceRootPath -RepoRoot $tempRoot -ArtSourcePathInput "MissingArtSource" -CreateIfMissing
+  Assert-Condition -Name "Missing ArtSource root created" -Condition (Test-Path -LiteralPath $resolvedMissingArtSource -PathType Container) -FailDetail "Missing ArtSource root was not created"
+
+  $missingTemplate = Ensure-UEToolSuiteArtCanonicalTemplate -ArtSourceRoot $resolvedMissingArtSource
+  Assert-Condition -Name "Missing ArtSource canonical template created" -Condition (Test-Path -LiteralPath $missingTemplate -PathType Container) -FailDetail "Canonical template was not created for missing ArtSource root"
+  foreach ($required in @("Source", "Textures", "Exports")) {
+    Assert-Condition -Name "Missing ArtSource canonical includes $required" -Condition (Test-Path -LiteralPath (Join-Path $missingTemplate $required) -PathType Container) -FailDetail "Missing $required under created canonical template"
+  }
+
   Step "Create Art Item From Canonical Template"
 
-  $toolsContainer = New-DirectoryChecked -ParentPath (Join-Path $artSourceRoot "Props") -Name "Tools"
+  $toolsContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath (Join-Path $artSourceRoot "Props") -Name "Tools"
   $newArtItemPath = Join-Path $toolsContainer "Hammer_A"
-  [void](New-ArtItemFromTemplate -TemplatePath $canonicalTemplate -DestinationPath $newArtItemPath)
+  [void](New-UEToolSuiteArtItemFromTemplate -TemplatePath $canonicalTemplate -DestinationPath $newArtItemPath)
 
   Assert-Condition -Name "Art item folder created" -Condition (Test-Path -LiteralPath $newArtItemPath) -FailDetail "Art item directory was not created"
 
@@ -131,16 +108,16 @@ try {
 
   Step "Navigable Child Folder Filtering"
 
-  $swordContainer = New-DirectoryChecked -ParentPath $toolsContainer -Name "Sword"
+  $swordContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath $toolsContainer -Name "Sword"
   New-Item -ItemType Directory -Force -Path (Join-Path $swordContainer "Source") | Out-Null
-  $materialsContainer = New-DirectoryChecked -ParentPath $toolsContainer -Name "Materials"
+  $materialsContainer = New-UEToolSuiteArtDirectoryChecked -ParentPath $toolsContainer -Name "Materials"
 
-  Assert-Condition -Name "Hammer_A detected as art item" -Condition (Test-IsArtItemDirectory -Path $newArtItemPath) -FailDetail "Hammer_A should be recognized as an art item"
-  Assert-Condition -Name "Sword detected as container" -Condition (-not (Test-IsArtItemDirectory -Path $swordContainer)) -FailDetail "Sword should remain a container because it is missing required art-item folders"
-  Assert-Condition -Name "Materials detected as container" -Condition (-not (Test-IsArtItemDirectory -Path $materialsContainer)) -FailDetail "Materials should be treated as a container"
+  Assert-Condition -Name "Hammer_A detected as art item" -Condition (Test-UEToolSuiteArtItemDirectory -Path $newArtItemPath) -FailDetail "Hammer_A should be recognized as an art item"
+  Assert-Condition -Name "Sword detected as container" -Condition (-not (Test-UEToolSuiteArtItemDirectory -Path $swordContainer)) -FailDetail "Sword should remain a container because it is missing required art-item folders"
+  Assert-Condition -Name "Materials detected as container" -Condition (-not (Test-UEToolSuiteArtItemDirectory -Path $materialsContainer)) -FailDetail "Materials should be treated as a container"
 
   $navigableNames = @(
-    Get-NavigableChildDirectories -ParentPath $toolsContainer |
+    Get-UEToolSuiteArtNavigableChildDirectories -ParentPath $toolsContainer |
     Select-Object -ExpandProperty Name
   )
 

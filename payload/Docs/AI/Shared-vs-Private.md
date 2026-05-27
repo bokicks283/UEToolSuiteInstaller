@@ -1,6 +1,6 @@
 ---
 title: Shared vs Private Context
-slug: /codex-context/shared-vs-private
+slug: /ai-context/shared-vs-private
 ---
 
 # Shared vs Private Context
@@ -11,16 +11,16 @@ Use the following split.
 
 - `AGENTS.md`
   Use for short repo instructions and pointers.
-- `Docs/Codex/`
-  Use for Codex-facing project context, examples, and workflow guidance.
+- `Docs/AI/`
+  Use for AI-facing project context, examples, and workflow guidance.
 - The rest of `Docs/`
   Use for the actual project rules, setup, testing, architecture, and process docs.
 
 ## Private, Local, Not Committed
 
-- `.codex-local/`
+- `.ai-local/`
   Use for repo-specific personal notes, prompt starters, and preferences that should stay on one machine.
-- `C:\Users\<user>\.codex\`
+- `C:\Users\<user>\.ai\`
   Use for global personal defaults that should apply across many repos.
 
 ## Quick Guide
@@ -28,9 +28,9 @@ Use the following split.
 | Location | Shared? | Good for | Avoid |
 | --- | --- | --- | --- |
 | `AGENTS.md` | Yes | Short instructions and doc pointers | Long design docs |
-| `Docs/Codex/` | Yes | Stable Codex-facing repo context | Temporary personal notes |
-| `.codex-local/` | No | Personal repo notes and private prompt snippets | Secrets or huge scratchpads |
-| `C:\Users\<user>\.codex\` | No | Global defaults, skills, and rules | Repo-specific team docs |
+| `Docs/AI/` | Yes | Stable AI-facing repo context | Temporary personal notes |
+| `.ai-local/` | No | Personal repo notes and private prompt snippets | Secrets or huge scratchpads |
+| `C:\Users\<user>\.ai\` | No | Global defaults, skills, and rules | Repo-specific team docs |
 
 ## Example Shared Note
 
@@ -51,6 +51,6 @@ Use the following split.
 
 ## Safety Notes
 
-- Do not store tokens, passwords, or secrets in `.codex-local/`.
+- Do not store tokens, passwords, or secrets in `.ai-local/`.
 - If a private note becomes team policy, move it into `Docs/`.
 - If a shared doc becomes too long, split it instead of bloating `AGENTS.md`.

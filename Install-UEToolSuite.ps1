@@ -6,11 +6,12 @@ param(
   [string]$PayloadRoot,
   [string]$TargetUProjectPath,
   [switch]$RunInit,
+  [switch]$InitNonInteractive,
   [switch]$SkipLfsPull,
   [switch]$SkipDocs,
   [switch]$SkipWebsite,
   [switch]$SkipTests,
-  [switch]$SkipCodexTools,
+  [switch]$SkipAITools,
   [switch]$SkipArtSourceTools,
   [switch]$SkipCodingStandardsTools,
   [switch]$SkipShellAliases,
@@ -53,6 +54,73 @@ function Get-DefaultPayloadRoot {
   }
 
   return Join-Path $scriptDir "payload"
+}
+
+function ConvertTo-StringArray {
+  param(
+    [AllowNull()]$Value,
+    [Parameter(Mandatory)][string]$Name
+  )
+
+  if ($null -eq $Value) { return @() }
+
+  $result = New-Object System.Collections.Generic.List[string]
+  foreach ($item in @($Value)) {
+    if ($null -eq $item) { continue }
+
+    $text = [string]$item
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $result.Add($text.Trim()) | Out-Null
+  }
+
+  if ($result.Count -eq 0) { return @() }
+  return @($result.ToArray())
+}
+
+function Resolve-PayloadManifestPath {
+  param([Parameter(Mandatory)][string]$PayloadRoot)
+
+  return (Join-Path $PayloadRoot "ue-tool-suite.manifest.json")
+}
+
+function Read-UEToolSuitePayloadManifest {
+  param([Parameter(Mandatory)][string]$PayloadRoot)
+
+  $manifestPath = Resolve-PayloadManifestPath -PayloadRoot $PayloadRoot
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    throw "Payload manifest is missing: $manifestPath"
+  }
+
+  $rawText = Get-Content -LiteralPath $manifestPath -Raw
+  try {
+    $manifest = $rawText | ConvertFrom-Json
+  }
+  catch {
+    throw "Payload manifest is not valid JSON: $manifestPath"
+  }
+
+  if (-not $manifest.managedItems) {
+    throw "Payload manifest missing required object: managedItems"
+  }
+
+  $baseItems = ConvertTo-StringArray -Value $manifest.managedItems.base -Name "managedItems.base"
+  if ($baseItems.Count -eq 0) {
+    throw "Payload manifest requires at least one managed base item: managedItems.base"
+  }
+
+  return [pscustomobject]@{
+    ManifestPath = $manifestPath
+    ManagedTextItems = ConvertTo-StringArray -Value $manifest.managedTextItems -Name "managedTextItems"
+    ManagedBaseItems = $baseItems
+    ManagedArtToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.artTools -Name "managedItems.artTools"
+    ManagedAIToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.aiTools -Name "managedItems.aiTools"
+    ManagedTestsItems = ConvertTo-StringArray -Value $manifest.managedItems.tests -Name "managedItems.tests"
+    ManagedDocsItems = ConvertTo-StringArray -Value $manifest.managedItems.docs -Name "managedItems.docs"
+    ManagedCodingStandardsItems = ConvertTo-StringArray -Value $manifest.managedItems.codingStandards -Name "managedItems.codingStandards"
+    ManagedDocsToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.docsTools -Name "managedItems.docsTools"
+    ManagedWebsiteItems = ConvertTo-StringArray -Value $manifest.managedItems.website -Name "managedItems.website"
+    LegacyCleanupPaths = ConvertTo-StringArray -Value $manifest.legacyCleanupPaths -Name "legacyCleanupPaths"
+  }
 }
 
 function Test-PathInsideRoot {
@@ -363,77 +431,86 @@ Info "Payload: $resolvedPayloadRoot"
 Info "Target repo: $resolvedTargetRoot"
 Info "Target project: $targetUProject"
 if (-not $NoBackup) { Info "Backup root for replaced paths: $backupRoot" }
+ 
+$payloadManifest = Read-UEToolSuitePayloadManifest -PayloadRoot $resolvedPayloadRoot
+Info "Payload manifest: $($payloadManifest.ManifestPath)"
 
-$managedItems = @(
-  ".githooks",
-  "Scripts/Init-Repo.ps1",
-  "Scripts/README.md",
-  "Scripts/git-hooks",
-  "Scripts/git-tools",
-  "Scripts/Unreal/ProjectContext.ps1",
-  "Scripts/Unreal/ProjectShellAliases.ps1",
-  "Scripts/Unreal/UESyncShellAliases.ps1",
-  "Scripts/Unreal/UnrealSync.ps1"
-)
+$managedItems = New-Object System.Collections.Generic.List[string]
+foreach ($item in @($payloadManifest.ManagedBaseItems)) {
+  [void]$managedItems.Add($item)
+}
 
-$managedTextItems = @(
-  ".gitattributes",
-  ".gitignore"
-)
-
-if (-not $SkipArtSourceTools) { $managedItems += "Scripts/Unreal/New-ArtSourcePath.ps1" }
-if (-not $SkipCodexTools) { $managedItems += "Scripts/Codex" }
-if (-not $SkipTests) { $managedItems += "Scripts/Tests" }
+if (-not $SkipArtSourceTools) {
+  foreach ($item in @($payloadManifest.ManagedArtToolsItems)) {
+    [void]$managedItems.Add($item)
+  }
+}
+if (-not $SkipAITools) {
+  foreach ($item in @($payloadManifest.ManagedAIToolsItems)) {
+    [void]$managedItems.Add($item)
+  }
+}
+if (-not $SkipTests) {
+  foreach ($item in @($payloadManifest.ManagedTestsItems)) {
+    [void]$managedItems.Add($item)
+  }
+}
 
 if (-not $SkipDocs) {
-  $managedItems += @(
-    "Docs/README.md",
-    "Docs/Setup.md",
-    "Docs/Testing.md",
-    "Docs/Codex",
-    "Docs/DocsSite",
-    "Docs/Pipeline"
-  )
+  foreach ($item in @($payloadManifest.ManagedDocsItems)) {
+    [void]$managedItems.Add($item)
+  }
 
   if (-not $SkipCodingStandardsTools) {
-    $managedItems += "Docs/CodingStandards"
+    foreach ($item in @($payloadManifest.ManagedCodingStandardsItems)) {
+      [void]$managedItems.Add($item)
+    }
   }
 }
 
 if (-not $SkipWebsite) {
-  $managedItems += "Scripts/Docs"
-  $managedItems += "website"
+  foreach ($item in @($payloadManifest.ManagedDocsToolsItems)) {
+    [void]$managedItems.Add($item)
+  }
+  foreach ($item in @($payloadManifest.ManagedWebsiteItems)) {
+    [void]$managedItems.Add($item)
+  }
 }
 elseif (-not $SkipDocs) {
-  $managedItems += "Scripts/Docs"
+  foreach ($item in @($payloadManifest.ManagedDocsToolsItems)) {
+    [void]$managedItems.Add($item)
+  }
 }
 
 $installed = New-Object System.Collections.Generic.List[string]
-foreach ($item in $managedTextItems) {
+foreach ($item in @($payloadManifest.ManagedTextItems)) {
   if (Update-ManagedTextFile -SourceRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot -RelativePath $item -BackupRoot $backupRoot) {
     [void]$installed.Add($item)
   }
 }
 
-foreach ($item in @($managedItems | Sort-Object -Unique)) {
+foreach ($item in @($managedItems.ToArray() | Sort-Object -Unique)) {
   if (Copy-ManagedItem -SourceRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot -RelativePath $item -BackupRoot $backupRoot -Optional) {
     [void]$installed.Add($item)
   }
 }
 
 if (-not $NoLegacyCleanup) {
-  Remove-LegacyTargetPath -TargetRoot $resolvedTargetRoot -RelativePath "Scripts/Install-UEProjectTools.ps1" -BackupRoot $backupRoot
+  foreach ($legacyPath in @($payloadManifest.LegacyCleanupPaths)) {
+    Remove-LegacyTargetPath -TargetRoot $resolvedTargetRoot -RelativePath $legacyPath -BackupRoot $backupRoot
+  }
 }
 
 Ok "Installed/updated UE tool suite paths: $($installed.Count)"
 
 if ($RunInit) {
-  $initScript = Join-Path $resolvedTargetRoot "Scripts\Init-Repo.ps1"
+  $dispatcherScript = Join-Path $resolvedTargetRoot "Scripts\ue-tools.ps1"
   $initArgs = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
-    "-File", $initScript,
+    "-File", $dispatcherScript,
     "-RepoRoot", $resolvedTargetRoot,
+    "init",
     "-UProjectPath", $targetUProject
   )
 
@@ -447,18 +524,19 @@ if ($RunInit) {
   if ($SkipUnrealSync) { $initArgs += "-SkipUnrealSync" }
   if ($NoBuild) { $initArgs += "-NoBuild" }
   if ($NoRegen) { $initArgs += "-NoRegen" }
+  if ($InitNonInteractive) { $initArgs += "-NonInteractive" }
 
   Info "Running target bootstrap: pwsh $($initArgs -join ' ')"
-  if ($PSCmdlet.ShouldProcess($resolvedTargetRoot, "Run Init-Repo.ps1 in target repo")) {
+  if ($PSCmdlet.ShouldProcess($resolvedTargetRoot, "Run ue-tools init in target repo")) {
     & pwsh @initArgs
     if ($LASTEXITCODE -ne 0) {
-      throw "Target Init-Repo.ps1 failed with exit code $LASTEXITCODE."
+      throw "Target ue-tools init failed with exit code $LASTEXITCODE."
     }
   }
 }
 else {
   Info "Next step in the target repo:"
-  Write-Host "  pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/Init-Repo.ps1 -RepoRoot `"$resolvedTargetRoot`"" -ForegroundColor Cyan
+  Write-Host "  pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/ue-tools.ps1 -RepoRoot `"$resolvedTargetRoot`" init" -ForegroundColor Cyan
 }
 
 Ok "Done."

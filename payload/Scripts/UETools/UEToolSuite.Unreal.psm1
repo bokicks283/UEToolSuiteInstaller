@@ -1,3 +1,597 @@
+function Get-UEToolSuiteUnrealChangedFileRecords {
+  [CmdletBinding()]
+  param(
+    [string]$OldRev,
+    [string]$NewRev
+  )
+
+  if ([string]::IsNullOrWhiteSpace($OldRev) -or [string]::IsNullOrWhiteSpace($NewRev)) {
+    return @()
+  }
+
+  $out = git diff --name-status $OldRev $NewRev 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    return @()
+  }
+
+  $records = @()
+  foreach ($line in @($out)) {
+    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+
+    $parts = @($line -split "`t")
+    if ($parts.Count -lt 2) { continue }
+
+    $status = [string]$parts[0]
+    if (($status.StartsWith("R") -or $status.StartsWith("C")) -and $parts.Count -ge 3) {
+      $records += [pscustomobject]@{
+        Status = $status
+        Path = [string]$parts[2]
+        OldPath = [string]$parts[1]
+      }
+      continue
+    }
+
+    $records += [pscustomobject]@{
+      Status = $status
+      Path = [string]$parts[1]
+      OldPath = $null
+    }
+  }
+
+  return @($records)
+}
+
+function Test-UEToolSuiteUnrealCppPath {
+  [CmdletBinding()]
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+  return (
+    $Path -match '^Source/.*\.(h|hpp|cpp|inl)$' -or
+    $Path -match '^Plugins/.*\.(h|hpp|cpp|inl)$'
+  )
+}
+
+function Test-UEToolSuiteUnrealProjectStructurePath {
+  [CmdletBinding()]
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+  return (
+    $Path -match '\.Build\.cs$' -or
+    $Path -match '\.Target\.cs$' -or
+    $Path -match '\.uproject$' -or
+    $Path -match '^Plugins/.*\.uplugin$'
+  )
+}
+
+function Test-UEToolSuiteUnrealAddDeleteOrRenameStatus {
+  [CmdletBinding()]
+  param([string]$Status)
+
+  if ([string]::IsNullOrWhiteSpace($Status)) { return $false }
+  return (
+    $Status.StartsWith("A") -or
+    $Status.StartsWith("D") -or
+    $Status.StartsWith("R")
+  )
+}
+
+function Get-UEToolSuiteUnrealSyncActionPlan {
+  [CmdletBinding()]
+  param([object[]]$ChangedFileRecords)
+
+  if (-not $ChangedFileRecords -or $ChangedFileRecords.Count -eq 0) {
+    return [pscustomobject]@{
+      BuildTriggers = @()
+      RegenTriggers = @()
+      ShouldBuild = $false
+      ShouldRegen = $false
+    }
+  }
+
+  $buildTriggers = @()
+  $regenTriggers = @()
+
+  foreach ($record in @($ChangedFileRecords)) {
+    $paths = @($record.Path, $record.OldPath) |
+      Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+      Sort-Object -Unique
+
+    foreach ($path in $paths) {
+      if (Test-UEToolSuiteUnrealCppPath -Path $path) {
+        $buildTriggers += $path
+        if (Test-UEToolSuiteUnrealAddDeleteOrRenameStatus -Status $record.Status) {
+          $regenTriggers += $path
+        }
+        continue
+      }
+
+      if (Test-UEToolSuiteUnrealProjectStructurePath -Path $path) {
+        $buildTriggers += $path
+        $regenTriggers += $path
+      }
+    }
+  }
+
+  $buildTriggers = @($buildTriggers | Sort-Object -Unique)
+  $regenTriggers = @($regenTriggers | Sort-Object -Unique)
+
+  return [pscustomobject]@{
+    BuildTriggers = $buildTriggers
+    RegenTriggers = $regenTriggers
+    ShouldBuild = ($buildTriggers.Count -gt 0)
+    ShouldRegen = ($regenTriggers.Count -gt 0)
+  }
+}
+
+function Write-UEToolSuiteUnrealSyncActionPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$ActionPlan,
+    [scriptblock]$WarnWriter
+  )
+
+  if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen)) {
+    return
+  }
+
+  if (-not $WarnWriter) {
+    $WarnWriter = {
+      param([string]$Message)
+      Write-Warning $Message
+    }
+  }
+
+  $actions = @()
+  if ($ActionPlan.ShouldRegen) { $actions += "regenerate project files" }
+  if ($ActionPlan.ShouldBuild) { $actions += "build the editor" }
+  & $WarnWriter "UE Sync action plan: $($actions -join ' and ')."
+
+  if ($ActionPlan.RegenTriggers.Count -gt 0) {
+    & $WarnWriter "Project-file regeneration triggers:"
+    foreach ($t in @($ActionPlan.RegenTriggers)) {
+      & $WarnWriter " - $t"
+    }
+  }
+
+  if ($ActionPlan.BuildTriggers.Count -gt 0) {
+    & $WarnWriter "Build triggers:"
+    foreach ($t in @($ActionPlan.BuildTriggers)) {
+      & $WarnWriter " - $t"
+    }
+  }
+}
+
+function Test-UEToolSuiteUnrealEnvTrue {
+  [CmdletBinding()]
+  param([string]$Value)
+
+  if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+  switch ($Value.Trim().ToLowerInvariant()) {
+    "1" { return $true }
+    "true" { return $true }
+    "yes" { return $true }
+    default { return $false }
+  }
+}
+
+function Test-UEToolSuiteUnrealCanPrompt {
+  [CmdletBinding()]
+  param()
+
+  try {
+    if (-not [Environment]::UserInteractive) { return $false }
+    if (-not $Host.UI -or -not $Host.UI.RawUI) { return $false }
+    if ([Console]::IsInputRedirected) { return $false }
+    if ([Console]::IsOutputRedirected) { return $false }
+    return $true
+  }
+  catch { return $false }
+}
+
+function Add-UEToolSuiteUnrealDiagnosticAttempt {
+  [CmdletBinding()]
+  param(
+    [System.Collections.Generic.List[string]]$Attempts,
+    [string]$Message
+  )
+
+  if ($null -ne $Attempts) {
+    [void]$Attempts.Add($Message)
+  }
+}
+
+function Test-UEToolSuiteUnrealEngineRoot {
+  [CmdletBinding()]
+  param([string]$Root)
+
+  if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
+  if (-not (Test-Path -LiteralPath $Root)) { return $false }
+  return (Test-Path -LiteralPath (Join-Path $Root "Engine\Build\BatchFiles\Build.bat"))
+}
+
+function Resolve-UEToolSuiteUnrealPathRelativeTo {
+  [CmdletBinding()]
+  param(
+    [string]$BaseDir,
+    [string]$Path
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+  if ([IO.Path]::IsPathRooted($Path)) { return $Path }
+  return (Join-Path $BaseDir $Path)
+}
+
+function Get-UEToolSuiteUnrealRegistryPropertyString {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$KeyPath,
+    [Parameter(Mandatory)][string]$PropertyName
+  )
+
+  if (-not (Test-Path -LiteralPath $KeyPath)) { return $null }
+  $props = Get-ItemProperty -LiteralPath $KeyPath -ErrorAction SilentlyContinue
+  if (-not $props) { return $null }
+
+  $property = $props.PSObject.Properties[$PropertyName]
+  if ($property) { return [string]$property.Value }
+  return $null
+}
+
+function Test-UEToolSuiteJsonObjectProperty {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Object,
+    [Parameter(Mandatory)][string]$Name
+  )
+
+  return ($null -ne $Object.PSObject.Properties[$Name])
+}
+
+function Get-UEToolSuiteJsonObjectPropertyValue {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Object,
+    [Parameter(Mandatory)][string]$Name
+  )
+
+  $property = $Object.PSObject.Properties[$Name]
+  if ($property) { return $property.Value }
+  return $null
+}
+
+function Set-UEToolSuiteJsonObjectPropertyValue {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Object,
+    [Parameter(Mandatory)][string]$Name,
+    [AllowNull()]$Value
+  )
+
+  if (Test-UEToolSuiteJsonObjectProperty -Object $Object -Name $Name) {
+    $Object.$Name = $Value
+    return
+  }
+
+  $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+}
+
+function Test-UEToolSuiteJsonObject {
+  [CmdletBinding()]
+  param([AllowNull()]$Value)
+
+  return ($null -ne $Value -and $Value -is [pscustomobject])
+}
+
+function Merge-UEToolSuiteMissingJsonObjectProperties {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)]$Source
+  )
+
+  foreach ($sourceProperty in @($Source.PSObject.Properties)) {
+    $targetValue = Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name
+    if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $sourceProperty.Name)) {
+      Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name -Value $sourceProperty.Value
+      continue
+    }
+
+    if ((Test-UEToolSuiteJsonObject -Value $targetValue) -and (Test-UEToolSuiteJsonObject -Value $sourceProperty.Value)) {
+      Merge-UEToolSuiteMissingJsonObjectProperties -Target $targetValue -Source $sourceProperty.Value
+    }
+  }
+}
+
+function Merge-UEToolSuiteStringArrayProperty {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)]$Source,
+    [Parameter(Mandatory)][string]$PropertyName
+  )
+
+  if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Source -Name $PropertyName)) { return }
+
+  $existing = @()
+  if (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $PropertyName) {
+    $existing = @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $PropertyName)
+  }
+
+  $merged = @($existing + @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Source -Name $PropertyName)) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+    Select-Object -Unique
+
+  Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $PropertyName -Value @($merged)
+}
+
+function Merge-UEToolSuiteNamedObjectArrayProperty {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)]$Source,
+    [Parameter(Mandatory)][string]$ArrayPropertyName,
+    [Parameter(Mandatory)][string]$KeyPropertyName
+  )
+
+  if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Source -Name $ArrayPropertyName)) { return }
+
+  $targetItems = @()
+  if (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $ArrayPropertyName) {
+    $targetItems = @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName)
+  }
+
+  $targetKeys = @{}
+  foreach ($item in $targetItems) {
+    $key = [string](Get-UEToolSuiteJsonObjectPropertyValue -Object $item -Name $KeyPropertyName)
+    if (-not [string]::IsNullOrWhiteSpace($key)) {
+      $targetKeys[$key] = $true
+    }
+  }
+
+  $mergedItems = @($targetItems)
+  foreach ($sourceItem in @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Source -Name $ArrayPropertyName)) {
+    $sourceKey = [string](Get-UEToolSuiteJsonObjectPropertyValue -Object $sourceItem -Name $KeyPropertyName)
+    if ([string]::IsNullOrWhiteSpace($sourceKey) -or $targetKeys.ContainsKey($sourceKey)) {
+      continue
+    }
+
+    $mergedItems += $sourceItem
+    $targetKeys[$sourceKey] = $true
+  }
+
+  Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName -Value @($mergedItems)
+}
+
+function Merge-UEToolSuiteVSCodeWorkspaceJson {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$GeneratedWorkspace,
+    [Parameter(Mandatory)]$PreviousWorkspace
+  )
+
+  Merge-UEToolSuiteMissingJsonObjectProperties -Target $GeneratedWorkspace -Source $PreviousWorkspace
+  Merge-UEToolSuiteNamedObjectArrayProperty -Target $GeneratedWorkspace -Source $PreviousWorkspace -ArrayPropertyName "folders" -KeyPropertyName "path"
+
+  $generatedExtensions = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "extensions"
+  $previousExtensions = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "extensions"
+  if ((Test-UEToolSuiteJsonObject -Value $generatedExtensions) -and (Test-UEToolSuiteJsonObject -Value $previousExtensions)) {
+    Merge-UEToolSuiteStringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "recommendations"
+    Merge-UEToolSuiteStringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "unwantedRecommendations"
+  }
+
+  $generatedTasks = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "tasks"
+  $previousTasks = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "tasks"
+  if ((Test-UEToolSuiteJsonObject -Value $generatedTasks) -and (Test-UEToolSuiteJsonObject -Value $previousTasks)) {
+    Merge-UEToolSuiteNamedObjectArrayProperty -Target $generatedTasks -Source $previousTasks -ArrayPropertyName "tasks" -KeyPropertyName "label"
+  }
+
+  $generatedLaunch = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "launch"
+  $previousLaunch = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "launch"
+  if ((Test-UEToolSuiteJsonObject -Value $generatedLaunch) -and (Test-UEToolSuiteJsonObject -Value $previousLaunch)) {
+    Merge-UEToolSuiteNamedObjectArrayProperty -Target $generatedLaunch -Source $previousLaunch -ArrayPropertyName "configurations" -KeyPropertyName "name"
+  }
+
+  return $GeneratedWorkspace
+}
+
+function Test-UEToolSuiteUnrealGitTrackedPath {
+  [CmdletBinding()]
+  param([string]$RelativePath)
+
+  if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+    return $false
+  }
+
+  & git ls-files --error-unmatch -- $RelativePath 2>$null | Out-Null
+  return ($LASTEXITCODE -eq 0)
+}
+
+function Get-UEToolSuiteUnrealWorkspaceProtectionPaths {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$ProjectContext,
+    [string]$WorkspacePathOverride
+  )
+
+  $paths = New-Object System.Collections.Generic.List[string]
+  if (-not [string]::IsNullOrWhiteSpace($WorkspacePathOverride)) {
+    [void]$paths.Add((Resolve-UEToolSuiteUnrealPathRelativeTo -BaseDir $ProjectContext.RepoRoot -Path $WorkspacePathOverride))
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ProjectContext.WorkspacePath)) {
+    [void]$paths.Add($ProjectContext.WorkspacePath)
+  }
+
+  [void]$paths.Add((Join-Path $ProjectContext.RepoRoot "$($ProjectContext.ProjectName).code-workspace"))
+
+  return @(
+    $paths.ToArray() |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      ForEach-Object { [System.IO.Path]::GetFullPath($_) } |
+      Sort-Object -Unique
+  )
+}
+
+function New-UEToolSuiteUnrealProjectFileArtifactSnapshot {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$ProjectContext,
+    [string]$WorkspacePathOverride
+  )
+
+  $workspaceSnapshots = @()
+  foreach ($workspacePath in @(Get-UEToolSuiteUnrealWorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)) {
+    if (-not (Test-Path -LiteralPath $workspacePath -PathType Leaf)) {
+      continue
+    }
+
+    $workspaceSnapshots += [pscustomobject]@{
+      Path = $workspacePath
+      Content = Get-Content -LiteralPath $workspacePath -Raw
+    }
+  }
+
+  $ignorePath = Join-Path $ProjectContext.RepoRoot ".ignore"
+  $ignoreExists = Test-Path -LiteralPath $ignorePath -PathType Leaf
+  $ignoreTracked = Test-UEToolSuiteUnrealGitTrackedPath -RelativePath ".ignore"
+
+  return [pscustomobject]@{
+    WorkspaceSnapshots = @($workspaceSnapshots)
+    IgnorePath = $ignorePath
+    IgnoreExists = $ignoreExists
+    IgnoreTracked = $ignoreTracked
+    IgnoreContent = if ($ignoreExists) { Get-Content -LiteralPath $ignorePath -Raw } else { $null }
+  }
+}
+
+function ConvertTo-UEToolSuiteUnrealBuildParameters {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $switchMap = @{
+    "force" = "Force"
+    "cleangenerated" = "CleanGenerated"
+    "cleansaved" = "CleanSaved"
+    "cleancache" = "CleanCache"
+    "noregen" = "NoRegen"
+    "nobuild" = "NoBuild"
+    "noninteractive" = "NonInteractive"
+    "dryrun" = "DryRun"
+  }
+  $valueMap = @{
+    "oldrev" = "OldRev"
+    "newrev" = "NewRev"
+    "flag" = "Flag"
+    "reporoot" = "RepoRoot"
+    "workspacepath" = "WorkspacePath"
+    "uprojectpath" = "UProjectPath"
+    "config" = "Config"
+    "platform" = "Platform"
+  }
+
+  $parameters = @{
+    RepoRoot = $RepoRoot
+  }
+
+  $argsList = @()
+  foreach ($argument in @($CommandArguments)) {
+    if ($null -eq $argument) { continue }
+    $text = [string]$argument
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $argsList += $text
+  }
+
+  $i = 0
+  while ($i -lt $argsList.Count) {
+    $token = [string]$argsList[$i]
+    if (-not ($token.StartsWith("-") -or $token.StartsWith("/"))) {
+      throw "Unknown build argument '$token'. Run 'ue-tools help build'."
+    }
+
+    $normalized = $token.TrimStart('-', '/').ToLowerInvariant()
+    if ($switchMap.ContainsKey($normalized)) {
+      $parameters[$switchMap[$normalized]] = $true
+      $i += 1
+      continue
+    }
+
+    if ($valueMap.ContainsKey($normalized)) {
+      if (($i + 1) -ge $argsList.Count) {
+        throw "Missing value for build option '$token'."
+      }
+      $parameters[$valueMap[$normalized]] = [string]$argsList[$i + 1]
+      $i += 2
+      continue
+    }
+
+    throw "Unknown build option '$token'. Run 'ue-tools help build'."
+  }
+
+  if ($parameters.ContainsKey("Flag")) {
+    $flagValue = 0
+    if (-not [int]::TryParse([string]$parameters.Flag, [ref]$flagValue)) {
+      throw "Invalid -Flag value '$($parameters.Flag)'. Expected integer."
+    }
+    $parameters.Flag = $flagValue
+  }
+
+  return $parameters
+}
+
+function Invoke-UEToolSuiteUnrealBuild {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [AllowNull()][string[]]$CommandArguments = @()
+  )
+
+  $resolvedRepoRoot = $RepoRoot
+  $parameters = ConvertTo-UEToolSuiteUnrealBuildParameters -RepoRoot $resolvedRepoRoot -CommandArguments $CommandArguments
+
+  if (-not (Get-Command -Name "Invoke-UEToolSuiteUnrealRuntime" -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "Build runtime entrypoint function is unavailable in UEToolSuite.Unreal.psm1."
+  }
+
+  Invoke-UEToolSuiteUnrealRuntime @parameters
+}
+
+Export-ModuleMember -Function `
+  Get-UEToolSuiteUnrealChangedFileRecords, `
+  Test-UEToolSuiteUnrealCppPath, `
+  Test-UEToolSuiteUnrealProjectStructurePath, `
+  Get-UEToolSuiteUnrealSyncActionPlan, `
+  Write-UEToolSuiteUnrealSyncActionPlan, `
+  Test-UEToolSuiteUnrealEnvTrue, `
+  Test-UEToolSuiteUnrealCanPrompt, `
+  Add-UEToolSuiteUnrealDiagnosticAttempt, `
+  Test-UEToolSuiteUnrealEngineRoot, `
+  Resolve-UEToolSuiteUnrealPathRelativeTo, `
+  Get-UEToolSuiteUnrealRegistryPropertyString, `
+  Test-UEToolSuiteJsonObjectProperty, `
+  Get-UEToolSuiteJsonObjectPropertyValue, `
+  Set-UEToolSuiteJsonObjectPropertyValue, `
+  Test-UEToolSuiteJsonObject, `
+  Merge-UEToolSuiteMissingJsonObjectProperties, `
+  Merge-UEToolSuiteStringArrayProperty, `
+  Merge-UEToolSuiteNamedObjectArrayProperty, `
+  Merge-UEToolSuiteVSCodeWorkspaceJson, `
+  Test-UEToolSuiteUnrealGitTrackedPath, `
+  Get-UEToolSuiteUnrealWorkspaceProtectionPaths, `
+  New-UEToolSuiteUnrealProjectFileArtifactSnapshot, `
+  ConvertTo-UEToolSuiteUnrealBuildParameters, `
+  Invoke-UEToolSuiteUnrealBuild, `
+  Invoke-UEToolSuiteUnrealRuntime
+
+# -----------------------------------------------------------------------------
+# Migrated runtime implementation (UnrealSync)
+# Source previously lived in: payload/Scripts/UETools/UEToolSuite.Unreal.psm1
+# -----------------------------------------------------------------------------
+function Invoke-UEToolSuiteUnrealRuntime {
 [CmdletBinding()]
 param(
   # Hook parameters (optional for manual use)
@@ -31,18 +625,24 @@ param(
   [string]$Platform = "Win64"
 )
 
+
 $ErrorActionPreference = "Stop"
 
-$projectContextHelper = Join-Path $PSScriptRoot "ProjectContext.ps1"
+$projectContextHelper = Join-Path (Split-Path -Parent $PSScriptRoot) "Unreal\ProjectContext.ps1"
 if (-not (Test-Path -LiteralPath $projectContextHelper)) {
   throw "Project context helper not found: $projectContextHelper"
 }
 . $projectContextHelper
-
-function Info($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Cyan }
-function Warn($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Yellow }
-function Err ($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Red }
-function Success($msg) { Write-Host "[UE Sync] $msg" -ForegroundColor Green }
+$script:UnrealScriptsRoot = Split-Path -Parent $PSScriptRoot
+$coreModuleEntryPath = Join-Path $script:UnrealScriptsRoot "UETools\UETools.psd1"
+if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
+  $coreModuleEntryPath = Join-Path $script:UnrealScriptsRoot "UETools\UEToolSuite.Core.psm1"
+}
+if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
+  throw "Core module entry not found: $coreModuleEntryPath"
+}
+Import-Module -Name $coreModuleEntryPath -Force -DisableNameChecking
+Set-UEToolSuiteRuntimeContext -ScriptsRoot $script:UnrealScriptsRoot -StateKey "unreal-sync" -LogPrefix "[UE Sync]" -WriteFileEnsureParentDirectory
 
 function Test-IsInteractiveConsole {
   try {
@@ -64,6 +664,12 @@ function Test-IsInteractiveConsole {
 }
 
 function Test-CanPrompt {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealCanPrompt" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealCanPrompt)
+  }
+
   try {
     if (-not [Environment]::UserInteractive) { return $false }
     if (-not $Host.UI -or -not $Host.UI.RawUI) { return $false }
@@ -76,6 +682,13 @@ function Test-CanPrompt {
 
 function Test-EnvTrue {
   param([string]$Value)
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealEnvTrue" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealEnvTrue -Value $Value)
+  }
+
   if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
   switch ($Value.Trim().ToLowerInvariant()) {
     "1" { return $true }
@@ -199,18 +812,25 @@ function Get-ProjectName([string]$uprojectPath) {
 }
 
 function Add-DiagnosticAttempt([System.Collections.Generic.List[string]]$Attempts, [string]$Message) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Add-UEToolSuiteUnrealDiagnosticAttempt" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Add-UEToolSuiteUnrealDiagnosticAttempt -Attempts $Attempts -Message $Message
+    return
+  }
+
   if ($null -ne $Attempts) {
     [void]$Attempts.Add($Message)
   }
 }
 
-function Test-EngineRoot([string]$root) {
-  if (-not $root) { return $false }
-  if (-not (Test-Path $root)) { return $false }
-  Test-Path (Join-Path $root "Engine\Build\BatchFiles\Build.bat")
-}
-
 function Resolve-PathRelativeTo([string]$baseDir, [string]$path) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Resolve-UEToolSuiteUnrealPathRelativeTo" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Resolve-UEToolSuiteUnrealPathRelativeTo -BaseDir $baseDir -Path $path)
+  }
+
   if (-not $path) { return $null }
   if ([IO.Path]::IsPathRooted($path)) { return $path }
   Join-Path $baseDir $path
@@ -335,15 +955,6 @@ function Get-UProjectEngineAssociation(
 
   Add-DiagnosticAttempt $attempts ".uproject EngineAssociation='$association'"
   return $association.Trim()
-}
-
-function Get-RegistryPropertyString([string]$keyPath, [string]$propertyName) {
-  if (-not (Test-Path $keyPath)) { return $null }
-  $props = Get-ItemProperty -Path $keyPath -ErrorAction SilentlyContinue
-  if (-not $props) { return $null }
-  $property = $props.PSObject.Properties[$propertyName]
-  if ($property) { return [string]$property.Value }
-  return $null
 }
 
 function Get-EngineRootFromEngineAssociation(
@@ -579,22 +1190,13 @@ function Resolve-RegenerateFallbackTool([string]$engineRoot) {
   }
 }
 
-function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
-  )
-
-  $parent = Split-Path -Path $Path -Parent
-  if ($parent -and -not (Test-Path -LiteralPath $parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealChangedFileRecords" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return @(Get-UEToolSuiteUnrealChangedFileRecords -OldRev $oldrev -NewRev $newrev)
   }
 
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
-}
-
-function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {
   if ([string]::IsNullOrWhiteSpace($oldrev) -or [string]::IsNullOrWhiteSpace($newrev)) { return @() }
 
   $out = git diff --name-status $oldrev $newrev 2>$null
@@ -628,6 +1230,12 @@ function Get-ChangedFileRecords([string]$oldrev, [string]$newrev) {
 }
 
 function Test-IsUnrealCppPath([string]$Path) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealCppPath" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealCppPath -Path $Path)
+  }
+
   if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
   return (
     $Path -match '^Source/.*\.(h|hpp|cpp|inl)$' -or
@@ -636,6 +1244,12 @@ function Test-IsUnrealCppPath([string]$Path) {
 }
 
 function Test-IsUnrealProjectStructurePath([string]$Path) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealProjectStructurePath" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealProjectStructurePath -Path $Path)
+  }
+
   if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
   return (
     $Path -match '\.Build\.cs$' -or
@@ -655,6 +1269,12 @@ function Test-IsAddDeleteOrRenameStatus([string]$Status) {
 }
 
 function Get-UnrealSyncActionPlan([object[]]$ChangedFileRecords) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealSyncActionPlan" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteUnrealSyncActionPlan -ChangedFileRecords $ChangedFileRecords)
+  }
+
   if (-not $ChangedFileRecords -or $ChangedFileRecords.Count -eq 0) {
     return [pscustomobject]@{
       BuildTriggers = @()
@@ -717,6 +1337,16 @@ function Get-RebuildTriggers([string[]]$ChangedFiles) {
 }
 
 function Show-UnrealSyncActionPlan($ActionPlan) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Write-UEToolSuiteUnrealSyncActionPlan" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Write-UEToolSuiteUnrealSyncActionPlan -ActionPlan $ActionPlan -WarnWriter {
+      param([string]$Message)
+      Warn $Message
+    }
+    return
+  }
+
   if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen)) {
     return
   }
@@ -858,7 +1488,36 @@ function Build-Editor([string]$engineRoot, [string]$uprojectPath, [string]$proje
   & $buildBat $target $platform $config -Project="`"$uprojectPath`"" -WaitMutex | Out-Host
 }
 
+function Test-BlueprintOnlyProject {
+  param([Parameter(Mandatory)]$ProjectContext)
+
+  $modules = @($ProjectContext.Modules)
+  if ($modules.Count -gt 0) {
+    return $false
+  }
+
+  $sourceRoot = Join-Path $ProjectContext.RepoRoot "Source"
+  if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
+    return $true
+  }
+
+  $nativeBuildMarkers = @(
+    Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Include "*.Target.cs", "*.Build.cs" -ErrorAction SilentlyContinue
+  )
+  if ($nativeBuildMarkers.Count -gt 0) {
+    return $false
+  }
+
+  return $true
+}
+
 function Test-GitTrackedPath([string]$RelativePath) {
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteUnrealGitTrackedPath" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteUnrealGitTrackedPath -RelativePath $RelativePath)
+  }
+
   if ([string]::IsNullOrWhiteSpace($RelativePath)) { return $false }
   & git ls-files --error-unmatch -- $RelativePath 2>$null | Out-Null
   return ($LASTEXITCODE -eq 0)
@@ -869,6 +1528,12 @@ function Get-WorkspaceProtectionPaths {
     [Parameter(Mandatory)]$ProjectContext,
     [string]$WorkspacePathOverride
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealWorkspaceProtectionPaths" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return @(Get-UEToolSuiteUnrealWorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)
+  }
 
   $paths = New-Object System.Collections.Generic.List[string]
 
@@ -895,6 +1560,12 @@ function New-ProjectFileArtifactSnapshot {
     [Parameter(Mandatory)]$ProjectContext,
     [string]$WorkspacePathOverride
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "New-UEToolSuiteUnrealProjectFileArtifactSnapshot" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (New-UEToolSuiteUnrealProjectFileArtifactSnapshot -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)
+  }
 
   $workspaceSnapshots = @()
   foreach ($workspacePath in @(Get-WorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)) {
@@ -925,6 +1596,12 @@ function Test-JsonObjectProperty {
     [Parameter(Mandatory)][string]$Name
   )
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteJsonObjectProperty" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteJsonObjectProperty -Object $Object -Name $Name)
+  }
+
   return ($null -ne $Object.PSObject.Properties[$Name])
 }
 
@@ -933,6 +1610,12 @@ function Get-JsonObjectPropertyValue {
     [Parameter(Mandatory)]$Object,
     [Parameter(Mandatory)][string]$Name
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Get-UEToolSuiteJsonObjectPropertyValue" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Get-UEToolSuiteJsonObjectPropertyValue -Object $Object -Name $Name)
+  }
 
   $property = $Object.PSObject.Properties[$Name]
   if ($property) { return $property.Value }
@@ -946,6 +1629,13 @@ function Set-JsonObjectPropertyValue {
     [AllowNull()]$Value
   )
 
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Set-UEToolSuiteJsonObjectPropertyValue" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Set-UEToolSuiteJsonObjectPropertyValue -Object $Object -Name $Name -Value $Value
+    return
+  }
+
   if (Test-JsonObjectProperty -Object $Object -Name $Name) {
     $Object.$Name = $Value
     return
@@ -956,6 +1646,11 @@ function Set-JsonObjectPropertyValue {
 
 function Test-IsJsonObject {
   param([AllowNull()]$Value)
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Test-UEToolSuiteJsonObject" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Test-UEToolSuiteJsonObject -Value $Value)
+  }
   return ($null -ne $Value -and $Value -is [pscustomobject])
 }
 
@@ -964,6 +1659,13 @@ function Merge-MissingJsonObjectProperties {
     [Parameter(Mandatory)]$Target,
     [Parameter(Mandatory)]$Source
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteMissingJsonObjectProperties" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Merge-UEToolSuiteMissingJsonObjectProperties -Target $Target -Source $Source
+    return
+  }
 
   foreach ($sourceProperty in @($Source.PSObject.Properties)) {
     $targetValue = Get-JsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name
@@ -984,6 +1686,13 @@ function Merge-StringArrayProperty {
     [Parameter(Mandatory)]$Source,
     [Parameter(Mandatory)][string]$PropertyName
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteStringArrayProperty" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Merge-UEToolSuiteStringArrayProperty -Target $Target -Source $Source -PropertyName $PropertyName
+    return
+  }
 
   if (-not (Test-JsonObjectProperty -Object $Source -Name $PropertyName)) { return }
 
@@ -1006,6 +1715,13 @@ function Merge-NamedObjectArrayProperty {
     [Parameter(Mandatory)][string]$ArrayPropertyName,
     [Parameter(Mandatory)][string]$KeyPropertyName
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteNamedObjectArrayProperty" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    Merge-UEToolSuiteNamedObjectArrayProperty -Target $Target -Source $Source -ArrayPropertyName $ArrayPropertyName -KeyPropertyName $KeyPropertyName
+    return
+  }
 
   if (-not (Test-JsonObjectProperty -Object $Source -Name $ArrayPropertyName)) { return }
 
@@ -1041,6 +1757,12 @@ function Merge-VSCodeWorkspaceJson {
     [Parameter(Mandatory)]$GeneratedWorkspace,
     [Parameter(Mandatory)]$PreviousWorkspace
   )
+
+  [void](Import-UEToolSuiteCoreModule)
+  $moduleFn = Get-Command -Name "Merge-UEToolSuiteVSCodeWorkspaceJson" -ErrorAction SilentlyContinue
+  if ($moduleFn) {
+    return (Merge-UEToolSuiteVSCodeWorkspaceJson -GeneratedWorkspace $GeneratedWorkspace -PreviousWorkspace $PreviousWorkspace)
+  }
 
   Merge-MissingJsonObjectProperties -Target $GeneratedWorkspace -Source $PreviousWorkspace
 
@@ -1115,22 +1837,24 @@ function Restore-ProjectFileArtifactSnapshot {
 $script:ResolvedRepoRoot = Resolve-UnrealSyncRoot -ExplicitRepoRoot $RepoRoot
 Set-Location $script:ResolvedRepoRoot
 
-$manual = $Force -or $CleanGenerated -or $CleanSaved -or $CleanCache -or $NoRegen -or $NoBuild
+$manual = $Force -or $CleanGenerated -or $CleanSaved -or $CleanCache -or $NoRegen -or $NoBuild `
+  -or ([string]::IsNullOrWhiteSpace($OldRev) -and [string]::IsNullOrWhiteSpace($NewRev))
 
 # If invoked from hook, only run on branch checkouts.
 if (-not $manual -and $Flag -ne 1) {
-  exit 0
+return
 }
 
 # Rebase can execute hooks at many internal steps. Keep hook execution silent there.
 $reflogAction = [string]$env:GIT_REFLOG_ACTION
 if (-not $manual -and $reflogAction -match 'rebase') {
-  exit 0
+return
 }
 
 # Skip silently during active merge/rebase contexts when running from hooks.
 if (-not $manual) {
-  $gitDir = (git rev-parse --git-dir 2>$null | Select-Object -First 1).Trim()
+  $gitDirLine = (git rev-parse --git-dir 2>$null | Select-Object -First 1)
+  $gitDir = if ($null -eq $gitDirLine) { $null } else { ([string]$gitDirLine).Trim() }
   if ([string]::IsNullOrWhiteSpace($gitDir)) { $gitDir = ".git" }
   if (-not [System.IO.Path]::IsPathRooted($gitDir)) {
     $gitDir = Join-Path (Get-Location).Path $gitDir
@@ -1143,7 +1867,7 @@ if (-not $manual) {
       (Test-Path (Join-Path $gitDir "CHERRY_PICK_HEAD")) -or
       (Test-Path (Join-Path $gitDir "REVERT_HEAD"))
     ) {
-    exit 0
+return
   }
 }
 
@@ -1158,7 +1882,7 @@ if (-not $manual) {
   $actionPlan = Get-UnrealSyncActionPlan $changedRecords
   if (-not $actionPlan.ShouldBuild -and -not $actionPlan.ShouldRegen) {
     # No UE C++/project trigger => no-op, keep hook output clean.
-    exit 0
+return
   }
 }
 
@@ -1168,6 +1892,12 @@ $projectName = $projectContext.ProjectName
 
 $shouldRunRegen = -not $NoRegen -and ($manual -or $actionPlan.ShouldRegen)
 $shouldRunBuild = -not $NoBuild -and ($manual -or $actionPlan.ShouldBuild)
+
+if ($shouldRunBuild -and (Test-BlueprintOnlyProject -ProjectContext $projectContext)) {
+  Warn "Blueprint-only project detected (no C++ modules/targets). Skipping build step."
+  Warn "Add a C++ module first if you want ue-tools build to compile an editor target."
+  $shouldRunBuild = $false
+}
 
 Info "UProject Path: $uprojectPath"
 if (-not $manual) {
@@ -1183,7 +1913,7 @@ if (-not $manual) {
   if (-not $isNonInteractive) {
     if ($rootInteractive -and -not $hookHasTty) {
       Warn "Interactive root command detected but this hook has no terminal access. Skipping UE Sync to avoid an unconfirmed rebuild."
-      exit 0
+return
     }
     elseif ($rootInteractive) {
       # Hook layer captured the original git command as interactive.
@@ -1216,7 +1946,7 @@ if (-not $manual) {
     catch {
       if ($promptRequested) {
         Warn "Interactive root command detected but prompt could not be shown. Skipping UE Sync to avoid an unconfirmed rebuild."
-        exit 0
+return
       }
       $isNonInteractive = $true
       $response = $null
@@ -1224,7 +1954,7 @@ if (-not $manual) {
 
     if ($promptRequested -and [string]::IsNullOrWhiteSpace([string]$response)) {
       Warn "Interactive root command detected but no input was received. Skipping UE Sync to avoid an unconfirmed rebuild."
-      exit 0
+return
     }
   }
 
@@ -1232,7 +1962,7 @@ if (-not $manual) {
     $responseText = ([string]$response).Trim()
     if ($responseText -ne 'y' -and $responseText -ne 'Y') {
       Warn "User chose not to proceed. Exiting."
-      exit 0
+return
     }
   }
   else {
@@ -1248,7 +1978,7 @@ else {
 
 if ($DryRun) {
   Info "DryRun enabled. Skipping cleanup/regeneration/build."
-  exit 0
+return
 }
 
 $shouldCleanGeneratedFolders = $shouldRunRegen -or $CleanGenerated -or $CleanSaved -or $CleanCache
@@ -1296,4 +2026,8 @@ else {
 }
 
 Success "Done."
-exit 0
+return
+}
+
+Export-ModuleMember -Function Invoke-UEToolSuiteUnrealRuntime
+

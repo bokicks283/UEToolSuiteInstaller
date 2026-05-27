@@ -11,116 +11,27 @@ $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$syncScript = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.ps1"
+$syncScript = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Unreal.psm1"
 if (-not (Test-Path -LiteralPath $syncScript)) {
-  throw "UnrealSync script not found: $syncScript"
+  throw "Unreal sync module not found: $syncScript"
 }
 
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-UnrealSync-RegenerationResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "UnrealSync-Regen-$stamp.log"
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  throw "Test harness not found: $testHarnessPath"
+}
+. $testHarnessPath
 
 $script:PassCount = 0
 $script:FailCount = 0
 $script:TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ue sync regen tests " + [Guid]::NewGuid().ToString("N"))
 $script:TestEngineAssociation = "5.4"
 New-Item -ItemType Directory -Force -Path $script:TempRoot | Out-Null
-
-function Write-Log {
-  param(
-    [Parameter(Mandatory)][AllowEmptyString()][string]$Message,
-    [ConsoleColor]$Color = [ConsoleColor]::Gray
-  )
-  Write-Host $Message -ForegroundColor $Color
-  Add-Content -LiteralPath $logPath -Value $Message -Encoding UTF8
-}
-
-function Step([string]$Title) {
-  Write-Log ""
-  Write-Log "============================================================" DarkGray
-  Write-Log $Title DarkGray
-  Write-Log "============================================================" DarkGray
-}
-
-function Pass([string]$Name, [string]$Detail) {
-  $script:PassCount++
-  Write-Log "[PASS] $Name - $Detail" Green
-}
-
-function Fail([string]$Name, [string]$Detail) {
-  $script:FailCount++
-  Write-Log "[FAIL] $Name - $Detail" Red
-  if ($FailFast) { throw "FAILFAST" }
-}
-
-function Assert-Code {
-  param([string]$Name, [int]$Code, [int]$Expected)
-  if ($Code -eq $Expected) {
-    Pass $Name "exit=$Code"
-  }
-  else {
-    Fail $Name "expected exit=$Expected, got exit=$Code"
-  }
-}
-
-function Assert-Condition {
-  param(
-    [string]$Name,
-    [bool]$Condition,
-    [string]$PassDetail = "condition is true",
-    [string]$FailDetail = "condition is false"
-  )
-  if ($Condition) {
-    Pass $Name $PassDetail
-  }
-  else {
-    Fail $Name $FailDetail
-  }
-}
-
-function Assert-OutputContains {
-  param(
-    [string]$Name,
-    [string]$Output,
-    [string]$Needle
-  )
-  if ($Output -like "*$Needle*") {
-    Pass $Name "matched: $Needle"
-  }
-  else {
-    Fail $Name "missing expected text: $Needle"
-  }
-}
-
-function Assert-OutputNotContains {
-  param(
-    [string]$Name,
-    [string]$Output,
-    [string]$Needle
-  )
-  if ($Output -notlike "*$Needle*") {
-    Pass $Name "not present: $Needle"
-  }
-  else {
-    Fail $Name "unexpected text present: $Needle"
-  }
-}
-
-function Write-TextFileLf {
-  param(
-    [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][string]$Content
-  )
-  $normalized = $Content -replace "`r`n", "`n" -replace "`r", "`n"
-  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-  [System.IO.File]::WriteAllText($Path, $normalized, $utf8NoBom)
-}
-
-function Remove-AnsiEscapeSequences([string]$Text) {
-  if ($null -eq $Text) { return "" }
-  return ([regex]::Replace($Text, "`e\[[0-9;?]*[ -/]*[@-~]", ""))
-}
+Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function New-CaseDir([string]$CaseName) {
   $dir = Join-Path $script:TempRoot $CaseName
@@ -323,30 +234,7 @@ function Invoke-UnrealSyncAt {
     [Nullable[long]]$SeedLastExitCode = $null
   )
 
-  $launchScript = $syncScript
-  $seedWrapperPath = $null
-  if ($null -ne $SeedLastExitCode) {
-    $seedWrapperPath = Join-Path $WorkingDir "__ue-sync-seed-last-exitcode.ps1"
-    $wrapperTemplate = @'
-$global:LASTEXITCODE = __SEED_VALUE__
-& '__SYNC_SCRIPT__' @args
-exit $LASTEXITCODE
-'@
-    $wrapperText = $wrapperTemplate.
-      Replace("__SEED_VALUE__", [string]$SeedLastExitCode).
-      Replace("__SYNC_SCRIPT__", $syncScript.Replace("'", "''"))
-    Write-TextFileLf -Path $seedWrapperPath -Content $wrapperText
-    $launchScript = $seedWrapperPath
-  }
-
-  $pwshArgs = @(
-    "-NoLogo",
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $launchScript
-  ) + $Args
-
-  Write-Log ">> [$WorkingDir] pwsh $($pwshArgs -join ' ')" DarkGray
+  Write-Log ">> [$WorkingDir] invoke UnrealSync module entrypoint" DarkGray
   if ($null -ne $SeedLastExitCode) {
     Write-Log "   seeded LASTEXITCODE=$SeedLastExitCode before UnrealSync invocation" DarkGray
   }
@@ -372,13 +260,81 @@ exit $LASTEXITCODE
     }
   }
 
+  $runtimeModule = $null
+  $entrypoint = $null
+  $params = @{ RepoRoot = $WorkingDir }
+  $i = 0
+  while ($i -lt $Args.Count) {
+    $token = [string]$Args[$i]
+    $normalized = $token.Trim().ToLowerInvariant()
+    switch ($normalized) {
+      '-force' { $params.Force = $true; $i += 1; continue }
+      '-cleangenerated' { $params.CleanGenerated = $true; $i += 1; continue }
+      '-cleansaved' { $params.CleanSaved = $true; $i += 1; continue }
+      '-cleancache' { $params.CleanCache = $true; $i += 1; continue }
+      '-noregen' { $params.NoRegen = $true; $i += 1; continue }
+      '-nobuild' { $params.NoBuild = $true; $i += 1; continue }
+      '-noninteractive' { $params.NonInteractive = $true; $i += 1; continue }
+      '-dryrun' { $params.DryRun = $true; $i += 1; continue }
+      '-oldrev' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -OldRev' }; $params.OldRev = [string]$Args[$i + 1]; $i += 2; continue }
+      '-newrev' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -NewRev' }; $params.NewRev = [string]$Args[$i + 1]; $i += 2; continue }
+      '-flag' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Flag' }; $params.Flag = [int]$Args[$i + 1]; $i += 2; continue }
+      '-workspacepath' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -WorkspacePath' }; $params.WorkspacePath = [string]$Args[$i + 1]; $i += 2; continue }
+      '-uprojectpath' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -UProjectPath' }; $params.UProjectPath = [string]$Args[$i + 1]; $i += 2; continue }
+      '-config' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Config' }; $params.Config = [string]$Args[$i + 1]; $i += 2; continue }
+      '-platform' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Platform' }; $params.Platform = [string]$Args[$i + 1]; $i += 2; continue }
+      '-reporoot' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -RepoRoot' }; $params.RepoRoot = [string]$Args[$i + 1]; $i += 2; continue }
+      default { throw "Unknown UnrealSync option '$token'." }
+    }
+  }
+
+  $previousNoAutorun = $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN
+  $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN = "1"
+  $transcriptPath = Join-Path $WorkingDir (".ue-sync-test-transcript-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  $transcriptStarted = $false
+
   Push-Location $WorkingDir
   try {
-    $out = @(& pwsh @pwshArgs 2>&1)
-    $code = $LASTEXITCODE
+    $runtimeModule = Import-Module -Name $syncScript -Force -DisableNameChecking -PassThru -ErrorAction Stop
+    $entrypoint = Get-Command -Name 'Invoke-UEToolSuiteUnrealRuntime' -Module $runtimeModule.Name -CommandType Function -ErrorAction SilentlyContinue
+    if (-not $entrypoint) {
+      $entrypoint = Get-Command -Name 'Invoke-UEToolSuiteUnrealRuntime' -CommandType Function -ErrorAction Stop
+    }
+
+    if ($null -ne $SeedLastExitCode) {
+      $global:LASTEXITCODE = $SeedLastExitCode
+    }
+
+    try {
+      Start-Transcript -LiteralPath $transcriptPath -Force | Out-Null
+      $transcriptStarted = $true
+    }
+    catch {
+      $transcriptStarted = $false
+    }
+
+    $out = @(& $entrypoint.Name @params 2>&1)
+    $code = 0
+  }
+  catch {
+    $out = @(
+      "Invoke-UEToolSuiteUnrealRuntime error: $($_.Exception.Message)"
+      $_.ScriptStackTrace
+      if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) { $_.InvocationInfo.PositionMessage }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    $code = 128
   }
   finally {
+    if ($transcriptStarted) {
+      try { Stop-Transcript | Out-Null } catch { }
+    }
     Pop-Location
+    if ([string]::IsNullOrEmpty($previousNoAutorun)) {
+      Remove-Item Env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN = $previousNoAutorun
+    }
     foreach ($key in $envBackup.Keys) {
       $envPath = "Env:$key"
       if ($null -eq $envBackup[$key]) {
@@ -388,8 +344,16 @@ exit $LASTEXITCODE
         Set-Item -Path $envPath -Value ([string]$envBackup[$key])
       }
     }
-    if ($seedWrapperPath -and (Test-Path -LiteralPath $seedWrapperPath)) {
-      Remove-Item -LiteralPath $seedWrapperPath -Force -ErrorAction SilentlyContinue
+  }
+
+  if (Test-Path -LiteralPath $transcriptPath) {
+    try {
+      $transcriptLines = Get-Content -LiteralPath $transcriptPath -ErrorAction Stop |
+        Where-Object { $_ -match '^\[UE Sync\]' -or $_ -match '^fatal:' }
+      $out = @($out + $transcriptLines)
+    }
+    finally {
+      Remove-Item -LiteralPath $transcriptPath -Force -ErrorAction SilentlyContinue
     }
   }
 
@@ -769,6 +733,30 @@ try {
   Assert-OutputContains "case 10 regen and build action plan" $res.Output "UE Sync action plan: regenerate project files and build the editor."
   Assert-OutputContains "case 10 regen trigger listed" $res.Output "Project-file regeneration triggers:"
   Assert-OutputContains "case 10 build trigger listed" $res.Output "Build triggers:"
+
+  Step "Case 11: Blueprint-only project skips build gracefully"
+  $case11 = New-CaseDir "case 11 blueprint-only skip build"
+  [void](New-UProjectFile $case11 $script:TestEngineAssociation)
+  $engine11 = Join-Path $case11 "Blueprint Fake Engine"
+  New-FakeBuildBat -EngineRoot $engine11 -ExitCode 0
+  $buildCapture11 = Join-Path $case11 "build-capture.txt"
+
+  $res = Invoke-UnrealSyncAt -WorkingDir $case11 -Args @(
+    "-Force",
+    "-NoRegen",
+    "-NonInteractive"
+  ) -Environment @{
+    UE_SYNC_TEST_FALLBACK_CAPTURE = $buildCapture11
+    UE_ENGINE_DIR                 = $engine11
+    UE_ENGINE_ROOT                = $null
+    UNREAL_ENGINE_DIR             = $null
+    UE_ENGINE_DISABLE_COMMON_INSTALL_SCAN = $null
+  }
+
+  Assert-Code "case 11 exit code" $res.Code 0
+  Assert-OutputContains "case 11 blueprint warning" $res.Output "Blueprint-only project detected"
+  Assert-OutputContains "case 11 build skipped" $res.Output "Skipping build..."
+  Assert-Condition "case 11 build tool not invoked" (-not (Test-Path -LiteralPath $buildCapture11)) "Build.bat not called" "Build.bat should not run for blueprint-only project"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan
