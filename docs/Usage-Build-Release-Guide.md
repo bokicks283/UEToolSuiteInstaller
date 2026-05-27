@@ -44,7 +44,7 @@ The installer writes backups under:
 .ue-tools-installer-backups/<timestamp>/
 ```
 
-Backups mirror original relative paths. For example, a backup of `Scripts/Unreal/UnrealSync.Runtime.ps1` is restored by copying it from the timestamp folder back to `Scripts/Unreal/UnrealSync.Runtime.ps1`.
+Backups mirror original relative paths. For example, a backup of `Scripts/UETools/UEToolSuite.Unreal.psm1` is restored by copying it from the timestamp folder back to `Scripts/UETools/UEToolSuite.Unreal.psm1`.
 
 ## What Gets Installed
 
@@ -53,13 +53,13 @@ The installer copies managed paths from `payload/` into the selected UE project:
 - `.githooks/`
 - managed `.gitattributes` block
 - managed `.gitignore` block
-- `Scripts/Init-Repo.Runtime.ps1`
+- `Scripts/UETools/UEToolSuite.Init.psm1`
 - `Scripts/ue-tools.ps1`
 - `Scripts/git-hooks/`
 - `Scripts/git-tools/`
 - `Scripts/UETools/`
 - `Scripts/Unreal/ProjectContext.ps1`
-- `Scripts/Unreal/UnrealSync.Runtime.ps1`
+- `Scripts/UETools/UEToolSuite.Unreal.psm1`
 - optional `Scripts/Docs/`
 - optional `Scripts/Tests/`
 - generic `Docs/`
@@ -76,7 +76,7 @@ Important paths:
 ```text
 Install-UEToolSuite.ps1                    CLI installer/updater engine
 payload/                                   files installed into target UE projects
-payload/Scripts/Init-Repo.Runtime.ps1      target repo bootstrap runtime
+payload/Scripts/UETools/UEToolSuite.Init.psm1      target repo bootstrap module
 payload/Scripts/ue-tools.ps1               unified CLI dispatcher entrypoint
 src/UEToolSuiteInstaller.Gui/              public Windows GUI launcher
 Scripts/Publish-InstallerExe.ps1           local/CI publish script
@@ -251,3 +251,4 @@ Keep these boundaries:
 - Project-specific game docs, private context, generated output, `node_modules`, Docusaurus build output, and local test logs do not belong in payload.
 
 After payload changes, run the installer tests and verify that a scratch UE project receives only the intended managed paths.
+

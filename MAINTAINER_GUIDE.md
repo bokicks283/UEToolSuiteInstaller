@@ -64,11 +64,11 @@ Top-level:
 - `src/UEToolSuiteInstaller.Gui/`: WinForms launcher that invokes installer
 
 Payload structure:
-- `payload/Scripts/Init-Repo.Runtime.ps1`: first-run bootstrap orchestration
+- `payload/Scripts/UETools/UEToolSuite.Init.psm1`: first-run bootstrap orchestration
 - `payload/Scripts/ue-tools.ps1`: unified entrypoint
 - `payload/Scripts/UETools/`: dispatcher + domain module implementations
 - `payload/Scripts/Unreal/`: UnrealSync + project context helpers
-- `payload/Scripts/Docs/DocsTools.Runtime.ps1`: docs command system
+- `payload/Scripts/UETools/UEToolSuite.Docs.psm1`: docs command system
 - `payload/Scripts/git-hooks/` + `.githooks/`: hook plumbing
 - `payload/Scripts/git-tools/`: binary conflict helper internals for `ue-tools git` + git aliases
 - `payload/Scripts/Tests/`: payload-level suites
@@ -143,7 +143,7 @@ Safety/cleanup:
 
 ## 5) Payload Tooling: What Each Tool Does
 
-### A) `Scripts/Init-Repo.Runtime.ps1` (bootstrap orchestrator)
+### A) `Scripts/UETools/UEToolSuite.Init.psm1` (bootstrap orchestrator)
 
 Responsibilities:
 - Initializes git repo when needed (non-interactive path auto-runs `git init`)
@@ -185,10 +185,10 @@ Domain commands:
 - `ue-tools git ...`
 
 Behavior:
-- `build` forwards to `Scripts/Unreal/UnrealSync.Runtime.ps1` and always includes `-Force`
+- `build` forwards to `Scripts/UETools/UEToolSuite.Unreal.psm1` and always includes `-Force`
 - option-first invocation defaults to `build` (for compatibility)
 
-### C) `Scripts/Unreal/UnrealSync.Runtime.ps1`
+### C) `Scripts/UETools/UEToolSuite.Unreal.psm1`
 
 Core behavior:
 - Detects project context (`.uproject`, workspace, engine root)
@@ -215,7 +215,7 @@ Responsibilities:
 Command:
 - `ue-tools art`
 
-### E) `Scripts/Docs/DocsTools.Runtime.ps1` (`ue-tools docs`)
+### E) `Scripts/UETools/UEToolSuite.Docs.psm1` (`ue-tools docs`)
 
 Responsibilities:
 - Docs section/page scaffolding
@@ -254,7 +254,7 @@ Switches:
 ### G) Git conflict tooling (`git ours`, `git theirs`, `git conflicts`)
 
 Script internals:
-- `Scripts/git-tools/GitConflictHelpers.Runtime.ps1`
+- `Scripts/UETools/UEToolSuite.Git.psm1`
 
 Responsibilities:
 - Guarded binary conflict workflows for merges/rebases
@@ -444,3 +444,4 @@ git conflicts continue --skip-editor
 - Unification architecture: `docs/Tooling-Unification-Architecture.md`
 - Manual validation: `docs/Manual-Testing-Checklist.md`
 - Payload script guidance: `payload/Scripts/README.md`
+

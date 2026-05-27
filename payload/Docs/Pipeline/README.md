@@ -31,7 +31,7 @@ Use that page for:
 
 ## UE Sync Actions
 
-`Scripts/Unreal/UnrealSync.Runtime.ps1` separates project-file regeneration from editor builds so branch changes do only the work they need.
+`Scripts/UETools/UEToolSuite.Unreal.psm1` separates project-file regeneration from editor builds so branch changes do only the work they need.
 
 - Build only: modified existing C++ implementation/header files under `Source/` or `Plugins/`.
 - Regenerate project files and build: `.uproject`, `.uplugin`, `*.Build.cs`, `*.Target.cs`, or added/deleted/renamed C++ files under `Source/` or `Plugins/`.
@@ -65,3 +65,4 @@ Goal: move Unreal assets under a new content folder and document the policy chan
 4. Update the project structure docs if the canonical layout changed.
 5. Run the relevant smoke test in editor.
 6. Commit only the moved assets and docs updates.
+

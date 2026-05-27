@@ -211,7 +211,10 @@ function Invoke-UnrealSyncCapture {
     [hashtable]$Environment
   )
 
-  $scriptPath = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.Runtime.ps1"
+  $scriptPath = Join-Path $repoRoot "Scripts\ue-tools.ps1"
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "Unreal sync entrypoint not found: $scriptPath"
+  }
   $pwshArgs = @(
     "-NoLogo",
     "-NoProfile"
@@ -221,7 +224,9 @@ function Invoke-UnrealSyncCapture {
   }
   $pwshArgs += @(
     "-ExecutionPolicy", "Bypass",
-    "-File", $scriptPath
+    "-File", $scriptPath,
+    "-RepoRoot", $repoRoot,
+    "build"
   )
   $pwshArgs += $Args
 
@@ -456,7 +461,7 @@ try {
   $postCommitPath = Join-Path $repoRoot ".githooks\post-commit"
   $postRewritePath = Join-Path $repoRoot ".githooks\post-rewrite"
   $hookCommonPath = Join-Path $repoRoot "Scripts\git-hooks\hook-common.sh"
-  $unrealSyncPath = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.Runtime.ps1"
+  $unrealSyncPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Unreal.psm1"
 
   $postCheckoutText = Get-Content -LiteralPath $postCheckoutPath -Raw
   $postMergeText = Get-Content -LiteralPath $postMergePath -Raw

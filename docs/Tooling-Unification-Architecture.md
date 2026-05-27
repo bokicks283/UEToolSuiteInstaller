@@ -41,10 +41,10 @@ Those aliases route into the same dispatcher-owned git domain behavior.
 payload/
   Scripts/
     ue-tools.ps1                         only public script entrypoint
-    Init-Repo.Runtime.ps1                init runtime implementation
+    Init-Repo.Module.psm1                init module implementation
     UETools/
       UETools.psd1                       facade manifest
-      UEToolSuite.Core.psm1              shared primitives/helpers
+      UEToolSuite.Core.psm1              shared primitives + runtime helpers
       UEToolSuite.Dispatcher.psm1        command parse + route
       UEToolSuite.Aliases.psm1           profile/bootstrap alias install
       UEToolSuite.Unreal.psm1            build domain adapter + helpers
@@ -53,12 +53,11 @@ payload/
       UEToolSuite.AI.psm1                AI prompt domain implementation
       UEToolSuite.Init.psm1              init domain adapter + helpers
       UEToolSuite.Git.psm1               git conflict domain adapter + helpers
-      UEToolSuite.Runtime.ps1            shared runtime context glue
     Unreal/
-      UnrealSync.Runtime.ps1             Unreal runtime implementation
+      UnrealSync.Module.psm1             Unreal module implementation
       ProjectContext.ps1                 project/engine context helpers
     Docs/
-      DocsTools.Runtime.ps1              docs runtime implementation
+      DocsTools.Module.psm1              docs module implementation
       VSCodeBridge/                      optional docs VS Code bridge
     git-hooks/
       hook-common.sh
@@ -66,7 +65,7 @@ payload/
       Enable-GitHooks.ps1
       Test-Hooks.ps1
     git-tools/
-      GitConflictHelpers.Runtime.ps1
+      GitConflictHelpers.Module.psm1
 ```
 
 ## Module Boundaries
@@ -74,11 +73,11 @@ payload/
 - `UEToolSuite.Core.psm1`: shared path/repo/process/file utilities.
 - `UEToolSuite.Dispatcher.psm1`: command parsing, help text, domain routing, install guidance.
 - Domain modules:
-  - Unreal, Docs, Init, and Git currently call runtime scripts (`*.Runtime.ps1`) through controlled module entrypoints.
+  - Unreal, Docs, Init, and Git are module-first and load domain module files (`*.Module.psm1`) through controlled entrypoints.
   - AI and Art domains are implemented directly in module code.
 - `UEToolSuite.Aliases.psm1`: managed profile block + bootstrap generation + alias registration.
 
-This boundary keeps user-facing CLI stable while allowing incremental internal migration from runtime scripts into module code.
+This boundary keeps user-facing CLI stable while keeping runtime helpers centralized in `UEToolSuite.Core.psm1`.
 
 ## Installer Boundary
 

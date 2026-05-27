@@ -23,7 +23,7 @@ if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
 }
 . $testHarnessPath
 
-$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\Docs\DocsTools.Runtime.ps1"
+$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
 $script:PassCount = 0
 $script:FailCount = 0
 $script:WarnCount = 0
@@ -151,19 +151,40 @@ function Invoke-DocsToolsCommand {
       Set-Item -Path ("Env:{0}" -f $entry.Key) -Value ([string]$entry.Value)
     }
 
+    $coreModulePath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "UEToolSuite.Core.psm1"
+    $escapedCoreModulePath = $coreModulePath -replace "'", "''"
     $escapedScriptPath = $script:DocsToolsScriptPath -replace "'", "''"
     $escapedRepoRoot = $ScratchRepoRoot -replace "'", "''"
     $escapedCliArgs = @($CliArgs | ForEach-Object { "'" + (("$($_)") -replace "'", "''") + "'" })
     $commandText = @"
 `$cliArgs = @($($escapedCliArgs -join ', '))
-. '$escapedScriptPath'
+`$previousAutoRunFlag = `$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN
+`$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = '1'
 try {
-  `$resolvedRepoRoot = Get-DocsToolsRepoRoot -ExplicitRepoRoot '$escapedRepoRoot'
-  Invoke-DocsToolsMain -ResolvedRepoRoot `$resolvedRepoRoot -CommandArguments `$cliArgs
+  Import-Module -Name '$escapedCoreModulePath' -Force -DisableNameChecking | Out-Null
+  `$scriptsRoot = Split-Path -Parent (Split-Path -Parent '$escapedScriptPath')
+  if (Get-Command -Name 'Set-UEToolSuiteRuntimeContext' -CommandType Function -ErrorAction SilentlyContinue) {
+    Set-UEToolSuiteRuntimeContext -ScriptsRoot `$scriptsRoot -StateKey 'docs-tools-test' -LogPrefix '[Docs]'
+  }
+  `$docsModule = Import-Module -Name '$escapedScriptPath' -Force -DisableNameChecking -PassThru
+  `$repoResolver = Get-Command -Name 'Get-DocsToolsRepoRoot' -Module `$docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+  if (-not `$repoResolver) { throw 'Get-DocsToolsRepoRoot was not exported by docs module.' }
+  `$entrypoint = Get-Command -Name 'Invoke-DocsToolsMain' -Module `$docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+  if (-not `$entrypoint) { throw 'Invoke-DocsToolsMain was not exported by docs module.' }
+  `$resolvedRepoRoot = & `$repoResolver.Name -ExplicitRepoRoot '$escapedRepoRoot'
+  & `$entrypoint.Name -ResolvedRepoRoot `$resolvedRepoRoot -CommandArguments `$cliArgs
 }
 catch {
-  Write-DocsToolsError -Message `$_.Exception.Message
+  Write-Host ('Error: ' + `$_.Exception.Message) -ForegroundColor Red
   exit 1
+}
+finally {
+  if (`$null -eq `$previousAutoRunFlag) {
+    Remove-Item Env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+  }
+  else {
+    `$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = `$previousAutoRunFlag
+  }
 }
 "@
 
@@ -268,20 +289,27 @@ try {
     -CliArgs @("new-section", "GameDesign", "-Title", "Game Design", "-Position", "9") `
     -Toolset $noTocToolset `
     -SandboxRoot (New-ScratchPath "sandbox-no-toc")
+  if ($newSectionResult.ExitCode -ne 0) {
+    Write-Log ("case2 failure output:`n" + $newSectionResult.OutputText) DarkGray
+  }
   $sectionReadme = Join-Path $noTocRepo "Docs\GameDesign\README.md"
   $sectionCategory = Join-Path $noTocRepo "Docs\GameDesign\_category_.json"
-  $sectionReadmeText = Get-Content -LiteralPath $sectionReadme -Raw
-  $sectionCategoryText = Get-Content -LiteralPath $sectionCategory -Raw
   Assert-Condition "case2 new-section exits cleanly" ($newSectionResult.ExitCode -eq 0) "exit code=0" "exit code=$($newSectionResult.ExitCode)"
   Assert-Condition "case2 section readme created" (Test-Path -LiteralPath $sectionReadme) "README.md created"
   Assert-Condition "case2 category metadata created" (Test-Path -LiteralPath $sectionCategory) "_category_.json created"
   Assert-TextContains "case2 output confirms skipped toc" $newSectionResult.OutputText "TOC generation skipped."
-  Assert-TextContains "case2 readme has section slug" $sectionReadmeText "slug: /game-design"
-  Assert-TextContains "case2 readme has overview heading" $sectionReadmeText "## Overview"
-  Assert-TextNotContains "case2 readme omits toc marker" $sectionReadmeText "<!-- docs-tools-toc -->"
-  Assert-TextContains "case2 category label" $sectionCategoryText '"label": "Game Design"'
-  Assert-TextContains "case2 category position" $sectionCategoryText '"position": 9'
-  Assert-TextContains "case2 category doc link" $sectionCategoryText '"id": "GameDesign/README"'
+  if (Test-Path -LiteralPath $sectionReadme -PathType Leaf) {
+    $sectionReadmeText = Get-Content -LiteralPath $sectionReadme -Raw
+    Assert-TextContains "case2 readme has section slug" $sectionReadmeText "slug: /game-design"
+    Assert-TextContains "case2 readme has overview heading" $sectionReadmeText "## Overview"
+    Assert-TextNotContains "case2 readme omits toc marker" $sectionReadmeText "<!-- docs-tools-toc -->"
+  }
+  if (Test-Path -LiteralPath $sectionCategory -PathType Leaf) {
+    $sectionCategoryText = Get-Content -LiteralPath $sectionCategory -Raw
+    Assert-TextContains "case2 category label" $sectionCategoryText '"label": "Game Design"'
+    Assert-TextContains "case2 category position" $sectionCategoryText '"position": 9'
+    Assert-TextContains "case2 category doc link" $sectionCategoryText '"id": "GameDesign/README"'
+  }
 
   Step "Case 2b: new-section auto-assigns the next sidebar position"
   $autoSectionRepo = New-MinimalDocsRepo -Name "repo-auto-section-position"
@@ -506,7 +534,7 @@ sidebar_position: 1
     -SandboxRoot (New-ScratchPath "sandbox-missing-section")
   Assert-Condition "case3e new-page fails for missing section" ($missingSectionResult.ExitCode -ne 0) "exit code=$($missingSectionResult.ExitCode)" "expected non-zero exit code"
   Assert-TextContains "case3e output is user-friendly" $missingSectionResult.OutputText "Error: Section does not exist:"
-  Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "DocsTools.Runtime.ps1:"
+  Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "UEToolSuite.Docs.psm1:"
 
   Step "Case 4: install-bridge copies the optional VS Code bridge"
   $bridgeToolset = New-StubToolset -Name "toolset-install-bridge" -CodeExtensions @("yzhang.markdown-all-in-one")

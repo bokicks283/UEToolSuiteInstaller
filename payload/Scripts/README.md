@@ -14,11 +14,11 @@ This folder contains automation that keeps Git/LFS/Unreal workflows consistent f
 
 Concrete examples:
 
-- `Scripts/Docs/DocsTools.Runtime.ps1`
+- `Scripts/UETools/UEToolSuite.Docs.psm1`
 - `Scripts/ue-tools.ps1`
 - `Scripts/git-hooks/Enable-GitHooks.ps1`
-- `Scripts/git-tools/GitConflictHelpers.Runtime.ps1`
-- `Scripts/Unreal/UnrealSync.Runtime.ps1`
+- `Scripts/UETools/UEToolSuite.Git.psm1`
+- `Scripts/UETools/UEToolSuite.Unreal.psm1`
 - `Scripts/UETools/UEToolSuite.Dispatcher.psm1`
 - `Scripts/Tests/Test-BinaryGuard-Fixes.ps1`
 
@@ -73,7 +73,7 @@ Goal: add a script that validates plugin bootstrap setup.
 
 It also prepares installed optional tooling so commands are ready after init:
 
-- If `Scripts/Docs/DocsTools.Runtime.ps1` and `website/package.json` exist, init verifies Node.js 20+ and npm, runs `npm install` when `website/node_modules` is missing, installs the optional VS Code docs bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
+- If `Scripts/UETools/UEToolSuite.Docs.psm1` and `website/package.json` exist, init verifies Node.js 20+ and npm, runs `npm install` when `website/node_modules` is missing, installs the optional VS Code docs bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
 - If `Scripts/UETools/UEToolSuite.Art.psm1` and `ArtSource/` exist, init checks that `ArtSource/_Template` has the expected `Source`, `Textures`, and `Exports` folders.
 - If optional tools are not installed in a target UE repo, init reports them as skipped instead of failing the core bootstrap.
 
@@ -81,7 +81,7 @@ Use `-SkipOptionalToolSetup` to skip optional prerequisite work entirely. Use `-
 
 ## UE Sync Workflow
 
-`Scripts/Unreal/UnrealSync.Runtime.ps1` classifies hook-triggered changes before doing work:
+`Scripts/UETools/UEToolSuite.Unreal.psm1` classifies hook-triggered changes before doing work:
 
 - Modified existing C++ source/header files trigger a build only.
 - Project/module/plugin metadata and added/deleted/renamed C++ files trigger project-file regeneration plus a build.
@@ -103,3 +103,4 @@ Scripts/Tests/
 ```
 
 Keep cleanup of old logs in separate maintenance commits.
+

@@ -11,9 +11,9 @@ $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$syncScript = Join-Path $repoRoot "Scripts\Unreal\UnrealSync.Runtime.ps1"
+$syncScript = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Unreal.psm1"
 if (-not (Test-Path -LiteralPath $syncScript)) {
-  throw "UnrealSync script not found: $syncScript"
+  throw "Unreal sync module not found: $syncScript"
 }
 
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
@@ -234,30 +234,7 @@ function Invoke-UnrealSyncAt {
     [Nullable[long]]$SeedLastExitCode = $null
   )
 
-  $launchScript = $syncScript
-  $seedWrapperPath = $null
-  if ($null -ne $SeedLastExitCode) {
-    $seedWrapperPath = Join-Path $WorkingDir "__ue-sync-seed-last-exitcode.ps1"
-    $wrapperTemplate = @'
-$global:LASTEXITCODE = __SEED_VALUE__
-& '__SYNC_SCRIPT__' @args
-exit $LASTEXITCODE
-'@
-    $wrapperText = $wrapperTemplate.
-      Replace("__SEED_VALUE__", [string]$SeedLastExitCode).
-      Replace("__SYNC_SCRIPT__", $syncScript.Replace("'", "''"))
-    Write-TextFileLf -Path $seedWrapperPath -Content $wrapperText
-    $launchScript = $seedWrapperPath
-  }
-
-  $pwshArgs = @(
-    "-NoLogo",
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $launchScript
-  ) + $Args
-
-  Write-Log ">> [$WorkingDir] pwsh $($pwshArgs -join ' ')" DarkGray
+  Write-Log ">> [$WorkingDir] invoke UnrealSync module entrypoint" DarkGray
   if ($null -ne $SeedLastExitCode) {
     Write-Log "   seeded LASTEXITCODE=$SeedLastExitCode before UnrealSync invocation" DarkGray
   }
@@ -283,13 +260,81 @@ exit $LASTEXITCODE
     }
   }
 
+  $runtimeModule = $null
+  $entrypoint = $null
+  $params = @{ RepoRoot = $WorkingDir }
+  $i = 0
+  while ($i -lt $Args.Count) {
+    $token = [string]$Args[$i]
+    $normalized = $token.Trim().ToLowerInvariant()
+    switch ($normalized) {
+      '-force' { $params.Force = $true; $i += 1; continue }
+      '-cleangenerated' { $params.CleanGenerated = $true; $i += 1; continue }
+      '-cleansaved' { $params.CleanSaved = $true; $i += 1; continue }
+      '-cleancache' { $params.CleanCache = $true; $i += 1; continue }
+      '-noregen' { $params.NoRegen = $true; $i += 1; continue }
+      '-nobuild' { $params.NoBuild = $true; $i += 1; continue }
+      '-noninteractive' { $params.NonInteractive = $true; $i += 1; continue }
+      '-dryrun' { $params.DryRun = $true; $i += 1; continue }
+      '-oldrev' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -OldRev' }; $params.OldRev = [string]$Args[$i + 1]; $i += 2; continue }
+      '-newrev' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -NewRev' }; $params.NewRev = [string]$Args[$i + 1]; $i += 2; continue }
+      '-flag' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Flag' }; $params.Flag = [int]$Args[$i + 1]; $i += 2; continue }
+      '-workspacepath' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -WorkspacePath' }; $params.WorkspacePath = [string]$Args[$i + 1]; $i += 2; continue }
+      '-uprojectpath' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -UProjectPath' }; $params.UProjectPath = [string]$Args[$i + 1]; $i += 2; continue }
+      '-config' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Config' }; $params.Config = [string]$Args[$i + 1]; $i += 2; continue }
+      '-platform' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Platform' }; $params.Platform = [string]$Args[$i + 1]; $i += 2; continue }
+      '-reporoot' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -RepoRoot' }; $params.RepoRoot = [string]$Args[$i + 1]; $i += 2; continue }
+      default { throw "Unknown UnrealSync option '$token'." }
+    }
+  }
+
+  $previousNoAutorun = $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN
+  $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN = "1"
+  $transcriptPath = Join-Path $WorkingDir (".ue-sync-test-transcript-" + [Guid]::NewGuid().ToString("N") + ".txt")
+  $transcriptStarted = $false
+
   Push-Location $WorkingDir
   try {
-    $out = @(& pwsh @pwshArgs 2>&1)
-    $code = $LASTEXITCODE
+    $runtimeModule = Import-Module -Name $syncScript -Force -DisableNameChecking -PassThru -ErrorAction Stop
+    $entrypoint = Get-Command -Name 'Invoke-UEToolSuiteUnrealRuntime' -Module $runtimeModule.Name -CommandType Function -ErrorAction SilentlyContinue
+    if (-not $entrypoint) {
+      $entrypoint = Get-Command -Name 'Invoke-UEToolSuiteUnrealRuntime' -CommandType Function -ErrorAction Stop
+    }
+
+    if ($null -ne $SeedLastExitCode) {
+      $global:LASTEXITCODE = $SeedLastExitCode
+    }
+
+    try {
+      Start-Transcript -LiteralPath $transcriptPath -Force | Out-Null
+      $transcriptStarted = $true
+    }
+    catch {
+      $transcriptStarted = $false
+    }
+
+    $out = @(& $entrypoint.Name @params 2>&1)
+    $code = 0
+  }
+  catch {
+    $out = @(
+      "Invoke-UEToolSuiteUnrealRuntime error: $($_.Exception.Message)"
+      $_.ScriptStackTrace
+      if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) { $_.InvocationInfo.PositionMessage }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    $code = 128
   }
   finally {
+    if ($transcriptStarted) {
+      try { Stop-Transcript | Out-Null } catch { }
+    }
     Pop-Location
+    if ([string]::IsNullOrEmpty($previousNoAutorun)) {
+      Remove-Item Env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN = $previousNoAutorun
+    }
     foreach ($key in $envBackup.Keys) {
       $envPath = "Env:$key"
       if ($null -eq $envBackup[$key]) {
@@ -299,8 +344,16 @@ exit $LASTEXITCODE
         Set-Item -Path $envPath -Value ([string]$envBackup[$key])
       }
     }
-    if ($seedWrapperPath -and (Test-Path -LiteralPath $seedWrapperPath)) {
-      Remove-Item -LiteralPath $seedWrapperPath -Force -ErrorAction SilentlyContinue
+  }
+
+  if (Test-Path -LiteralPath $transcriptPath) {
+    try {
+      $transcriptLines = Get-Content -LiteralPath $transcriptPath -ErrorAction Stop |
+        Where-Object { $_ -match '^\[UE Sync\]' -or $_ -match '^fatal:' }
+      $out = @($out + $transcriptLines)
+    }
+    finally {
+      Remove-Item -LiteralPath $transcriptPath -Force -ErrorAction SilentlyContinue
     }
   }
 

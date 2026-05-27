@@ -11,7 +11,7 @@ $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).T
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$initScript = Join-Path $repoRoot "Scripts\Init-Repo.Runtime.ps1"
+$initScript = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Init.psm1"
 if (-not (Test-Path -LiteralPath $initScript)) {
   throw "Init script not found: $initScript"
 }
@@ -122,7 +122,7 @@ function New-InitRepoFixture {
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-hooks\Enable-GitHooks.ps1") -Content "Write-Host 'Enable hooks stub'`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-hooks\Test-Hooks.ps1") -Content "Write-Host 'Hook self-test stub'`n"
 
-  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-tools\GitConflictHelpers.Runtime.ps1") -Content "function Test-GitConflictHelperStub { `$true }`n"
+  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Git.psm1") -Content "function Test-GitConflictHelperStub { `$true }`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Art.psm1") -Content "function Test-UEToolSuiteArtStub { `$true }`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.AI.psm1") -Content "function Test-UEToolSuiteAIStub { `$true }`n"
 
@@ -160,7 +160,7 @@ if ($effectiveCommandArgs.Count -lt 1) {
 $command = [string]$effectiveCommandArgs[0]
 if ($command -eq "docs") {
   $docsArgs = if ($effectiveCommandArgs.Count -gt 1) { @($effectiveCommandArgs[1..($effectiveCommandArgs.Count - 1)]) } else { @() }
-  $docsScript = Join-Path $RepoRoot "Scripts\Docs\DocsTools.Runtime.ps1"
+  $docsScript = Join-Path $RepoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
   if (-not (Test-Path -LiteralPath $docsScript -PathType Leaf)) {
     Write-Error "Docs script missing: $docsScript"
     exit 1
@@ -190,7 +190,7 @@ exit 0
 }
 '@
 
-    Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\Docs\DocsTools.Runtime.ps1") -Content @'
+    Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Docs.psm1") -Content @'
 [CmdletBinding()]
 param(
   [string]$RepoRoot,
@@ -262,20 +262,86 @@ function Invoke-InitRepo {
     $env:GIT_COMMITTER_NAME = "Init Repo Readiness Test"
     $env:GIT_COMMITTER_EMAIL = "init-repo-readiness@example.invalid"
 
-    $pwshArgs = @(
-      "-NoLogo",
-      "-NoProfile",
-      "-ExecutionPolicy", "Bypass",
-      "-File", $initScript,
+    $runtimeArgs = @(
       "-RepoRoot", $TargetRepoRoot,
       "-SkipLfsPull",
       "-SkipShellAliases",
       "-SkipUnrealSync"
     ) + @($ExtraArgs)
+    $params = @{}
+    $i = 0
+    while ($i -lt $runtimeArgs.Count) {
+      $token = [string]$runtimeArgs[$i]
+      $normalized = $token.Trim().ToLowerInvariant()
+      switch ($normalized) {
+        '-skiplfspull' { $params.SkipLfsPull = $true; $i += 1; continue }
+        '-skipunrealsync' { $params.SkipUnrealSync = $true; $i += 1; continue }
+        '-skipshellaliases' { $params.SkipShellAliases = $true; $i += 1; continue }
+        '-skipoptionaltoolsetup' { $params.SkipOptionalToolSetup = $true; $i += 1; continue }
+        '-skipdocssetup' { $params.SkipDocsSetup = $true; $i += 1; continue }
+        '-skipdocsnpminstall' { $params.SkipDocsNpmInstall = $true; $i += 1; continue }
+        '-forcedocsnpminstall' { $params.ForceDocsNpmInstall = $true; $i += 1; continue }
+        '-skipdocsbridgeinstall' { $params.SkipDocsBridgeInstall = $true; $i += 1; continue }
+        '-noninteractive' { $params.NonInteractive = $true; $i += 1; continue }
+        '-skipignoreduntrack' { $params.SkipIgnoredUntrack = $true; $i += 1; continue }
+        '-nobuild' { $params.NoBuild = $true; $i += 1; continue }
+        '-noregen' { $params.NoRegen = $true; $i += 1; continue }
+        '-reporoot' { if (($i + 1) -ge $runtimeArgs.Count) { throw 'Missing value for -RepoRoot' }; $params.RepoRoot = [string]$runtimeArgs[$i + 1]; $i += 2; continue }
+        '-uprojectpath' { if (($i + 1) -ge $runtimeArgs.Count) { throw 'Missing value for -UProjectPath' }; $params.UProjectPath = [string]$runtimeArgs[$i + 1]; $i += 2; continue }
+        '-workspacepath' { if (($i + 1) -ge $runtimeArgs.Count) { throw 'Missing value for -WorkspacePath' }; $params.WorkspacePath = [string]$runtimeArgs[$i + 1]; $i += 2; continue }
+        '-config' { if (($i + 1) -ge $runtimeArgs.Count) { throw 'Missing value for -Config' }; $params.Config = [string]$runtimeArgs[$i + 1]; $i += 2; continue }
+        '-platform' { if (($i + 1) -ge $runtimeArgs.Count) { throw 'Missing value for -Platform' }; $params.Platform = [string]$runtimeArgs[$i + 1]; $i += 2; continue }
+        default { throw "Unknown init option '$token'." }
+      }
+    }
 
-    Write-Log ">> pwsh $($pwshArgs -join ' ')" DarkGray
-    $output = @(& pwsh @pwshArgs 2>&1)
-    $exitCode = $LASTEXITCODE
+    Write-Log ">> invoke init module entrypoint" DarkGray
+    $previousNoAutorun = $env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN
+    $env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN = "1"
+    $transcriptPath = Join-Path $script:TempRoot ("init-runtime-transcript-" + [Guid]::NewGuid().ToString("N") + ".log")
+    Push-Location $TargetRepoRoot
+    try {
+      Start-Transcript -LiteralPath $transcriptPath -Force | Out-Null
+      $runtimeModule = Import-Module -Name $initScript -Force -DisableNameChecking -PassThru
+      $entrypoint = Get-Command -Name 'Invoke-UEToolSuiteInitRuntime' -Module $runtimeModule.Name -CommandType Function -ErrorAction SilentlyContinue
+      if (-not $entrypoint) {
+        $entrypoint = Get-Command -Name 'Invoke-UEToolSuiteInitRuntime' -CommandType Function -ErrorAction Stop
+      }
+
+      $output = @(& $entrypoint.Name @params 2>&1)
+      $exitCode = 0
+    }
+    catch {
+      $output = @("Exception: $($_.Exception.Message)")
+      $exitCode = 1
+    }
+    finally {
+      try { Stop-Transcript | Out-Null } catch { }
+      Pop-Location
+      if ($null -eq $previousNoAutorun) {
+        Remove-Item Env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+      }
+      else {
+        $env:UE_TOOLS_INIT_RUNTIME_NO_AUTORUN = $previousNoAutorun
+      }
+    }
+
+    if (Test-Path -LiteralPath $transcriptPath) {
+      try {
+        $transcriptLines = Get-Content -LiteralPath $transcriptPath -ErrorAction Stop |
+          Where-Object {
+            $_ -match '^\[Init\]' -or
+            $_ -match 'Tool readiness summary:' -or
+            $_ -match '^\s+\[(OK|SKIP|WARN)\]' -or
+            $_ -match '^fatal:'
+          }
+        $output = @($output + $transcriptLines)
+      }
+      finally {
+        Remove-Item -LiteralPath $transcriptPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+
     $normalizedOutput = @()
     foreach ($line in $output) {
       $text = Remove-AnsiEscapeSequences "$line"

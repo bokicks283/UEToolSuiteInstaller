@@ -75,12 +75,12 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 `
 - [ ] Confirm managed payload paths exist in Env A:
   - `.githooks\`
   - `Scripts\ue-tools.ps1`
-  - `Scripts\Init-Repo.Runtime.ps1`
+  - `Scripts\Init-Repo.Module.psm1`
   - `Scripts\UETools\`
   - `Scripts\git-hooks\`
   - `Scripts\git-tools\`
   - `Scripts\Unreal\ProjectContext.ps1`
-  - `Scripts\Unreal\UnrealSync.Runtime.ps1`
+  - `Scripts\Unreal\UnrealSync.Module.psm1`
 - [ ] Confirm `.gitattributes` and `.gitignore` contain managed marker blocks and preserve any pre-existing non-managed content.
 - [ ] Confirm backup folder exists when managed files were replaced:
   - `.ue-tools-installer-backups\<timestamp>\...`

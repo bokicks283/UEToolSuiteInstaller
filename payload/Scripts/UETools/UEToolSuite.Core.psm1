@@ -139,10 +139,267 @@ function Invoke-UEToolSuiteScriptProcess {
   }
 }
 
+function Set-UEToolSuiteRuntimeContext {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ScriptsRoot,
+    [Parameter(Mandatory)][string]$StateKey,
+    [string]$LogPrefix = "[UETools]",
+    [switch]$WriteFileEnsureParentDirectory,
+    [string]$CommandAvailabilityFunctionName
+  )
+
+  $script:UEToolSuiteRuntimeContext = @{
+    ScriptsRoot = $ScriptsRoot
+    StateKey = $StateKey
+    LogPrefix = $LogPrefix
+    WriteFileEnsureParentDirectory = [bool]$WriteFileEnsureParentDirectory
+    CommandAvailabilityFunctionName = $CommandAvailabilityFunctionName
+  }
+}
+
+function Get-UEToolSuiteRuntimeContext {
+  [CmdletBinding()]
+  param(
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = @{}
+  if ($script:UEToolSuiteRuntimeContext) {
+    $context = $script:UEToolSuiteRuntimeContext
+  }
+
+  $resolvedScriptsRoot = $ScriptsRoot
+  if ([string]::IsNullOrWhiteSpace($resolvedScriptsRoot)) {
+    $resolvedScriptsRoot = [string]$context.ScriptsRoot
+  }
+  if ([string]::IsNullOrWhiteSpace($resolvedScriptsRoot)) {
+    throw "UEToolSuite runtime context is missing ScriptsRoot. Call Set-UEToolSuiteRuntimeContext or pass -ScriptsRoot."
+  }
+
+  $resolvedStateKey = $StateKey
+  if ([string]::IsNullOrWhiteSpace($resolvedStateKey)) {
+    $resolvedStateKey = [string]$context.StateKey
+  }
+  if ([string]::IsNullOrWhiteSpace($resolvedStateKey)) {
+    $resolvedStateKey = "runtime::{0}" -f $resolvedScriptsRoot.ToLowerInvariant()
+  }
+
+  $logPrefix = [string]$context.LogPrefix
+  if ([string]::IsNullOrWhiteSpace($logPrefix)) {
+    $logPrefix = "[UETools]"
+  }
+
+  return [pscustomobject]@{
+    ScriptsRoot = $resolvedScriptsRoot
+    StateKey = $resolvedStateKey
+    LogPrefix = $logPrefix
+    WriteFileEnsureParentDirectory = [bool]$context.WriteFileEnsureParentDirectory
+    CommandAvailabilityFunctionName = [string]$context.CommandAvailabilityFunctionName
+  }
+}
+
+function Import-UEToolSuiteCoreModule {
+  [CmdletBinding()]
+  param(
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  if ($PSBoundParameters.ContainsKey("ScriptsRoot") -or $PSBoundParameters.ContainsKey("StateKey")) {
+    [void](Get-UEToolSuiteRuntimeContext -ScriptsRoot $ScriptsRoot -StateKey $StateKey)
+  }
+
+  return $true
+}
+
+function Write-UEToolSuiteRuntimeLog {
+  [CmdletBinding()]
+  param(
+    [AllowNull()][AllowEmptyString()][string]$Message,
+    [ValidateSet("Info", "Warn", "Err", "Ok", "Success")][string]$Level = "Info",
+    [string]$LogPrefix
+  )
+
+  $prefix = $LogPrefix
+  if ([string]::IsNullOrWhiteSpace($prefix)) {
+    if ($script:UEToolSuiteRuntimeContext -and -not [string]::IsNullOrWhiteSpace([string]$script:UEToolSuiteRuntimeContext.LogPrefix)) {
+      $prefix = [string]$script:UEToolSuiteRuntimeContext.LogPrefix
+    }
+    else {
+      $prefix = "[UETools]"
+    }
+  }
+
+  $color = switch ($Level) {
+    "Info" { "Cyan" }
+    "Warn" { "Yellow" }
+    "Err" { "Red" }
+    "Ok" { "Green" }
+    "Success" { "Green" }
+    default { "Gray" }
+  }
+
+  Write-Host "$prefix $Message" -ForegroundColor $color
+}
+
+function Info {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Info"
+}
+
+function Warn {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Warn"
+}
+
+function Err {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Err"
+}
+
+function Ok {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Ok"
+}
+
+function Success {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message -Level "Success"
+}
+
+function Write-Utf8NoBomFile {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Content,
+    [switch]$EnsureParentDirectory,
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = Get-UEToolSuiteRuntimeContext -ScriptsRoot $ScriptsRoot -StateKey $StateKey
+  $ensureParent = $EnsureParentDirectory
+  if (-not $PSBoundParameters.ContainsKey("EnsureParentDirectory")) {
+    $ensureParent = [bool]$context.WriteFileEnsureParentDirectory
+  }
+
+  Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content -EnsureParentDirectory:$ensureParent
+}
+
+function Test-CommandAvailable {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Name,
+    [string]$ModuleFunctionName,
+    [string]$ScriptsRoot,
+    [string]$StateKey
+  )
+
+  $context = $null
+  try {
+    $context = Get-UEToolSuiteRuntimeContext -ScriptsRoot $ScriptsRoot -StateKey $StateKey
+  }
+  catch {
+    $context = $null
+  }
+
+  $resolverName = $ModuleFunctionName
+  if ([string]::IsNullOrWhiteSpace($resolverName) -and $context) {
+    $resolverName = $context.CommandAvailabilityFunctionName
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($resolverName)) {
+    $moduleFn = Get-Command -Name $resolverName -ErrorAction SilentlyContinue
+    if ($moduleFn) {
+      return (& $resolverName -Name $Name)
+    }
+  }
+
+  return ($null -ne (Get-Command $Name -ErrorAction SilentlyContinue))
+}
+
+function Resolve-UEToolSuiteRuntimeRepoRoot {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ScriptsRoot,
+    [string]$ExplicitRepoRoot,
+    [string]$InvocationName = "Command",
+    [switch]$AllowFilePath
+  )
+
+  if (-not [string]::IsNullOrWhiteSpace($ExplicitRepoRoot)) {
+    $candidate = [System.IO.Path]::GetFullPath($ExplicitRepoRoot)
+    $exists = if ($AllowFilePath) {
+      Test-Path -LiteralPath $candidate
+    }
+    else {
+      Test-Path -LiteralPath $candidate -PathType Container
+    }
+
+    if (-not $exists) {
+      if ($AllowFilePath) {
+        throw "RepoRoot does not exist: $candidate"
+      }
+
+      throw "RepoRoot does not exist or is not a directory: $candidate"
+    }
+
+    return (Resolve-Path -LiteralPath $candidate).Path
+  }
+
+  return (Resolve-UEToolSuiteRepoRoot -InvocationName $InvocationName)
+}
+
+function Resolve-UEToolSuiteRuntimeRepoPath {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ScriptsRoot,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$NotFoundMessagePrefix,
+    [ValidateSet("Any", "Leaf", "Container")][string]$PathType = "Any"
+  )
+
+  return (Resolve-UEToolSuiteRepoPath -RepoRoot $RepoRoot -RelativePath $RelativePath -NotFoundMessagePrefix $NotFoundMessagePrefix -PathType $PathType)
+}
+
+function Write-UEToolSuiteRuntimeUtf8NoBomFile {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ScriptsRoot,
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Content,
+    [switch]$EnsureParentDirectory
+  )
+
+  Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content -EnsureParentDirectory:$EnsureParentDirectory
+}
+
 Export-ModuleMember -Function `
   Write-UEToolSuiteUtf8NoBomFile, `
   Resolve-UEToolSuiteRepoRoot, `
   Resolve-UEToolSuiteRepoPath, `
   Get-UEToolSuiteCoreModuleEntryPath, `
   Get-UEToolSuitePowerShellHostPath, `
-  Invoke-UEToolSuiteScriptProcess
+  Invoke-UEToolSuiteScriptProcess, `
+  Set-UEToolSuiteRuntimeContext, `
+  Get-UEToolSuiteRuntimeContext, `
+  Import-UEToolSuiteCoreModule, `
+  Write-UEToolSuiteRuntimeLog, `
+  Info, `
+  Warn, `
+  Err, `
+  Ok, `
+  Success, `
+  Write-Utf8NoBomFile, `
+  Test-CommandAvailable, `
+  Resolve-UEToolSuiteRuntimeRepoRoot, `
+  Resolve-UEToolSuiteRuntimeRepoPath, `
+  Write-UEToolSuiteRuntimeUtf8NoBomFile

@@ -8,14 +8,14 @@
   "managedItems": {
     "base": [
       ".githooks",
-      "Scripts/Init-Repo.Runtime.ps1",
+      "Scripts/UETools/UEToolSuite.Init.psm1",
       "Scripts/README.md",
       "Scripts/ue-tools.ps1",
       "Scripts/git-hooks",
       "Scripts/git-tools",
       "Scripts/UETools",
       "Scripts/Unreal/ProjectContext.ps1",
-      "Scripts/Unreal/UnrealSync.Runtime.ps1"
+      "Scripts/UETools/UEToolSuite.Unreal.psm1"
     ],
     "artTools": [],
     "aiTools": [],
@@ -54,3 +54,4 @@
     "Scripts/Unreal/UESyncShellAliases.ps1"
   ]
 }
+

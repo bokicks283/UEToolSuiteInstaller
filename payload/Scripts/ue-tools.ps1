@@ -8,14 +8,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$runtimeHelperPath = Join-Path $PSScriptRoot "UETools\UEToolSuite.Runtime.ps1"
-if (-not (Test-Path -LiteralPath $runtimeHelperPath -PathType Leaf)) {
-  throw "Runtime helper not found: $runtimeHelperPath"
-}
-
-. $runtimeHelperPath
-Set-UEToolSuiteRuntimeContext -ScriptsRoot $PSScriptRoot -StateKey "ue-tools-dispatcher"
-
 function Write-UEToolSuiteEntrypointError {
   param([Parameter(Mandatory)][string]$Message)
   Write-Host "Error: $Message" -ForegroundColor Red
@@ -41,6 +33,8 @@ if ($MyInvocation.InvocationName -ne '.') {
 
       Import-Module -Name $modulePath -Force -DisableNameChecking
     }
+
+    Set-UEToolSuiteRuntimeContext -ScriptsRoot $PSScriptRoot -StateKey "ue-tools-dispatcher"
 
     $resolvedRepoRoot = Resolve-UEToolSuiteRepoRoot `
       -ExplicitRepoRoot $RepoRoot `
