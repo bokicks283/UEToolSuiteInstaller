@@ -365,7 +365,8 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTes
 
 2. Run mutating suites separately:
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& '.\Tests\Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast
 ```
 
 These mutating suites perform branch/rebase/merge operations in installed fixture repos, not in this source repo branch.
@@ -377,6 +378,10 @@ GUI project:
 - WinForms app targeting `net10.0-windows`
 - Bundles `Install-UEToolSuite.ps1` and full `payload/`
 - Launches installer through `pwsh.exe`
+- Keeps progress/status visible by default
+- Keeps terminal output hidden by default (toggle + resizable split panel when shown)
+- Exposes full user-safe installer/init options in a collapsible advanced section
+- Supports canceling an active install and post-success multi-project flow (`Install in another project?`)
 
 Build script:
 - `Scripts/Publish-InstallerExe.ps1`
@@ -440,6 +445,7 @@ git conflicts continue --skip-editor
 ## 12) Related Docs
 
 - Full build/release guide: `docs/Usage-Build-Release-Guide.md`
+- EXE architecture deep dive: `docs/EXE-Installer-Architecture.md`
 - EXE signing certificate guide: `docs/EXE-Code-Signing-Certificate-Guide.md`
 - Unification architecture: `docs/Tooling-Unification-Architecture.md`
 - Manual validation: `docs/Manual-Testing-Checklist.md`

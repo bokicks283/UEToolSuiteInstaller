@@ -243,6 +243,11 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1
 - [ ] Confirm GUI flow executes the same installer behavior as CLI (managed paths + backups + init behavior).
 - [ ] Confirm progress bar advances through payload copy, init, and completion.
 - [ ] Confirm terminal log output is hidden by default and visible when `Show terminal output` is enabled.
+- [ ] Confirm terminal output pane is readable and resizable when shown.
+- [ ] Confirm successful install prompts `Install in another project?`:
+  - `Yes` clears selected project and resets status/progress/log.
+  - `No` exits installer.
+- [ ] Confirm canceling an active install returns the GUI to a usable state and surfaces cancellation status.
 
 ## 10) Automated Gate Checklist (Run After Manual)
 
@@ -259,7 +264,8 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTes
 - [ ] Mutating/exclusive suite:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& '.\Tests\Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast
 ```
 
 - [ ] Review result directories for failed assertions:
