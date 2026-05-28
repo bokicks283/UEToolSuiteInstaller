@@ -42,6 +42,8 @@ By default, replaced managed content is backed up under:
 - `-NoLegacyCleanup`
 
 The GUI installer now runs `-RunInit` with `-InitNonInteractive` by default, shows stage progress in a progress bar, and keeps terminal output available behind a `Show terminal output` toggle.
+The terminal panel starts hidden by default, can be toggled on demand, and is resizable when shown. After a successful install, the GUI asks whether to install into another project (Yes resets the form, No exits).
+Advanced options are shown by default and expose all user-safe installer/init flags, including explicit `-SkipShellAliases` control.
 
 ## Test Entry Points
 
@@ -54,7 +56,8 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTes
 Mutating/exclusive suites:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& '.\Tests\Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast
 ```
 
 ## Build `.exe` Installer
@@ -72,5 +75,6 @@ Output:
 - [docs/Manual-Testing-Checklist.md](docs/Manual-Testing-Checklist.md)
 - [docs/EXE-Code-Signing-Certificate-Guide.md](docs/EXE-Code-Signing-Certificate-Guide.md)
 - [docs/Usage-Build-Release-Guide.md](docs/Usage-Build-Release-Guide.md)
+- [docs/EXE-Installer-Architecture.md](docs/EXE-Installer-Architecture.md)
 - [docs/Tooling-Unification-Architecture.md](docs/Tooling-Unification-Architecture.md)
 - [payload/Scripts/README.md](payload/Scripts/README.md)

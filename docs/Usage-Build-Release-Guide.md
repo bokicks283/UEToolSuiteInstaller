@@ -2,6 +2,9 @@
 
 This repository is the source of truth for the portable Unreal Engine 5 tool suite installer.
 
+For a detailed GUI architecture walkthrough, see:
+- [EXE Installer Architecture Guide](./EXE-Installer-Architecture.md)
+
 Use this guide when you want to:
 
 - Install the tool suite into a UE 5 project.
@@ -31,12 +34,16 @@ Users do not need to clone this repo.
 5. Choose the target project's `.uproject` file.
 6. Keep the default options for normal installs:
    - Run repo initialization after install.
+   - Keep init non-interactive mode enabled.
    - Skip Git LFS pull during init.
    - Skip the first Unreal sync during init.
-   - Install the managed PowerShell alias block.
+   - Keep `Skip PowerShell shell alias install during init` disabled.
    - Keep backups enabled.
 7. Click `Install`.
 8. Watch installer progress in the progress bar. Turn on `Show terminal output` only when you want detailed runtime logs.
+9. On success, choose whether to install into another project:
+   - `Yes` resets the form for another install.
+   - `No` exits the installer.
 
 The installer writes backups under:
 
@@ -88,6 +95,13 @@ docs/                                      maintainer documentation for this rep
 The GUI executable does not reimplement the installer. It bundles `Install-UEToolSuite.ps1` and `payload/`, opens a `.uproject` picker, then runs the existing PowerShell installer with the selected project path and options.
 
 When `Run repo initialization after install` is enabled (default), the GUI passes `-RunInit -InitNonInteractive` so init runs without interactive prompts. This prevents hidden-prompt hangs in packaged exe runs and keeps behavior deterministic for clean installs.
+
+GUI behavior highlights:
+- Progress/status remain visible at all times.
+- Terminal output is hidden by default and shown only on demand.
+- When shown, terminal output uses a larger readable pane in a resizable split layout.
+- Advanced options are shown by default and expose full user-safe installer/init switches while keeping internal maintenance flags CLI-only.
+- Cancel button requests cancellation and terminates the running installer process tree best-effort.
 
 This keeps the behavior auditable: the CLI installer and GUI installer use the same install engine.
 
@@ -158,7 +172,8 @@ Recommended release flow:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -FailFast
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "& './Tests/Run-UEToolSuiteTests.ps1' -IncludeExclusive -Name @('ue-sync-automated','binary-guard-fixes') -FailFast"
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast
 git add -N .
 git diff --check
 ```
