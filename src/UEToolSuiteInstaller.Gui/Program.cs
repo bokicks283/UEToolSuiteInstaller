@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 namespace UEToolSuiteInstaller.Gui;
@@ -30,6 +32,7 @@ internal sealed class InstallerForm : Form
     private static readonly TimeSpan NoOutputTimeout = TimeSpan.FromMinutes(4);
     private static readonly TimeSpan MaxInstallDuration = TimeSpan.FromMinutes(60);
     private const string DefaultProgressMessage = "Waiting to start...";
+    private const string DefaultWebsiteThemeId = "neutral";
     private const int MainPaneMinSize = 360;
     private const int LogPaneMinSize = 220;
 
@@ -50,6 +53,7 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox noBackupCheckBox = new();
     private readonly CheckBox skipDocsCheckBox = new();
     private readonly CheckBox skipWebsiteCheckBox = new();
+    private readonly CheckBox adoptExistingWebsiteCheckBox = new();
     private readonly CheckBox skipTestsCheckBox = new();
     private readonly CheckBox skipAiToolsCheckBox = new();
     private readonly CheckBox skipArtSourceToolsCheckBox = new();
@@ -61,6 +65,10 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox skipDocsBridgeInstallCheckBox = new();
     private readonly CheckBox noBuildCheckBox = new();
     private readonly CheckBox noRegenCheckBox = new();
+    private readonly ComboBox websiteThemeComboBox = new();
+    private readonly TextBox websiteLogoPathTextBox = new();
+    private readonly Button browseWebsiteLogoButton = new();
+    private readonly Button clearWebsiteLogoButton = new();
     private readonly Panel advancedOptionsPanel = new();
     private readonly ProgressBar installProgressBar = new();
     private readonly Label progressLabel = new();
@@ -76,6 +84,7 @@ internal sealed class InstallerForm : Form
     private long lastOutputTicksUtc;
     private string lastOutputLine = string.Empty;
     private bool logPaneHasBeenShown;
+    private List<WebsiteThemeOption> websiteThemeOptions = new();
 
     public InstallerForm()
     {
@@ -89,6 +98,7 @@ internal sealed class InstallerForm : Form
 
         ConfigureWindowIcon();
         BuildLayout();
+        LoadWebsiteThemeOptions();
         WireDependencyEvents();
         ApplyOptionDependencies();
         Shown += (_, _) => ApplySplitterMinimums();
@@ -237,6 +247,7 @@ internal sealed class InstallerForm : Form
         coreOptionsFlow.Controls.Add(skipUnrealSyncCheckBox);
         coreOptionsFlow.Controls.Add(skipShellAliasesCheckBox);
         coreOptionsFlow.Controls.Add(noBackupCheckBox);
+        coreOptionsFlow.Controls.Add(BuildDocsBrandingPanel());
         optionsContainer.Controls.Add(coreOptionsFlow, 0, 1);
 
         ConfigureOptionCheckBox(showAdvancedOptionsCheckBox, "Show advanced options", false);
@@ -357,6 +368,103 @@ internal sealed class InstallerForm : Form
         }
     }
 
+    private Control BuildDocsBrandingPanel()
+    {
+        var panel = new TableLayoutPanel
+        {
+            ColumnCount = 4,
+            RowCount = 3,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 8, 0, 0),
+            Padding = new Padding(10, 10, 10, 8),
+            BackColor = Color.FromArgb(244, 246, 250),
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var headerLabel = new Label
+        {
+            Text = "Docs website branding",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 0, 0, 6),
+        };
+        panel.Controls.Add(headerLabel, 0, 0);
+        panel.SetColumnSpan(headerLabel, 4);
+
+        var themeLabel = new Label
+        {
+            Text = "Theme",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 6, 10, 0),
+        };
+        panel.Controls.Add(themeLabel, 0, 1);
+
+        websiteThemeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        websiteThemeComboBox.Width = 360;
+        websiteThemeComboBox.Margin = new Padding(0, 2, 10, 0);
+        panel.Controls.Add(websiteThemeComboBox, 1, 1);
+        panel.SetColumnSpan(websiteThemeComboBox, 3);
+
+        var logoLabel = new Label
+        {
+            Text = "Logo (.svg/.png)",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 8, 10, 0),
+        };
+        panel.Controls.Add(logoLabel, 0, 2);
+
+        websiteLogoPathTextBox.ReadOnly = true;
+        websiteLogoPathTextBox.PlaceholderText = "Optional custom project logo...";
+        websiteLogoPathTextBox.Margin = new Padding(0, 4, 10, 0);
+        websiteLogoPathTextBox.Width = 420;
+        panel.Controls.Add(websiteLogoPathTextBox, 1, 2);
+
+        browseWebsiteLogoButton.Text = "Browse...";
+        browseWebsiteLogoButton.AutoSize = true;
+        browseWebsiteLogoButton.Margin = new Padding(0, 3, 6, 0);
+        browseWebsiteLogoButton.Click += (_, _) => BrowseForWebsiteLogo();
+        panel.Controls.Add(browseWebsiteLogoButton, 2, 2);
+
+        clearWebsiteLogoButton.Text = "Clear";
+        clearWebsiteLogoButton.AutoSize = true;
+        clearWebsiteLogoButton.Margin = new Padding(0, 3, 0, 0);
+        clearWebsiteLogoButton.Click += (_, _) =>
+        {
+            websiteLogoPathTextBox.Text = string.Empty;
+            statusLabel.Text = "Ready";
+        };
+        panel.Controls.Add(clearWebsiteLogoButton, 3, 2);
+
+        return panel;
+    }
+
+    private void BrowseForWebsiteLogo()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Choose website logo asset",
+            Filter = "Logo files (*.svg;*.png)|*.svg;*.png",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            websiteLogoPathTextBox.Text = dialog.FileName;
+            statusLabel.Text = "Ready";
+        }
+    }
+
     private void BuildAdvancedOptionsPanel()
     {
         advancedOptionsPanel.Dock = DockStyle.Fill;
@@ -391,12 +499,14 @@ internal sealed class InstallerForm : Form
         payloadColumn.Controls.Add(CreateSectionLabel("Payload scope"));
         ConfigureOptionCheckBox(skipDocsCheckBox, "Skip Docs payload", false);
         ConfigureOptionCheckBox(skipWebsiteCheckBox, "Skip website payload", false);
+        ConfigureOptionCheckBox(adoptExistingWebsiteCheckBox, "Adopt existing unmanaged website", false);
         ConfigureOptionCheckBox(skipTestsCheckBox, "Skip payload test scripts", false);
         ConfigureOptionCheckBox(skipAiToolsCheckBox, "Skip AI docs/tooling payload", false);
         ConfigureOptionCheckBox(skipArtSourceToolsCheckBox, "Skip ArtSource tooling payload", false);
         ConfigureOptionCheckBox(skipCodingStandardsToolsCheckBox, "Skip coding standards payload", false);
         payloadColumn.Controls.Add(skipDocsCheckBox);
         payloadColumn.Controls.Add(skipWebsiteCheckBox);
+        payloadColumn.Controls.Add(adoptExistingWebsiteCheckBox);
         payloadColumn.Controls.Add(skipTestsCheckBox);
         payloadColumn.Controls.Add(skipAiToolsCheckBox);
         payloadColumn.Controls.Add(skipArtSourceToolsCheckBox);
@@ -464,6 +574,7 @@ internal sealed class InstallerForm : Form
     private void WireDependencyEvents()
     {
         runInitCheckBox.CheckedChanged += (_, _) => ApplyOptionDependencies();
+        skipWebsiteCheckBox.CheckedChanged += (_, _) => ApplyOptionDependencies();
         skipDocsSetupCheckBox.CheckedChanged += (_, _) => ApplyOptionDependencies();
         skipUnrealSyncCheckBox.CheckedChanged += (_, _) => ApplyOptionDependencies();
         skipDocsNpmInstallCheckBox.CheckedChanged += (_, _) =>
@@ -489,6 +600,17 @@ internal sealed class InstallerForm : Form
         if (installCancellation is not null)
         {
             return;
+        }
+
+        var websiteEnabled = !skipWebsiteCheckBox.Checked;
+        websiteThemeComboBox.Enabled = websiteEnabled;
+        websiteLogoPathTextBox.Enabled = websiteEnabled;
+        browseWebsiteLogoButton.Enabled = websiteEnabled;
+        clearWebsiteLogoButton.Enabled = websiteEnabled;
+        adoptExistingWebsiteCheckBox.Enabled = websiteEnabled;
+        if (!websiteEnabled)
+        {
+            adoptExistingWebsiteCheckBox.Checked = false;
         }
 
         var initEnabled = runInitCheckBox.Checked;
@@ -662,6 +784,8 @@ internal sealed class InstallerForm : Form
         var runInit = runInitCheckBox.Checked;
         var skipDocsSetup = runInit && skipDocsSetupCheckBox.Checked;
         var skipUnrealSync = runInit && skipUnrealSyncCheckBox.Checked;
+        var selectedTheme = (websiteThemeComboBox.SelectedItem as WebsiteThemeOption)?.Id ?? DefaultWebsiteThemeId;
+        var logoPath = string.IsNullOrWhiteSpace(websiteLogoPathTextBox.Text) ? null : websiteLogoPathTextBox.Text.Trim();
 
         return new InstallOptions(
             RunInit: runInit,
@@ -678,11 +802,14 @@ internal sealed class InstallerForm : Form
             NoRegen: runInit && !skipUnrealSync && noRegenCheckBox.Checked,
             SkipDocs: skipDocsCheckBox.Checked,
             SkipWebsite: skipWebsiteCheckBox.Checked,
+            AdoptExistingWebsite: !skipWebsiteCheckBox.Checked && adoptExistingWebsiteCheckBox.Checked,
             SkipTests: skipTestsCheckBox.Checked,
             SkipAITools: skipAiToolsCheckBox.Checked,
             SkipArtSourceTools: skipArtSourceToolsCheckBox.Checked,
             SkipCodingStandardsTools: skipCodingStandardsToolsCheckBox.Checked,
-            NoBackup: noBackupCheckBox.Checked);
+            NoBackup: noBackupCheckBox.Checked,
+            WebsiteTheme: selectedTheme,
+            WebsiteLogoPath: logoPath);
     }
 
     private int RunInstallerProcess(string pwshPath, string installerRoot, string targetRoot, string projectPath, InstallOptions options, CancellationToken cancellationToken)
@@ -709,6 +836,17 @@ internal sealed class InstallerForm : Form
         if (options.SkipArtSourceTools) { args.Add("-SkipArtSourceTools"); }
         if (options.SkipCodingStandardsTools) { args.Add("-SkipCodingStandardsTools"); }
         if (options.NoBackup) { args.Add("-NoBackup"); }
+        if (!options.SkipWebsite)
+        {
+            if (options.AdoptExistingWebsite) { args.Add("-AdoptExistingWebsite"); }
+            args.Add("-WebsiteTheme");
+            args.Add(string.IsNullOrWhiteSpace(options.WebsiteTheme) ? DefaultWebsiteThemeId : options.WebsiteTheme!);
+            if (!string.IsNullOrWhiteSpace(options.WebsiteLogoPath))
+            {
+                args.Add("-WebsiteLogoPath");
+                args.Add(options.WebsiteLogoPath!);
+            }
+        }
 
         if (options.RunInit)
         {
@@ -868,6 +1006,90 @@ internal sealed class InstallerForm : Form
         return null;
     }
 
+    private void LoadWebsiteThemeOptions()
+    {
+        var fallback = new List<WebsiteThemeOption>
+        {
+            new(DefaultWebsiteThemeId, "Neutral Slate", "Balanced neutral docs theme with restrained contrast."),
+        };
+
+        websiteThemeOptions = fallback;
+        var defaultThemeId = DefaultWebsiteThemeId;
+
+        try
+        {
+            var installerRoot = FindInstallerRoot();
+            if (!string.IsNullOrWhiteSpace(installerRoot))
+            {
+                var catalogPath = Path.Combine(installerRoot, "payload", "website", "theme-presets", "theme-catalog.json");
+                if (File.Exists(catalogPath))
+                {
+                    var catalogRaw = File.ReadAllText(catalogPath, Encoding.UTF8);
+                    var catalog = JsonSerializer.Deserialize<WebsiteThemeCatalog>(catalogRaw, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true,
+                    });
+
+                    if (catalog?.Themes is { Count: > 0 })
+                    {
+                        var parsed = new List<WebsiteThemeOption>();
+                        foreach (var theme in catalog.Themes)
+                        {
+                            if (theme is null || string.IsNullOrWhiteSpace(theme.Id))
+                            {
+                                continue;
+                            }
+
+                            parsed.Add(new WebsiteThemeOption(
+                                theme.Id.Trim(),
+                                string.IsNullOrWhiteSpace(theme.Label) ? theme.Id.Trim() : theme.Label.Trim(),
+                                theme.Description?.Trim() ?? string.Empty));
+                        }
+
+                        if (parsed.Count > 0)
+                        {
+                            websiteThemeOptions = parsed;
+                            if (!string.IsNullOrWhiteSpace(catalog.DefaultTheme))
+                            {
+                                defaultThemeId = catalog.DefaultTheme.Trim();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            websiteThemeOptions = fallback;
+            defaultThemeId = DefaultWebsiteThemeId;
+        }
+
+        websiteThemeComboBox.BeginUpdate();
+        try
+        {
+            websiteThemeComboBox.Items.Clear();
+            foreach (var option in websiteThemeOptions)
+            {
+                websiteThemeComboBox.Items.Add(option);
+            }
+
+            if (websiteThemeComboBox.Items.Count == 0)
+            {
+                websiteThemeComboBox.Items.Add(fallback[0]);
+                websiteThemeOptions = fallback;
+            }
+
+            var selectedOption = websiteThemeOptions.FirstOrDefault(option =>
+                option.Id.Equals(defaultThemeId, StringComparison.OrdinalIgnoreCase));
+            selectedOption ??= websiteThemeOptions[0];
+            websiteThemeComboBox.SelectedItem = selectedOption;
+        }
+        finally
+        {
+            websiteThemeComboBox.EndUpdate();
+        }
+    }
+
     private static string QuoteForLog(string value)
     {
         return value.Contains(' ') ? '"' + value.Replace("\"", "\\\"") + '"' : value;
@@ -883,6 +1105,17 @@ internal sealed class InstallerForm : Form
 
     private void UpdateProgressFromOutput(string line)
     {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        if (line.Contains("[UE Tool Suite Installer] Target project:", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(12, "Resolving target project...");
+            return;
+        }
+
         if (line.Contains("[UE Tool Suite Installer] Payload:", StringComparison.OrdinalIgnoreCase))
         {
             SetProgress(15, "Validating payload...");
@@ -895,15 +1128,33 @@ internal sealed class InstallerForm : Form
             return;
         }
 
+        if (line.Contains("[UE Tool Suite Installer] Backed up existing website before adoption:", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(35, "Backing up existing website before adoption...");
+            return;
+        }
+
+        if (line.Contains("[UE Tool Suite Installer] Preserved customized docs files were not overwritten.", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(46, "Preserving customized docs and generating update report...");
+            return;
+        }
+
+        if (line.Contains("[UE Tool Suite Installer] Applied website theme", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(52, "Applying docs website theme and branding...");
+            return;
+        }
+
         if (line.Contains("[UE Tool Suite Installer] Installed/updated UE tool suite paths:", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(50, "Payload copied.");
+            SetProgress(58, "Payload install/update complete.");
             return;
         }
 
         if (line.Contains("[UE Tool Suite Installer] Running target bootstrap:", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(60, "Running repo initialization...");
+            SetProgress(62, "Starting repo initialization...");
             return;
         }
 
@@ -913,33 +1164,123 @@ internal sealed class InstallerForm : Form
             return;
         }
 
+        if (line.Contains("[Init] Initializing Git LFS filters for this repo", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(70, "Initializing Git LFS filters...");
+            return;
+        }
+
+        if (line.Contains("[Init] Pulling LFS content", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(74, "Pulling Git LFS content...");
+            return;
+        }
+
         if (line.Contains("[Init] Applying recommended repo-local git config...", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(74, "Applying git configuration...");
+            SetProgress(78, "Applying git configuration...");
             return;
         }
 
         if (line.Contains("ignored tracked file", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(80, "Updating ignored tracked files...");
+            SetProgress(82, "Updating ignored tracked files...");
+            return;
+        }
+
+        if (line.Contains("[Init] Running Enable-GitHooks.ps1...", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(84, "Enabling git hooks...");
+            return;
+        }
+
+        if (line.Contains("[Init] Configuring git aliases:", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(86, "Configuring git conflict helper aliases...");
+            return;
+        }
+
+        if (line.Contains("[Init] Configuring PowerShell aliases for the dispatcher", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(88, "Installing PowerShell command aliases...");
             return;
         }
 
         if (line.Contains("[Init] Running hook self-test...", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(86, "Running hook self-test...");
+            SetProgress(90, "Running hook self-test...");
+            return;
+        }
+
+        if (line.Contains("[Init] Hook self-test completed.", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(91, "Hook self-test complete.");
+            return;
+        }
+
+        if (line.Contains("[Init] Preparing docs tooling prerequisites...", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(92, "Preparing docs tooling prerequisites...");
+            return;
+        }
+
+        if (line.Contains("[Init] Skipping docs tooling prerequisite setup.", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(92, "Skipping docs tooling prerequisite setup...");
+            return;
+        }
+
+        if (line.Contains("[Init] Installing docs site dependencies with npm install...", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(93, "Installing docs dependencies (npm install)...");
+            return;
+        }
+
+        if (line.Contains("[Init] Installing optional docs VS Code bridge...", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(94, "Installing docs VS Code bridge...");
+            return;
+        }
+
+        if (line.Contains("[Init] Skipping docs VS Code bridge install", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(94, "Skipping docs VS Code bridge install...");
+            return;
+        }
+
+        if (line.Contains("[Init] Running ue-tools docs doctor...", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(95, "Running docs doctor (Docusaurus validation)...");
+            return;
+        }
+
+        if (line.Contains("Docs check passed.", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(96, "Docs doctor completed.");
+            return;
+        }
+
+        if (line.Contains("[Init] Running ue-tools build for first-time setup...", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(97, "Running first-time Unreal build setup...");
+            return;
+        }
+
+        if (line.Contains("[UE Sync]", StringComparison.OrdinalIgnoreCase))
+        {
+            SetProgress(98, "Running Unreal sync/build steps...");
             return;
         }
 
         if (line.Contains("[Init] Repo initialization complete.", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(95, "Finalizing...");
+            SetProgress(99, "Finalizing...");
             return;
         }
 
         if (line.Contains("[UE Tool Suite Installer] Next step in the target repo:", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(93, "Finalizing...");
+            SetProgress(98, "Finalizing...");
             return;
         }
 
@@ -985,6 +1326,10 @@ internal sealed class InstallerForm : Form
         }
         else
         {
+            websiteThemeComboBox.Enabled = false;
+            websiteLogoPathTextBox.Enabled = false;
+            browseWebsiteLogoButton.Enabled = false;
+            clearWebsiteLogoButton.Enabled = false;
             initNonInteractiveCheckBox.Enabled = false;
             skipLfsPullCheckBox.Enabled = false;
             skipUnrealSyncCheckBox.Enabled = false;
@@ -1089,10 +1434,39 @@ internal sealed class InstallerForm : Form
     private void ResetForNextInstall()
     {
         projectPathTextBox.Clear();
+        websiteLogoPathTextBox.Clear();
+        var defaultTheme = websiteThemeOptions.FirstOrDefault(option => option.Id.Equals(DefaultWebsiteThemeId, StringComparison.OrdinalIgnoreCase));
+        if (defaultTheme is not null)
+        {
+            websiteThemeComboBox.SelectedItem = defaultTheme;
+        }
+        adoptExistingWebsiteCheckBox.Checked = false;
         logTextBox.Clear();
         statusLabel.Text = "Ready";
         SetProgress(0, DefaultProgressMessage, allowDecrease: true);
         showLogCheckBox.Checked = false;
+    }
+}
+
+internal sealed class WebsiteThemeCatalog
+{
+    public string? DefaultTheme { get; set; }
+    public List<WebsiteThemeCatalogItem>? Themes { get; set; }
+}
+
+internal sealed class WebsiteThemeCatalogItem
+{
+    public string? Id { get; set; }
+    public string? Label { get; set; }
+    public string? Description { get; set; }
+    public string? CssPath { get; set; }
+}
+
+internal sealed record WebsiteThemeOption(string Id, string Label, string Description)
+{
+    public override string ToString()
+    {
+        return $"{Label} ({Id})";
     }
 }
 
@@ -1111,8 +1485,11 @@ internal sealed record InstallOptions(
     bool NoRegen,
     bool SkipDocs,
     bool SkipWebsite,
+    bool AdoptExistingWebsite,
     bool SkipTests,
     bool SkipAITools,
     bool SkipArtSourceTools,
     bool SkipCodingStandardsTools,
-    bool NoBackup);
+    bool NoBackup,
+    string WebsiteTheme,
+    string? WebsiteLogoPath);

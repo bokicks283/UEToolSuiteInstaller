@@ -1046,26 +1046,54 @@ function Invoke-UEToolSuiteInitRuntime {
   # --- Optional: run UE build/sync once for first-time setup ---
   $ueToolsScript = Join-Path $repoRoot "Scripts\ue-tools.ps1"
   if (-not $SkipUnrealSync -and (Test-Path $ueToolsScript -PathType Leaf)) {
-    Info "Running ue-tools build for first-time setup..."
-  
-    $_args = @(
-      "-NoProfile", "-ExecutionPolicy", "Bypass",
-      "-File", $ueToolsScript,
-      "-RepoRoot", $repoRoot,
-      "build",
-      "-Config", $Config,
-      "-Platform", $Platform
+    $isBlueprintOnlyProject = $false
+    $declaredModules = @(
+      @($projectContext.Modules) | Where-Object {
+        $null -ne $_ -and
+        $_.PSObject.Properties["Name"] -and
+        -not [string]::IsNullOrWhiteSpace([string]$_.Name)
+      }
     )
-    if ($NoBuild) { $_args += "-NoBuild" }
-    if ($NoRegen) { $_args += "-NoRegen" }
-    if (-not [string]::IsNullOrWhiteSpace($UProjectPath)) { $_args += @("-UProjectPath", $UProjectPath) }
-    if (-not [string]::IsNullOrWhiteSpace($WorkspacePath)) { $_args += @("-WorkspacePath", $WorkspacePath) }
-  
-    & pwsh @_args
-    if ($LASTEXITCODE -ne 0) { throw "ue-tools build failed (exit $LASTEXITCODE)." }
-  
-    Ok "ue-tools build completed."
-    Add-ToolReadiness -Tool "ue-tools" -Status "OK" -Detail "ue-tools build completed for first-time setup."
+    if ($declaredModules.Count -eq 0) {
+      $sourceRoot = Join-Path $projectContext.RepoRoot "Source"
+      if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
+        $isBlueprintOnlyProject = $true
+      }
+      else {
+        $nativeBuildMarkers = @(
+          Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -Include "*.Target.cs", "*.Build.cs" -ErrorAction SilentlyContinue
+        )
+        $isBlueprintOnlyProject = ($nativeBuildMarkers.Count -eq 0)
+      }
+    }
+
+    if ($isBlueprintOnlyProject) {
+      Warn "Blueprint-only project detected (no C++ modules/targets). Skipping first-time ue-tools build."
+      Warn "Add a C++ module first if you want init to run regeneration/build automatically."
+      Add-ToolReadiness -Tool "ue-tools" -Status "SKIP" -Detail "First-time build skipped for blueprint-only project."
+    }
+    else {
+      Info "Running ue-tools build for first-time setup..."
+    
+      $_args = @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", $ueToolsScript,
+        "-RepoRoot", $repoRoot,
+        "build",
+        "-Config", $Config,
+        "-Platform", $Platform
+      )
+      if ($NoBuild) { $_args += "-NoBuild" }
+      if ($NoRegen) { $_args += "-NoRegen" }
+      if (-not [string]::IsNullOrWhiteSpace($UProjectPath)) { $_args += @("-UProjectPath", $UProjectPath) }
+      if (-not [string]::IsNullOrWhiteSpace($WorkspacePath)) { $_args += @("-WorkspacePath", $WorkspacePath) }
+    
+      & pwsh @_args
+      if ($LASTEXITCODE -ne 0) { throw "ue-tools build failed (exit $LASTEXITCODE)." }
+    
+      Ok "ue-tools build completed."
+      Add-ToolReadiness -Tool "ue-tools" -Status "OK" -Detail "ue-tools build completed for first-time setup."
+    }
   }
   elseif ($SkipUnrealSync) {
     Warn "Skipping ue-tools build (SkipUnrealSync set)."
@@ -1096,4 +1124,3 @@ function Invoke-UEToolSuiteInitRuntime {
 }
 
 Export-ModuleMember -Function Invoke-UEToolSuiteInitRuntime
-

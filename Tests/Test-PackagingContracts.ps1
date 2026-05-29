@@ -41,12 +41,14 @@ try {
   $iconPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\Assets\UEToolSuiteInstaller.ico"
   $publishScriptPath = Join-Path $repoRoot "Scripts\Publish-InstallerExe.ps1"
   $workflowPath = Join-Path $repoRoot ".github\workflows\release.yml"
+  $themeCatalogPath = Join-Path $repoRoot "payload\website\theme-presets\theme-catalog.json"
 
   Assert-Condition -Name "GUI project file exists" -Condition (Test-Path -LiteralPath $csprojPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $csprojPath"
   Assert-Condition -Name "GUI runtime file exists" -Condition (Test-Path -LiteralPath $programPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $programPath"
   Assert-Condition -Name "GUI icon exists" -Condition (Test-Path -LiteralPath $iconPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $iconPath"
   Assert-Condition -Name "Publish script exists" -Condition (Test-Path -LiteralPath $publishScriptPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $publishScriptPath"
   Assert-Condition -Name "Release workflow exists" -Condition (Test-Path -LiteralPath $workflowPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $workflowPath"
+  Assert-Condition -Name "Website theme catalog exists" -Condition (Test-Path -LiteralPath $themeCatalogPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $themeCatalogPath"
 
   Step "GUI publish content contract"
   [xml]$csprojXml = Get-Content -LiteralPath $csprojPath -Raw
@@ -71,6 +73,11 @@ try {
   Assert-HasLiteral -Name "gui terminal is resizable split layout" -Text $programText -Needle "SplitContainer"
   Assert-HasLiteral -Name "gui startup failures show explicit error dialog" -Text $programText -Needle "Installer UI failed to start."
   Assert-HasLiteral -Name "gui includes progress bar" -Text $programText -Needle "ProgressBar"
+  Assert-HasLiteral -Name "gui progress parser tracks docs npm install phase" -Text $programText -Needle "Installing docs site dependencies with npm install..."
+  Assert-HasLiteral -Name "gui progress text reports docs npm install phase" -Text $programText -Needle "Installing docs dependencies (npm install)..."
+  Assert-HasLiteral -Name "gui progress parser tracks docs doctor phase" -Text $programText -Needle "Running ue-tools docs doctor..."
+  Assert-HasLiteral -Name "gui progress text reports docs doctor phase" -Text $programText -Needle "Running docs doctor (Docusaurus validation)..."
+  Assert-HasLiteral -Name "gui progress text reports first-time ue build phase" -Text $programText -Needle "Running first-time Unreal build setup..."
   Assert-HasLiteral -Name "gui enforces no-output timeout guard" -Text $programText -Needle "NoOutputTimeout"
   Assert-HasLiteral -Name "gui includes cancel button" -Text $programText -Needle "Cancel"
   Assert-HasLiteral -Name "gui prompts for another project on success" -Text $programText -Needle "Install in another project?"
@@ -86,6 +93,13 @@ try {
   Assert-HasLiteral -Name "gui supports skip ai tools payload option" -Text $programText -Needle "-SkipAITools"
   Assert-HasLiteral -Name "gui supports skip artsource tools payload option" -Text $programText -Needle "-SkipArtSourceTools"
   Assert-HasLiteral -Name "gui supports skip coding standards payload option" -Text $programText -Needle "-SkipCodingStandardsTools"
+  Assert-HasLiteral -Name "gui includes docs branding controls" -Text $programText -Needle "Docs website branding"
+  Assert-HasLiteral -Name "gui includes website theme selector" -Text $programText -Needle "Theme"
+  Assert-HasLiteral -Name "gui includes logo picker control" -Text $programText -Needle "Logo (.svg/.png)"
+  Assert-HasLiteral -Name "gui includes adopt existing website control" -Text $programText -Needle "Adopt existing unmanaged website"
+  Assert-HasLiteral -Name "gui forwards website theme flag" -Text $programText -Needle "-WebsiteTheme"
+  Assert-HasLiteral -Name "gui forwards website logo flag" -Text $programText -Needle "-WebsiteLogoPath"
+  Assert-HasLiteral -Name "gui forwards adopt existing website flag" -Text $programText -Needle "-AdoptExistingWebsite"
   Assert-HasLiteral -Name "gui supports skip optional setup option" -Text $programText -Needle "-SkipOptionalToolSetup"
   Assert-HasLiteral -Name "gui supports skip docs setup option" -Text $programText -Needle "-SkipDocsSetup"
   Assert-HasLiteral -Name "gui supports skip docs npm install option" -Text $programText -Needle "-SkipDocsNpmInstall"
@@ -93,6 +107,32 @@ try {
   Assert-HasLiteral -Name "gui supports skip docs bridge option" -Text $programText -Needle "-SkipDocsBridgeInstall"
   Assert-HasLiteral -Name "gui supports no build option" -Text $programText -Needle "-NoBuild"
   Assert-HasLiteral -Name "gui supports no regen option" -Text $programText -Needle "-NoRegen"
+
+  Step "Website theme catalog contract"
+  $themeCatalog = (Get-Content -LiteralPath $themeCatalogPath -Raw | ConvertFrom-Json)
+  $themeIds = @($themeCatalog.themes | ForEach-Object { [string]$_.id })
+  $expectedThemeIds = @(
+    "neutral", "graphite", "ocean", "forest", "amber", "violet",
+    "cobalt", "teal", "jade", "indigo", "crimson", "rose", "copper", "slate"
+  )
+  Assert-Condition -Name "theme catalog default remains neutral" -Condition ($themeCatalog.defaultTheme -eq "neutral") -PassDetail "default=neutral" -FailDetail "default theme is '$($themeCatalog.defaultTheme)'"
+  Assert-Condition -Name "theme catalog exposes 14 presets" -Condition ($themeIds.Count -eq 14) -PassDetail "count=14" -FailDetail "count=$($themeIds.Count)"
+  foreach ($expectedId in $expectedThemeIds) {
+    Assert-Condition -Name "theme catalog includes $expectedId" -Condition ($themeIds -contains $expectedId) -PassDetail "present" -FailDetail "missing"
+  }
+  foreach ($theme in @($themeCatalog.themes)) {
+    Assert-Condition -Name "theme $($theme.id) has logo path metadata" -Condition (-not [string]::IsNullOrWhiteSpace([string]$theme.logoPath)) -PassDetail "logoPath present" -FailDetail "logoPath missing"
+    Assert-Condition -Name "theme $($theme.id) has favicon path metadata" -Condition (-not [string]::IsNullOrWhiteSpace([string]$theme.faviconPath)) -PassDetail "faviconPath present" -FailDetail "faviconPath missing"
+    Assert-Condition -Name "theme $($theme.id) has social card path metadata" -Condition (-not [string]::IsNullOrWhiteSpace([string]$theme.socialCardPath)) -PassDetail "socialCardPath present" -FailDetail "socialCardPath missing"
+    $cssPath = Join-Path $repoRoot ("payload\website\" + ((($theme.cssPath -as [string]) -replace '^website/', '') -replace "/", "\"))
+    $logoPath = Join-Path $repoRoot ("payload\website\static\" + (($theme.logoPath -as [string]) -replace "/", "\"))
+    $faviconPath = Join-Path $repoRoot ("payload\website\static\" + (($theme.faviconPath -as [string]) -replace "/", "\"))
+    $socialCardPath = Join-Path $repoRoot ("payload\website\static\" + (($theme.socialCardPath -as [string]) -replace "/", "\"))
+    Assert-Condition -Name "theme $($theme.id) css asset exists" -Condition (Test-Path -LiteralPath $cssPath -PathType Leaf) -PassDetail "css present" -FailDetail "missing: $cssPath"
+    Assert-Condition -Name "theme $($theme.id) logo asset exists" -Condition (Test-Path -LiteralPath $logoPath -PathType Leaf) -PassDetail "logo present" -FailDetail "missing: $logoPath"
+    Assert-Condition -Name "theme $($theme.id) favicon asset exists" -Condition (Test-Path -LiteralPath $faviconPath -PathType Leaf) -PassDetail "favicon present" -FailDetail "missing: $faviconPath"
+    Assert-Condition -Name "theme $($theme.id) social card asset exists" -Condition (Test-Path -LiteralPath $socialCardPath -PathType Leaf) -PassDetail "social card present" -FailDetail "missing: $socialCardPath"
+  }
 
   Step "Publish script contract"
   $publishScriptText = Get-Content -LiteralPath $publishScriptPath -Raw

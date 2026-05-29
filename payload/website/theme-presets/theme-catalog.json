@@ -1,0 +1,131 @@
+{
+  "defaultTheme": "neutral",
+  "themes": [
+    {
+      "id": "neutral",
+      "label": "Neutral Slate",
+      "description": "Balanced neutral docs theme with restrained contrast.",
+      "cssPath": "website/theme-presets/neutral.css",
+      "logoPath": "img/themes/neutral/logo.svg",
+      "faviconPath": "img/themes/neutral/favicon.svg",
+      "socialCardPath": "img/themes/neutral/social-card.svg"
+    },
+    {
+      "id": "graphite",
+      "label": "Graphite",
+      "description": "Cool gray palette tuned for engineering-heavy docs.",
+      "cssPath": "website/theme-presets/graphite.css",
+      "logoPath": "img/themes/graphite/logo.svg",
+      "faviconPath": "img/themes/graphite/favicon.svg",
+      "socialCardPath": "img/themes/graphite/social-card.svg"
+    },
+    {
+      "id": "ocean",
+      "label": "Ocean",
+      "description": "Blue-forward palette with clean, high readability surfaces.",
+      "cssPath": "website/theme-presets/ocean.css",
+      "logoPath": "img/themes/ocean/logo.svg",
+      "faviconPath": "img/themes/ocean/favicon.svg",
+      "socialCardPath": "img/themes/ocean/social-card.svg"
+    },
+    {
+      "id": "forest",
+      "label": "Forest",
+      "description": "Green palette with natural contrast for long-form reading.",
+      "cssPath": "website/theme-presets/forest.css",
+      "logoPath": "img/themes/forest/logo.svg",
+      "faviconPath": "img/themes/forest/favicon.svg",
+      "socialCardPath": "img/themes/forest/social-card.svg"
+    },
+    {
+      "id": "amber",
+      "label": "Amber",
+      "description": "Warm amber palette with strong callout contrast.",
+      "cssPath": "website/theme-presets/amber.css",
+      "logoPath": "img/themes/amber/logo.svg",
+      "faviconPath": "img/themes/amber/favicon.svg",
+      "socialCardPath": "img/themes/amber/social-card.svg"
+    },
+    {
+      "id": "violet",
+      "label": "Violet",
+      "description": "Modern violet palette with subdued dark-mode tones.",
+      "cssPath": "website/theme-presets/violet.css",
+      "logoPath": "img/themes/violet/logo.svg",
+      "faviconPath": "img/themes/violet/favicon.svg",
+      "socialCardPath": "img/themes/violet/social-card.svg"
+    },
+    {
+      "id": "cobalt",
+      "label": "Cobalt",
+      "description": "Deep cobalt accents for focused technical documentation.",
+      "cssPath": "website/theme-presets/cobalt.css",
+      "logoPath": "img/themes/cobalt/logo.svg",
+      "faviconPath": "img/themes/cobalt/favicon.svg",
+      "socialCardPath": "img/themes/cobalt/social-card.svg"
+    },
+    {
+      "id": "teal",
+      "label": "Teal",
+      "description": "Calm teal palette for balanced readability and emphasis.",
+      "cssPath": "website/theme-presets/teal.css",
+      "logoPath": "img/themes/teal/logo.svg",
+      "faviconPath": "img/themes/teal/favicon.svg",
+      "socialCardPath": "img/themes/teal/social-card.svg"
+    },
+    {
+      "id": "jade",
+      "label": "Jade",
+      "description": "Fresh jade tones optimized for process and pipeline docs.",
+      "cssPath": "website/theme-presets/jade.css",
+      "logoPath": "img/themes/jade/logo.svg",
+      "faviconPath": "img/themes/jade/favicon.svg",
+      "socialCardPath": "img/themes/jade/social-card.svg"
+    },
+    {
+      "id": "indigo",
+      "label": "Indigo",
+      "description": "Indigo-forward contrast for compact, high-density docs.",
+      "cssPath": "website/theme-presets/indigo.css",
+      "logoPath": "img/themes/indigo/logo.svg",
+      "faviconPath": "img/themes/indigo/favicon.svg",
+      "socialCardPath": "img/themes/indigo/social-card.svg"
+    },
+    {
+      "id": "crimson",
+      "label": "Crimson",
+      "description": "Crimson emphasis for teams that prefer high-signal accents.",
+      "cssPath": "website/theme-presets/crimson.css",
+      "logoPath": "img/themes/crimson/logo.svg",
+      "faviconPath": "img/themes/crimson/favicon.svg",
+      "socialCardPath": "img/themes/crimson/social-card.svg"
+    },
+    {
+      "id": "rose",
+      "label": "Rose",
+      "description": "Rose-magenta palette with softer contrast transitions.",
+      "cssPath": "website/theme-presets/rose.css",
+      "logoPath": "img/themes/rose/logo.svg",
+      "faviconPath": "img/themes/rose/favicon.svg",
+      "socialCardPath": "img/themes/rose/social-card.svg"
+    },
+    {
+      "id": "copper",
+      "label": "Copper",
+      "description": "Copper-toned palette for warm but disciplined presentation.",
+      "cssPath": "website/theme-presets/copper.css",
+      "logoPath": "img/themes/copper/logo.svg",
+      "faviconPath": "img/themes/copper/favicon.svg",
+      "socialCardPath": "img/themes/copper/social-card.svg"
+    },
+    {
+      "id": "slate",
+      "label": "Slate",
+      "description": "Slate-blue neutral palette for understated technical docs.",
+      "cssPath": "website/theme-presets/slate.css",
+      "logoPath": "img/themes/slate/logo.svg",
+      "faviconPath": "img/themes/slate/favicon.svg",
+      "socialCardPath": "img/themes/slate/social-card.svg"
+    }
+  ]
+}

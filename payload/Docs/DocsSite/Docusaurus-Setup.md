@@ -125,6 +125,42 @@ ue-tools docs install-bridge
 
 After that, `ue-tools docs new-page` and `ue-tools docs new-section` will queue Markdown All in One's `Create Table of Contents` command through the local bridge extension. If either dependency is missing, `ue-tools docs` falls back to plain scaffolding and skips TOC generation.
 
+## Theme And Branding Updates
+
+List available presets:
+
+```powershell
+ue-tools docs theme list
+```
+
+Available preset IDs:
+
+`neutral, graphite, ocean, forest, amber, violet, cobalt, teal, jade, indigo, crimson, rose, copper, slate`
+
+Apply a preset and optional logo:
+
+```powershell
+ue-tools docs theme apply neutral
+ue-tools docs theme apply ocean -LogoPath C:\Path\ProjectLogo.svg
+```
+
+`ue-tools docs theme apply` updates:
+
+- `website/src/css/custom.css`
+- `website/docusaurus.config.ts` branding fields (`title`, `favicon`, navbar title/logo, `themeConfig.image`, suite custom fields)
+- `website/.ue-tools/ownership.json` management marker
+- If `-LogoPath` is provided, the same custom asset is wired to navbar logo, favicon, and social card image.
+
+Preserve-first behavior for existing sites:
+
+- Managed site: theme apply runs immediately.
+- Unmanaged site: theme apply is blocked by default to preserve existing design.
+- To intentionally take over an existing site, adopt first:
+
+```powershell
+ue-tools docs theme apply neutral --adopt-existing
+```
+
 ## Deployment Notes
 
 - Update `website/docusaurus.config.ts` `url` and repository metadata before a real deployment target is chosen.
