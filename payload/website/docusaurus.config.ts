@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'UE Project Docs',
   tagline: 'Repo tooling, Unreal workflow, and living project documentation for UE projects.',
-  favicon: 'img/logo.svg',
+  favicon: 'img/themes/neutral/favicon.svg',
 
   future: {
     v4: true,
@@ -54,7 +54,7 @@ const config: Config = {
   },
 
   themeConfig: {
-    image: 'img/docusaurus-social-card.jpg',
+    image: 'img/themes/neutral/social-card.svg',
     announcementBar: {
       id: 'lean-docs',
       content: 'Living repo docs. Keep setup and workflow clear, lean, and project-focused.',
@@ -70,7 +70,7 @@ const config: Config = {
       title: 'UE Project',
       logo: {
         alt: 'UE Project Docs',
-        src: 'img/logo.svg',
+        src: 'img/themes/neutral/logo.svg',
       },
       items: [
         {

@@ -133,23 +133,32 @@ List available presets:
 ue-tools docs theme list
 ```
 
+Available preset IDs:
+
+`neutral, graphite, ocean, forest, amber, violet, cobalt, teal, jade, indigo, crimson, rose, copper, slate`
+
 Apply a preset and optional logo:
 
 ```powershell
-ue-tools docs theme apply -Theme neutral
-ue-tools docs theme apply -Theme ocean -LogoPath C:\Path\ProjectLogo.svg
+ue-tools docs theme apply neutral
+ue-tools docs theme apply ocean -LogoPath C:\Path\ProjectLogo.svg
 ```
 
 `ue-tools docs theme apply` updates:
 
 - `website/src/css/custom.css`
-- `website/docusaurus.config.ts` branding fields (`title`, navbar title/logo, suite custom fields)
+- `website/docusaurus.config.ts` branding fields (`title`, `favicon`, navbar title/logo, `themeConfig.image`, suite custom fields)
 - `website/.ue-tools/ownership.json` management marker
+- If `-LogoPath` is provided, the same custom asset is wired to navbar logo, favicon, and social card image.
 
-If the website was not previously managed by this installer/suite, run with `--adopt-existing` to opt in:
+Preserve-first behavior for existing sites:
+
+- Managed site: theme apply runs immediately.
+- Unmanaged site: theme apply is blocked by default to preserve existing design.
+- To intentionally take over an existing site, adopt first:
 
 ```powershell
-ue-tools docs theme apply -Theme neutral --adopt-existing
+ue-tools docs theme apply neutral --adopt-existing
 ```
 
 ## Deployment Notes

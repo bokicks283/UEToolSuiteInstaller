@@ -119,7 +119,7 @@ Examples:
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
   ue-tools docs theme list
-  ue-tools docs theme apply -Theme neutral
+  ue-tools docs theme apply neutral
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
@@ -526,6 +526,9 @@ function Read-DocsThemeCatalog {
         label = ([string]$_.label).Trim()
         description = [string]$_.description
         cssPath = ([string]$_.cssPath).Trim()
+        logoPath = ([string]$_.logoPath).Trim().Replace("\", "/").TrimStart("/")
+        faviconPath = ([string]$_.faviconPath).Trim().Replace("\", "/").TrimStart("/")
+        socialCardPath = ([string]$_.socialCardPath).Trim().Replace("\", "/").TrimStart("/")
       }
     })
   }
@@ -573,7 +576,7 @@ function Invoke-DocsThemeApply {
 
   $isManaged = Test-DocsWebsiteManaged -ResolvedRepoRoot $ResolvedRepoRoot
   if (-not $isManaged -and -not $AdoptExisting) {
-    throw "Website is unmanaged. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -AdoptExistingWebsite."
+    throw "Website is unmanaged. Theme overrides are blocked by default. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -AdoptExistingWebsite."
   }
 
   $configPath = Join-Path $websiteRoot "docusaurus.config.ts"
@@ -587,6 +590,21 @@ function Invoke-DocsThemeApply {
   if (-not (Test-Path -LiteralPath $themeSourcePath -PathType Leaf)) {
     throw "Theme CSS file is missing for '$($themeEntry.id)': $themeSourcePath"
   }
+  if ([string]::IsNullOrWhiteSpace($themeEntry.logoPath) -or [string]::IsNullOrWhiteSpace($themeEntry.faviconPath) -or [string]::IsNullOrWhiteSpace($themeEntry.socialCardPath)) {
+    throw "Theme entry '$($themeEntry.id)' is missing logoPath/faviconPath/socialCardPath metadata in theme catalog."
+  }
+  $themeLogoPath = Join-Path $websiteRoot ("static\" + $themeEntry.logoPath.Replace("/", "\"))
+  $themeFaviconPath = Join-Path $websiteRoot ("static\" + $themeEntry.faviconPath.Replace("/", "\"))
+  $themeSocialCardPath = Join-Path $websiteRoot ("static\" + $themeEntry.socialCardPath.Replace("/", "\"))
+  foreach ($asset in @(
+    [pscustomobject]@{ Name = "logoPath"; Path = $themeLogoPath; Relative = [string]$themeEntry.logoPath },
+    [pscustomobject]@{ Name = "faviconPath"; Path = $themeFaviconPath; Relative = [string]$themeEntry.faviconPath },
+    [pscustomobject]@{ Name = "socialCardPath"; Path = $themeSocialCardPath; Relative = [string]$themeEntry.socialCardPath }
+  )) {
+    if (-not (Test-Path -LiteralPath $asset.Path -PathType Leaf)) {
+      throw "Theme asset '$($asset.Name)' is missing for '$($themeEntry.id)': $($asset.Path) (catalog value: $($asset.Relative))"
+    }
+  }
 
   $themeDestination = Join-Path $websiteRoot "src\css\custom.css"
   $themeDestinationParent = Split-Path -Path $themeDestination -Parent
@@ -599,7 +617,9 @@ function Invoke-DocsThemeApply {
   $docsTitle = "$projectName Docs"
   $tagline = "Repo tooling, Unreal workflow, and living project documentation for $projectName."
   $logoAlt = $docsTitle
-  $logoRelativePath = "img/logo.svg"
+  $logoRelativePath = [string]$themeEntry.logoPath
+  $faviconRelativePath = [string]$themeEntry.faviconPath
+  $socialCardRelativePath = [string]$themeEntry.socialCardPath
   if (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
     if (-not (Test-Path -LiteralPath $LogoPath -PathType Leaf)) {
       throw "LogoPath does not exist or is not a file: $LogoPath"
@@ -611,6 +631,8 @@ function Invoke-DocsThemeApply {
     }
 
     $logoRelativePath = "img/branding/project-logo$extension"
+    $faviconRelativePath = $logoRelativePath
+    $socialCardRelativePath = $logoRelativePath
     $logoDestination = Join-Path $websiteRoot ("static\" + $logoRelativePath.Replace("/", "\"))
     $logoParent = Split-Path -Path $logoDestination -Parent
     if (-not [string]::IsNullOrWhiteSpace($logoParent)) {
@@ -621,6 +643,8 @@ function Invoke-DocsThemeApply {
 
   $configText = Get-Content -LiteralPath $configPath -Raw
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $configText -Pattern "(?m)^(\s*title:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "config title"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*favicon:\s*)'[^']*'," -Value $faviconRelativePath -PropertyDisplayName "config favicon"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*image:\s*)'[^']*'," -Value $socialCardRelativePath -PropertyDisplayName "themeConfig.image"
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(navbar:\s*\{.*?^\s*title:\s*)'[^']*'," -Value $projectName -PropertyDisplayName "navbar title"
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*alt:\s*)'[^']*'," -Value $logoAlt -PropertyDisplayName "navbar logo alt"
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*src:\s*)'[^']*'," -Value $logoRelativePath -PropertyDisplayName "navbar logo src"
@@ -668,16 +692,37 @@ function Invoke-DocsThemeCommand {
       $tokens = if ($argsList.Count -gt 1) { @($argsList[1..($argsList.Count - 1)]) } else { @() }
       for ($i = 0; $i -lt $tokens.Count; $i++) {
         $token = [string]$tokens[$i]
-        switch ($token.Trim().ToLowerInvariant()) {
-          "-theme" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for -Theme." }; $themeId = [string]$tokens[$i + 1]; $i++; continue }
-          "--theme" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for --theme." }; $themeId = [string]$tokens[$i + 1]; $i++; continue }
-          "-logopath" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for -LogoPath." }; $logoPath = [string]$tokens[$i + 1]; $i++; continue }
-          "--logo-path" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for --logo-path." }; $logoPath = [string]$tokens[$i + 1]; $i++; continue }
-          "--adopt-existing" { $adoptExisting = $true; continue }
-          "-adoptexisting" { $adoptExisting = $true; continue }
-          "-adoptexistingwebsite" { $adoptExisting = $true; continue }
-          default { throw "Unknown theme apply option '$token'. Run 'ue-tools docs help theme'." }
+        $normalizedToken = $token.Trim().ToLowerInvariant()
+
+        if ($normalizedToken -eq "-theme" -or $normalizedToken -eq "--theme") {
+          if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
+          if (-not [string]::IsNullOrWhiteSpace($themeId)) { throw "Theme is already set to '$themeId'. Provide only one theme id." }
+          $themeId = [string]$tokens[$i + 1]
+          $i++
+          continue
         }
+
+        if ($normalizedToken -eq "-logopath" -or $normalizedToken -eq "--logo-path") {
+          if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
+          $logoPath = [string]$tokens[$i + 1]
+          $i++
+          continue
+        }
+
+        if ($normalizedToken -eq "--adopt-existing" -or $normalizedToken -eq "-adoptexisting" -or $normalizedToken -eq "-adoptexistingwebsite") {
+          $adoptExisting = $true
+          continue
+        }
+
+        if ($normalizedToken.StartsWith("-")) {
+          throw "Unknown theme apply option '$token'. Run 'ue-tools docs help theme'."
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($themeId)) {
+          throw "Theme is already set to '$themeId'. Unexpected extra argument '$token'."
+        }
+
+        $themeId = $token
       }
 
       Invoke-DocsThemeApply -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeId -LogoPath $logoPath -AdoptExisting:$adoptExisting
@@ -1052,7 +1097,7 @@ Examples:
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
   ue-tools docs theme list
-  ue-tools docs theme apply -Theme neutral
+  ue-tools docs theme apply neutral
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
@@ -1325,14 +1370,14 @@ ue-tools docs theme
 
 Usage:
   ue-tools docs theme list
-  ue-tools docs theme apply -Theme <id> [-LogoPath <path>] [--adopt-existing]
+  ue-tools docs theme apply <id> [-LogoPath <path>] [--adopt-existing]
 
 Commands:
   list                           Show available website theme presets from website/theme-presets/theme-catalog.json
   apply                          Apply a theme preset to website/src/css/custom.css and update branding fields in website/docusaurus.config.ts
 
 Notes:
-  - Theme apply requires a managed website marker by default.
+  - Theme apply is preserve-first: unmanaged websites are not overridden by default.
   - Use --adopt-existing to write the marker for an existing unmanaged website before applying.
   - LogoPath accepts .svg or .png files.
 "@

@@ -1,11 +1,11 @@
 :root {
-  --ifm-color-primary: #0d7ea2;
-  --ifm-color-primary-dark: #0c7192;
-  --ifm-color-primary-darker: #0b6785;
-  --ifm-color-primary-darkest: #095871;
-  --ifm-color-primary-light: #2a8dad;
-  --ifm-color-primary-lighter: #429ab6;
-  --ifm-color-primary-lightest: #69afc5;
+  --ifm-color-primary: #9b5c33;
+  --ifm-color-primary-dark: #8c532e;
+  --ifm-color-primary-darker: #7f4b2a;
+  --ifm-color-primary-darkest: #6c4024;
+  --ifm-color-primary-light: #a7704b;
+  --ifm-color-primary-lighter: #b18060;
+  --ifm-color-primary-lightest: #c19a81;
   --ifm-background-color: #f5f7fa;
   --ifm-background-surface-color: #ffffff;
   --ifm-navbar-background-color: rgba(250, 252, 255, 0.95);
@@ -14,16 +14,16 @@
   --ifm-heading-font-family: "Inter", "Segoe UI", sans-serif;
   --ifm-font-color-base: #1f2937;
   --ifm-heading-color: #0f172a;
-  --ifm-link-color: #0c9fc5;
+  --ifm-link-color: #c47a49;
   --ifm-menu-color: #334155;
   --ifm-menu-color-active: #0f172a;
-  --ifm-menu-color-background-active: #258bab;
+  --ifm-menu-color-background-active: #a56c47;
   --ifm-menu-color-background-hover: color-mix(in srgb, var(--ifm-color-primary) 12%, transparent);
   --ifm-toc-border-color: rgba(15, 23, 42, 0.12);
   --ifm-blockquote-border-left-color: var(--ifm-color-primary);
   --ifm-global-radius: 8px;
   --ifm-code-font-size: 92%;
-  --ifm-code-background: #ecf5f8;
+  --ifm-code-background: #f7f2ef;
   --ifm-pre-background: #0f172a;
   --ifm-pre-color: #e2e8f0;
   --ifm-table-stripe-background: rgba(15, 23, 42, 0.03);
@@ -31,26 +31,26 @@
 }
 
 [data-theme='dark'] {
-  --ifm-color-primary: #57b8d7;
-  --ifm-color-primary-dark: #4da2bd;
-  --ifm-color-primary-darker: #4693ac;
-  --ifm-color-primary-darkest: #39798e;
-  --ifm-color-primary-light: #69c0db;
-  --ifm-color-primary-lighter: #7ac7df;
-  --ifm-color-primary-lightest: #90d0e5;
+  --ifm-color-primary: #d8a57d;
+  --ifm-color-primary-dark: #be916e;
+  --ifm-color-primary-darker: #ad8464;
+  --ifm-color-primary-darkest: #8f6d52;
+  --ifm-color-primary-light: #dcaf8b;
+  --ifm-color-primary-lighter: #e0b898;
+  --ifm-color-primary-lightest: #e5c4a9;
   --ifm-background-color: #0b111a;
   --ifm-background-surface-color: #121b28;
   --ifm-navbar-background-color: rgba(10, 15, 24, 0.94);
   --ifm-footer-background-color: #070c13;
   --ifm-font-color-base: #dbe4f0;
   --ifm-heading-color: #f8fafc;
-  --ifm-link-color: #69c0db;
+  --ifm-link-color: #dcaf8b;
   --ifm-menu-color: rgba(219, 228, 240, 0.84);
   --ifm-menu-color-active: #ffffff;
   --ifm-menu-color-background-active: color-mix(in srgb, var(--ifm-color-primary) 32%, rgba(255, 255, 255, 0.08));
   --ifm-menu-color-background-hover: rgba(255, 255, 255, 0.08);
   --ifm-toc-border-color: rgba(226, 232, 240, 0.14);
-  --ifm-code-background: #0c1a1e;
+  --ifm-code-background: #1e1712;
   --ifm-pre-background: #0a0f18;
   --ifm-table-stripe-background: rgba(226, 232, 240, 0.04);
   --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--ifm-color-primary) 22%, transparent);
@@ -191,11 +191,11 @@ body {
 
 .theme-doc-markdown blockquote {
   border-radius: 0 8px 8px 0;
-  background: #e7f2f6;
+  background: #f5efeb;
 }
 
 [data-theme='dark'] .theme-doc-markdown blockquote {
-  background: #0e1d22;
+  background: #231a14;
 }
 
 .alert {

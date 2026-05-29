@@ -53,6 +53,17 @@ The GUI installer now runs `-RunInit` with `-InitNonInteractive` by default, sho
 The terminal panel starts hidden by default, can be toggled on demand, and is resizable when shown. After a successful install, the GUI asks whether to install into another project (Yes resets the form, No exits).
 Core installer controls include docs theme preset selection and optional SVG/PNG logo branding; advanced options remain hidden by default and expose all user-safe installer/init flags, including explicit `-SkipShellAliases` control.
 
+Website theme presets:
+- `neutral`, `graphite`, `ocean`, `forest`, `amber`, `violet`
+- `cobalt`, `teal`, `jade`, `indigo`, `crimson`, `rose`, `copper`, `slate`
+
+Override behavior for existing websites:
+- managed `website/`: installer applies theme/branding immediately
+- unmanaged `website/`: installer preserves by default and blocks overrides
+- explicit adopt + override:
+  - `Install-UEToolSuite.ps1 ... -AdoptExistingWebsite -WebsiteTheme <id> [-WebsiteLogoPath <path>]`
+  - `ue-tools docs theme apply <id> --adopt-existing [-LogoPath <path>]`
+
 ## Test Entry Points
 
 Non-mutating/default suite:

@@ -89,6 +89,13 @@ Advanced init/build options:
 | Run init build flow without compile step | `-NoBuild` |
 | Run init build flow without regen step | `-NoRegen` |
 
+Theme/branding controls:
+
+- Theme selector values come from `payload/website/theme-presets/theme-catalog.json`.
+- Current preset IDs: `neutral`, `graphite`, `ocean`, `forest`, `amber`, `violet`, `cobalt`, `teal`, `jade`, `indigo`, `crimson`, `rose`, `copper`, `slate`.
+- `-WebsiteLogoPath` custom logo overrides update all icon targets together (navbar logo, favicon, and social card image).
+- Existing unmanaged websites are preserve-first; the GUI forwards `-AdoptExistingWebsite` when explicit adoption is requested.
+
 Internal switches intentionally not exposed in GUI:
 
 - `-PayloadRoot`

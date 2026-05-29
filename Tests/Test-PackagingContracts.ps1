@@ -41,12 +41,14 @@ try {
   $iconPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\Assets\UEToolSuiteInstaller.ico"
   $publishScriptPath = Join-Path $repoRoot "Scripts\Publish-InstallerExe.ps1"
   $workflowPath = Join-Path $repoRoot ".github\workflows\release.yml"
+  $themeCatalogPath = Join-Path $repoRoot "payload\website\theme-presets\theme-catalog.json"
 
   Assert-Condition -Name "GUI project file exists" -Condition (Test-Path -LiteralPath $csprojPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $csprojPath"
   Assert-Condition -Name "GUI runtime file exists" -Condition (Test-Path -LiteralPath $programPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $programPath"
   Assert-Condition -Name "GUI icon exists" -Condition (Test-Path -LiteralPath $iconPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $iconPath"
   Assert-Condition -Name "Publish script exists" -Condition (Test-Path -LiteralPath $publishScriptPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $publishScriptPath"
   Assert-Condition -Name "Release workflow exists" -Condition (Test-Path -LiteralPath $workflowPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $workflowPath"
+  Assert-Condition -Name "Website theme catalog exists" -Condition (Test-Path -LiteralPath $themeCatalogPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $themeCatalogPath"
 
   Step "GUI publish content contract"
   [xml]$csprojXml = Get-Content -LiteralPath $csprojPath -Raw
@@ -105,6 +107,32 @@ try {
   Assert-HasLiteral -Name "gui supports skip docs bridge option" -Text $programText -Needle "-SkipDocsBridgeInstall"
   Assert-HasLiteral -Name "gui supports no build option" -Text $programText -Needle "-NoBuild"
   Assert-HasLiteral -Name "gui supports no regen option" -Text $programText -Needle "-NoRegen"
+
+  Step "Website theme catalog contract"
+  $themeCatalog = (Get-Content -LiteralPath $themeCatalogPath -Raw | ConvertFrom-Json)
+  $themeIds = @($themeCatalog.themes | ForEach-Object { [string]$_.id })
+  $expectedThemeIds = @(
+    "neutral", "graphite", "ocean", "forest", "amber", "violet",
+    "cobalt", "teal", "jade", "indigo", "crimson", "rose", "copper", "slate"
+  )
+  Assert-Condition -Name "theme catalog default remains neutral" -Condition ($themeCatalog.defaultTheme -eq "neutral") -PassDetail "default=neutral" -FailDetail "default theme is '$($themeCatalog.defaultTheme)'"
+  Assert-Condition -Name "theme catalog exposes 14 presets" -Condition ($themeIds.Count -eq 14) -PassDetail "count=14" -FailDetail "count=$($themeIds.Count)"
+  foreach ($expectedId in $expectedThemeIds) {
+    Assert-Condition -Name "theme catalog includes $expectedId" -Condition ($themeIds -contains $expectedId) -PassDetail "present" -FailDetail "missing"
+  }
+  foreach ($theme in @($themeCatalog.themes)) {
+    Assert-Condition -Name "theme $($theme.id) has logo path metadata" -Condition (-not [string]::IsNullOrWhiteSpace([string]$theme.logoPath)) -PassDetail "logoPath present" -FailDetail "logoPath missing"
+    Assert-Condition -Name "theme $($theme.id) has favicon path metadata" -Condition (-not [string]::IsNullOrWhiteSpace([string]$theme.faviconPath)) -PassDetail "faviconPath present" -FailDetail "faviconPath missing"
+    Assert-Condition -Name "theme $($theme.id) has social card path metadata" -Condition (-not [string]::IsNullOrWhiteSpace([string]$theme.socialCardPath)) -PassDetail "socialCardPath present" -FailDetail "socialCardPath missing"
+    $cssPath = Join-Path $repoRoot ("payload\website\" + ((($theme.cssPath -as [string]) -replace '^website/', '') -replace "/", "\"))
+    $logoPath = Join-Path $repoRoot ("payload\website\static\" + (($theme.logoPath -as [string]) -replace "/", "\"))
+    $faviconPath = Join-Path $repoRoot ("payload\website\static\" + (($theme.faviconPath -as [string]) -replace "/", "\"))
+    $socialCardPath = Join-Path $repoRoot ("payload\website\static\" + (($theme.socialCardPath -as [string]) -replace "/", "\"))
+    Assert-Condition -Name "theme $($theme.id) css asset exists" -Condition (Test-Path -LiteralPath $cssPath -PathType Leaf) -PassDetail "css present" -FailDetail "missing: $cssPath"
+    Assert-Condition -Name "theme $($theme.id) logo asset exists" -Condition (Test-Path -LiteralPath $logoPath -PathType Leaf) -PassDetail "logo present" -FailDetail "missing: $logoPath"
+    Assert-Condition -Name "theme $($theme.id) favicon asset exists" -Condition (Test-Path -LiteralPath $faviconPath -PathType Leaf) -PassDetail "favicon present" -FailDetail "missing: $faviconPath"
+    Assert-Condition -Name "theme $($theme.id) social card asset exists" -Condition (Test-Path -LiteralPath $socialCardPath -PathType Leaf) -PassDetail "social card present" -FailDetail "missing: $socialCardPath"
+  }
 
   Step "Publish script contract"
   $publishScriptText = Get-Content -LiteralPath $publishScriptPath -Raw

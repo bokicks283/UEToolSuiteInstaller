@@ -102,6 +102,10 @@ GUI behavior highlights:
 - When shown, terminal output uses a larger readable pane in a resizable split layout.
 - Core options include docs website theme preset selection plus optional SVG/PNG logo branding.
 - Existing unmanaged `website/` folders are preserved by default; use `-AdoptExistingWebsite` (or GUI adopt toggle) to convert and manage them.
+- Theme presets: `neutral`, `graphite`, `ocean`, `forest`, `amber`, `violet`, `cobalt`, `teal`, `jade`, `indigo`, `crimson`, `rose`, `copper`, `slate`.
+- For an existing unmanaged site, overrides only apply with explicit adoption:
+  - Installer: `-AdoptExistingWebsite -WebsiteTheme <id> [-WebsiteLogoPath <path>]`
+  - CLI: `ue-tools docs theme apply <id> --adopt-existing [-LogoPath <path>]`
 - Managed docs defaults use ledger-based smart updates. Customized or intentionally deleted defaults are preserved and candidate updates are written under `.ue-tools-installer-updates/<timestamp>/`.
 - Advanced options are hidden by default and expose full user-safe installer/init switches while keeping internal maintenance flags CLI-only.
 - Cancel button requests cancellation and terminates the running installer process tree best-effort.

@@ -13,7 +13,6 @@
       "Scripts/README.md",
       "Scripts/ue-tools.ps1",
       "Scripts/git-hooks",
-      "Scripts/git-tools",
       "Scripts/UETools",
       "Scripts/Unreal/ProjectContext.ps1",
       "Scripts/UETools/UEToolSuite.Unreal.psm1"

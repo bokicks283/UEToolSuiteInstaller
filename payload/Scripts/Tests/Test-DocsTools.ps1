@@ -77,6 +77,12 @@ Minimal docs root for ue-tools docs testing.
     }
     Copy-Item -LiteralPath $cssSource -Destination $cssDestination -Force
   }
+  $themeAssetSource = Join-Path $repoRoot "website\static\img\themes"
+  if (Test-Path -LiteralPath $themeAssetSource -PathType Container) {
+    $themeAssetDestination = Join-Path $scratchWebsiteRoot "static\img\themes"
+    New-Item -ItemType Directory -Force -Path $themeAssetDestination | Out-Null
+    Copy-Item -Path (Join-Path $themeAssetSource "*") -Destination $themeAssetDestination -Recurse -Force
+  }
 
   return $scratchRepo
 }
@@ -309,13 +315,27 @@ try {
   Assert-Condition "case1d theme list exits cleanly" ($themeListResult.ExitCode -eq 0) "exit code=0" "exit code=$($themeListResult.ExitCode)"
   Assert-TextContains "case1d theme list includes neutral" $themeListResult.OutputText "- neutral:"
   Assert-TextContains "case1d theme list includes ocean" $themeListResult.OutputText "- ocean:"
+  Assert-TextContains "case1d theme list includes graphite" $themeListResult.OutputText "- graphite:"
+  Assert-TextContains "case1d theme list includes forest" $themeListResult.OutputText "- forest:"
+  Assert-TextContains "case1d theme list includes amber" $themeListResult.OutputText "- amber:"
+  Assert-TextContains "case1d theme list includes violet" $themeListResult.OutputText "- violet:"
+  Assert-TextContains "case1d theme list includes cobalt" $themeListResult.OutputText "- cobalt:"
+  Assert-TextContains "case1d theme list includes teal" $themeListResult.OutputText "- teal:"
+  Assert-TextContains "case1d theme list includes jade" $themeListResult.OutputText "- jade:"
+  Assert-TextContains "case1d theme list includes indigo" $themeListResult.OutputText "- indigo:"
+  Assert-TextContains "case1d theme list includes crimson" $themeListResult.OutputText "- crimson:"
+  Assert-TextContains "case1d theme list includes rose" $themeListResult.OutputText "- rose:"
+  Assert-TextContains "case1d theme list includes copper" $themeListResult.OutputText "- copper:"
+  Assert-TextContains "case1d theme list includes slate" $themeListResult.OutputText "- slate:"
+  $themeListMatches = [regex]::Matches($themeListResult.OutputText, '(?m)^-\s+[a-z0-9-]+:')
+  Assert-Condition "case1d theme list reports 14 presets" ($themeListMatches.Count -eq 14) "theme count=14" "theme count=$($themeListMatches.Count)"
 
   Step "Case 1e: theme apply requires managed marker unless explicitly adopted"
   $themeGuardRepo = New-MinimalDocsRepo -Name "repo-theme-guard"
   $themeGuardToolset = New-StubToolset -Name "toolset-theme-guard"
   $themeGuardResult = Invoke-DocsToolsCommand `
     -ScratchRepoRoot $themeGuardRepo `
-    -CliArgs @("theme", "apply", "-Theme", "ocean") `
+    -CliArgs @("theme", "apply", "ocean") `
     -Toolset $themeGuardToolset `
     -SandboxRoot (New-ScratchPath "sandbox-theme-guard")
   Assert-Condition "case1e unmanaged theme apply exits nonzero" ($themeGuardResult.ExitCode -ne 0) "exit code=$($themeGuardResult.ExitCode)" "expected non-zero exit code"
@@ -333,14 +353,18 @@ try {
 '@
   $themeAdoptResult = Invoke-DocsToolsCommand `
     -ScratchRepoRoot $themeAdoptRepo `
-    -CliArgs @("theme", "apply", "-Theme", "ocean", "-LogoPath", $themeLogoPath, "--adopt-existing") `
+    -CliArgs @("theme", "apply", "ocean", "-LogoPath", $themeLogoPath, "--adopt-existing") `
     -Toolset $themeAdoptToolset `
     -SandboxRoot (New-ScratchPath "sandbox-theme-adopt")
   Assert-Condition "case1f adopt theme apply exits cleanly" ($themeAdoptResult.ExitCode -eq 0) "exit code=0" "exit code=$($themeAdoptResult.ExitCode)"
   Assert-TextContains "case1f adopt message emitted" $themeAdoptResult.OutputText "Adopted existing website"
   Assert-TextContains "case1f apply message emitted" $themeAdoptResult.OutputText "Applied website theme 'ocean'."
   Assert-TextContains "case1f custom css updated to ocean palette" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\src\css\custom.css") -Raw) "--ifm-color-primary: #0d7ea2;"
-  Assert-TextContains "case1f config stores updated theme id" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\docusaurus.config.ts") -Raw) "suiteThemeId: 'ocean'"
+  $themeAdoptConfig = Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\docusaurus.config.ts") -Raw
+  Assert-TextContains "case1f config stores updated theme id" $themeAdoptConfig "suiteThemeId: 'ocean'"
+  Assert-TextContains "case1f custom logo rewires navbar icon" $themeAdoptConfig "src: 'img/branding/project-logo.svg'"
+  Assert-TextContains "case1f custom logo rewires favicon icon" $themeAdoptConfig "favicon: 'img/branding/project-logo.svg'"
+  Assert-TextContains "case1f custom logo rewires social card image" $themeAdoptConfig "image: 'img/branding/project-logo.svg'"
   Assert-Condition "case1f ownership marker written" (Test-Path -LiteralPath (Join-Path $themeAdoptRepo "website\.ue-tools\ownership.json") -PathType Leaf) "ownership marker present"
 
   Step "Case 2: new-section scaffolds a section and skips TOC without the bridge"

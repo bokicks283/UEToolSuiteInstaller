@@ -154,6 +154,9 @@ try {
       "website\docusaurus.config.ts",
       "website\.gitignore",
       "website\static\.nojekyll",
+      "website\static\img\themes\neutral\logo.svg",
+      "website\static\img\themes\neutral\favicon.svg",
+      "website\static\img\themes\neutral\social-card.svg",
       "website\.ue-tools\ownership.json",
       ".ue-tools\state\docs-managed-ledger.json"
     )) {
@@ -166,6 +169,9 @@ try {
   Assert-FileContains "case1 website title uses project name" (Join-Path $targetRepo "website\docusaurus.config.ts") "title: 'PortableSample Docs'"
   Assert-FileContains "case1 website custom field project name uses .uproject stem" (Join-Path $targetRepo "website\docusaurus.config.ts") "suiteProjectName: 'PortableSample'"
   Assert-FileContains "case1 website custom field theme id is neutral" (Join-Path $targetRepo "website\docusaurus.config.ts") "suiteThemeId: 'neutral'"
+  Assert-FileContains "case1 website default navbar logo is neutral themed icon" (Join-Path $targetRepo "website\docusaurus.config.ts") "src: 'img/themes/neutral/logo.svg'"
+  Assert-FileContains "case1 website default favicon is neutral themed icon" (Join-Path $targetRepo "website\docusaurus.config.ts") "favicon: 'img/themes/neutral/favicon.svg'"
+  Assert-FileContains "case1 website default social card is neutral themed icon" (Join-Path $targetRepo "website\docusaurus.config.ts") "image: 'img/themes/neutral/social-card.svg'"
 
   foreach ($relativePath in @(
       "Scripts\Install-UEProjectTools.ps1",
@@ -332,6 +338,8 @@ try {
   Assert-FileContains "case5b ocean theme copied to custom.css" (Join-Path $themedRepo "website\src\css\custom.css") "--ifm-color-primary: #0d7ea2;"
   Assert-FileContains "case5b config stores ocean theme id" (Join-Path $themedRepo "website\docusaurus.config.ts") "suiteThemeId: 'ocean'"
   Assert-FileContains "case5b config points logo src to branding asset" (Join-Path $themedRepo "website\docusaurus.config.ts") "src: 'img/branding/project-logo.svg'"
+  Assert-FileContains "case5b custom logo also rewires favicon" (Join-Path $themedRepo "website\docusaurus.config.ts") "favicon: 'img/branding/project-logo.svg'"
+  Assert-FileContains "case5b custom logo also rewires social card" (Join-Path $themedRepo "website\docusaurus.config.ts") "image: 'img/branding/project-logo.svg'"
   Assert-PathExists "case5b svg logo copied into website branding assets" (Join-Path $themedRepo "website\static\img\branding\project-logo.svg")
 
   Step "Case 5c: PNG logo is accepted and applied"
@@ -342,6 +350,8 @@ try {
   Assert-Condition "case5c png logo install exits cleanly" ($pngLogoResult.Code -eq 0) "exit=0" "exit=$($pngLogoResult.Code)"
   Assert-FileContains "case5c violet theme copied to custom.css" (Join-Path $pngLogoRepo "website\src\css\custom.css") "--ifm-color-primary: #6a53c1;"
   Assert-FileContains "case5c config points to png branding asset" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "src: 'img/branding/project-logo.png'"
+  Assert-FileContains "case5c custom png logo rewires favicon" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "favicon: 'img/branding/project-logo.png'"
+  Assert-FileContains "case5c custom png logo rewires social card" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "image: 'img/branding/project-logo.png'"
   Assert-PathExists "case5c png logo copied into website branding assets" (Join-Path $pngLogoRepo "website\static\img\branding\project-logo.png")
 
   Step "Case 5d: invalid website theme fails with clear allowed-values message"

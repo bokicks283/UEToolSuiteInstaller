@@ -82,6 +82,7 @@ function New-InitRepoFixture {
     [Parameter(Mandatory)][string]$Name,
     [switch]$IncludeDocsSite,
     [switch]$IncludeArtSourceTool,
+    [switch]$BlueprintOnly,
     [switch]$SkipGitInit
   )
 
@@ -97,7 +98,18 @@ function New-InitRepoFixture {
     & git -C $target config user.name "Init Repo Readiness Test" | Out-Null
   }
 
-  Write-Utf8NoBomFile -Path (Join-Path $target "PortableSample.uproject") -Content @'
+  if ($BlueprintOnly) {
+    Write-Utf8NoBomFile -Path (Join-Path $target "PortableSample.uproject") -Content @'
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.4",
+  "Category": "",
+  "Description": ""
+}
+'@
+  }
+  else {
+    Write-Utf8NoBomFile -Path (Join-Path $target "PortableSample.uproject") -Content @'
 {
   "FileVersion": 3,
   "EngineAssociation": "5.4",
@@ -112,6 +124,7 @@ function New-InitRepoFixture {
   ]
 }
 '@
+  }
 
   foreach ($hookName in @("pre-commit", "pre-push", "post-checkout", "post-merge", "post-commit", "post-rewrite")) {
     Write-Utf8NoBomFile -Path (Join-Path $target ".githooks\$hookName") -Content "#!/usr/bin/env bash`nexit 0`n"
@@ -245,6 +258,7 @@ function Invoke-InitRepo {
     [Parameter(Mandatory)][string]$TargetRepoRoot,
     [Parameter(Mandatory)][string]$StubRoot,
     [Parameter(Mandatory)][string]$CommandLog,
+    [bool]$IncludeSkipUnrealSync = $true,
     [string[]]$ExtraArgs = @()
   )
 
@@ -265,9 +279,12 @@ function Invoke-InitRepo {
     $runtimeArgs = @(
       "-RepoRoot", $TargetRepoRoot,
       "-SkipLfsPull",
-      "-SkipShellAliases",
-      "-SkipUnrealSync"
-    ) + @($ExtraArgs)
+      "-SkipShellAliases"
+    )
+    if ($IncludeSkipUnrealSync) {
+      $runtimeArgs += "-SkipUnrealSync"
+    }
+    $runtimeArgs += @($ExtraArgs)
     $params = @{}
     $i = 0
     while ($i -lt $runtimeArgs.Count) {
@@ -465,6 +482,22 @@ try {
   & git -C $targetRepoNoGit rev-parse --verify HEAD 2>$null | Out-Null
   Assert-Condition "case5 initial commit created" ($LASTEXITCODE -eq 0) "HEAD exists" "HEAD missing"
   Assert-TextContains "case5 readiness reports initial commit" $result5.OutputText "[OK] initial commit"
+
+  Step "Case 6: blueprint-only repo skips optional first-time ue-tools build"
+  $commandLog6 = Join-Path $script:TempRoot "case6-commands.log"
+  Write-Utf8NoBomFile -Path $commandLog6 -Content ""
+  $targetRepoBlueprintOnly = New-InitRepoFixture -Name "target blueprint only" -BlueprintOnly
+  $result6 = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepoBlueprintOnly `
+    -StubRoot $stubRoot `
+    -CommandLog $commandLog6 `
+    -IncludeSkipUnrealSync:$false `
+    -ExtraArgs @("-NonInteractive")
+  $commandLog6Text = Get-Content -LiteralPath $commandLog6 -Raw
+  Assert-Condition "case6 init exits cleanly" ($result6.ExitCode -eq 0) "exit=0" "exit=$($result6.ExitCode)"
+  Assert-TextContains "case6 output indicates blueprint-only build skip" $result6.OutputText "Blueprint-only project detected (no C++ modules/targets). Skipping first-time ue-tools build."
+  Assert-TextContains "case6 readiness reports ue-tools skip" $result6.OutputText "[SKIP] ue-tools: First-time build skipped for blueprint-only project."
+  Assert-TextNotContains "case6 ue-tools build was not invoked" $commandLog6Text "ue-tools build"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

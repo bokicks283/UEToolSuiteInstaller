@@ -73,7 +73,7 @@ const principles = [
 
 const metrics = [
   {value: 'UE 5', label: 'Engine target'},
-  {value: '6', label: 'Theme presets'},
+  {value: '14', label: 'Theme presets'},
   {value: '1', label: 'Unified installer'},
 ];
 

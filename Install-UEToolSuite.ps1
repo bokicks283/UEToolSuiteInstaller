@@ -286,15 +286,27 @@ function Read-WebsiteThemeCatalog {
     $themeId = [string]$theme.id
     $themeLabel = [string]$theme.label
     $themeCssPath = [string]$theme.cssPath
+    $themeLogoPath = [string]$theme.logoPath
+    $themeFaviconPath = [string]$theme.faviconPath
+    $themeSocialCardPath = [string]$theme.socialCardPath
 
-    if ([string]::IsNullOrWhiteSpace($themeId) -or [string]::IsNullOrWhiteSpace($themeCssPath)) {
-      throw "Website theme catalog has an entry with missing id/cssPath: $catalogPath"
+    if (
+      [string]::IsNullOrWhiteSpace($themeId) -or
+      [string]::IsNullOrWhiteSpace($themeCssPath) -or
+      [string]::IsNullOrWhiteSpace($themeLogoPath) -or
+      [string]::IsNullOrWhiteSpace($themeFaviconPath) -or
+      [string]::IsNullOrWhiteSpace($themeSocialCardPath)
+    ) {
+      throw "Website theme catalog has an entry with missing required fields (id/cssPath/logoPath/faviconPath/socialCardPath): $catalogPath"
     }
 
     $normalizedThemes.Add([pscustomobject]@{
       id = $themeId.Trim()
       label = if ([string]::IsNullOrWhiteSpace($themeLabel)) { $themeId.Trim() } else { $themeLabel.Trim() }
       cssPath = $themeCssPath.Trim()
+      logoPath = ($themeLogoPath.Trim().Replace("\", "/").TrimStart("/"))
+      faviconPath = ($themeFaviconPath.Trim().Replace("\", "/").TrimStart("/"))
+      socialCardPath = ($themeSocialCardPath.Trim().Replace("\", "/").TrimStart("/"))
     }) | Out-Null
   }
 
@@ -353,6 +365,18 @@ function Apply-WebsiteThemeAndBranding {
   if (-not (Test-Path -LiteralPath $themeSourcePath -PathType Leaf)) {
     throw "Theme CSS payload is missing for '$($themeEntry.id)': $themeSourcePath"
   }
+  $themeLogoSourcePath = Join-Path $PayloadRoot ("website\static\" + $themeEntry.logoPath.Replace("/", "\"))
+  $themeFaviconSourcePath = Join-Path $PayloadRoot ("website\static\" + $themeEntry.faviconPath.Replace("/", "\"))
+  $themeSocialCardSourcePath = Join-Path $PayloadRoot ("website\static\" + $themeEntry.socialCardPath.Replace("/", "\"))
+  foreach ($asset in @(
+    [pscustomobject]@{ Name = "logoPath"; Path = $themeLogoSourcePath; Relative = [string]$themeEntry.logoPath },
+    [pscustomobject]@{ Name = "faviconPath"; Path = $themeFaviconSourcePath; Relative = [string]$themeEntry.faviconPath },
+    [pscustomobject]@{ Name = "socialCardPath"; Path = $themeSocialCardSourcePath; Relative = [string]$themeEntry.socialCardPath }
+  )) {
+    if (-not (Test-Path -LiteralPath $asset.Path -PathType Leaf)) {
+      throw "Theme asset '$($asset.Name)' is missing for '$($themeEntry.id)': $($asset.Path) (catalog value: $($asset.Relative))"
+    }
+  }
 
   $themeDestinationPath = Join-Path $websiteRoot "src\css\custom.css"
   $themeDestinationParent = Split-Path -Path $themeDestinationPath -Parent
@@ -364,7 +388,9 @@ function Apply-WebsiteThemeAndBranding {
   }
 
   $resolvedLogoPath = $null
-  $logoRelativePath = "img/logo.svg"
+  $logoRelativePath = [string]$themeEntry.logoPath
+  $faviconRelativePath = [string]$themeEntry.faviconPath
+  $socialCardRelativePath = [string]$themeEntry.socialCardPath
   if (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
     $resolvedLogoPath = Resolve-ExistingFile -Path $LogoPath -Name "WebsiteLogoPath"
     $logoExtension = ([System.IO.Path]::GetExtension($resolvedLogoPath) ?? "").ToLowerInvariant()
@@ -373,6 +399,8 @@ function Apply-WebsiteThemeAndBranding {
     }
 
     $logoRelativePath = "img/branding/project-logo$logoExtension"
+    $faviconRelativePath = $logoRelativePath
+    $socialCardRelativePath = $logoRelativePath
     $logoDestination = Join-Path $websiteRoot ("static\" + $logoRelativePath.Replace("/", "\"))
     $logoDestinationParent = Split-Path -Path $logoDestination -Parent
     if ($logoDestinationParent -and $PSCmdlet.ShouldProcess($logoDestinationParent, "Ensure website branding directory")) {
@@ -390,6 +418,8 @@ function Apply-WebsiteThemeAndBranding {
 
   $configText = Get-Content -LiteralPath $configPath -Raw
   $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $configText -Pattern "(?m)^(\s*title:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "config title"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*favicon:\s*)'[^']*'," -Value $faviconRelativePath -PropertyDisplayName "config favicon"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*image:\s*)'[^']*'," -Value $socialCardRelativePath -PropertyDisplayName "themeConfig.image"
   $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(navbar:\s*\{.*?^\s*title:\s*)'[^']*'," -Value $projectName -PropertyDisplayName "navbar title"
   $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*alt:\s*)'[^']*'," -Value $logoAlt -PropertyDisplayName "navbar logo alt"
   $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*src:\s*)'[^']*'," -Value $logoRelativePath -PropertyDisplayName "navbar logo src"
@@ -1015,11 +1045,57 @@ function Copy-ManagedItem {
   $sourceIsDirectory = Test-Path -LiteralPath $source -PathType Container
   $destinationExists = Test-Path -LiteralPath $destination
   $destinationIsDirectory = Test-Path -LiteralPath $destination -PathType Container
+  $relativePathNormalized = ($RelativePath.Replace("/", "\").Trim("\")).ToLowerInvariant()
+  $excludeDirectoryPrefixes = @()
+  if ($relativePathNormalized -eq "website") {
+    $excludeDirectoryPrefixes = @(
+      "node_modules\",
+      "build\",
+      ".docusaurus\",
+      ".cache\"
+    )
+  }
 
-  if ($sourceIsDirectory -and $destinationExists -and $destinationIsDirectory) {
+  if ($sourceIsDirectory -and (($destinationExists -and $destinationIsDirectory) -or $excludeDirectoryPrefixes.Count -gt 0)) {
+    if ($destinationExists -and -not $destinationIsDirectory) {
+      Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $RelativePath -ExistingPath $destination -BackupRoot $BackupRoot
+      if ($PSCmdlet.ShouldProcess($destination, "Replace conflicting file with managed directory")) {
+        Remove-Item -LiteralPath $destination -Force
+      }
+      $destinationExists = $false
+      $destinationIsDirectory = $false
+    }
+
+    if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+      if ($destinationParent -and $PSCmdlet.ShouldProcess($destinationParent, "Ensure destination directory")) {
+        New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
+      }
+      if ($PSCmdlet.ShouldProcess($destination, "Ensure managed directory")) {
+        New-Item -ItemType Directory -Force -Path $destination | Out-Null
+      }
+    }
+
     $sourceDirectories = @(Get-ChildItem -LiteralPath $source -Recurse -Directory -Force)
     foreach ($sourceDirectory in $sourceDirectories) {
       $childRelativePath = [System.IO.Path]::GetRelativePath($source, $sourceDirectory.FullName)
+      $childRelativePathNormalized = ($childRelativePath.Replace("/", "\").Trim("\")).ToLowerInvariant()
+      if ($excludeDirectoryPrefixes.Count -gt 0) {
+        $shouldExcludeDirectory = $false
+        foreach ($prefix in $excludeDirectoryPrefixes) {
+          if ($childRelativePathNormalized -eq $prefix.TrimEnd("\")) {
+            $shouldExcludeDirectory = $true
+            break
+          }
+          if ($childRelativePathNormalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $shouldExcludeDirectory = $true
+            break
+          }
+        }
+        if ($shouldExcludeDirectory) {
+          continue
+        }
+      }
+
       $targetDirectory = Join-Path $destination $childRelativePath
       if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetDirectory)) {
         throw "Refusing to create directory outside target repo root: $targetDirectory"
@@ -1039,6 +1115,20 @@ function Copy-ManagedItem {
     $sourceFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force)
     foreach ($sourceFile in $sourceFiles) {
       $childRelativePath = [System.IO.Path]::GetRelativePath($source, $sourceFile.FullName)
+      $childRelativePathNormalized = ($childRelativePath.Replace("/", "\").Trim("\")).ToLowerInvariant()
+      if ($excludeDirectoryPrefixes.Count -gt 0) {
+        $shouldExcludeFile = $false
+        foreach ($prefix in $excludeDirectoryPrefixes) {
+          if ($childRelativePathNormalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $shouldExcludeFile = $true
+            break
+          }
+        }
+        if ($shouldExcludeFile) {
+          continue
+        }
+      }
+
       $targetFile = Join-Path $destination $childRelativePath
       if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetFile)) {
         throw "Refusing to copy outside target repo root: $targetFile"
@@ -1127,9 +1217,9 @@ $websiteInstallMode = $null
 if (-not $SkipWebsite) {
   $websiteInstallMode = Resolve-WebsiteInstallMode -TargetRoot $resolvedTargetRoot -AdoptExisting:$AdoptExistingWebsite
   if ($websiteInstallMode -eq "preserve_existing") {
-    Warn "Existing website directory is not managed by this installer. Preserving current Docusaurus site; website payload + theme apply are skipped."
+    Warn "Existing website directory is not managed by this installer. Preserving current Docusaurus site; website payload and theme override are skipped."
     if (-not [string]::IsNullOrWhiteSpace($WebsiteTheme) -or -not [string]::IsNullOrWhiteSpace($WebsiteLogoPath)) {
-      Warn "WebsiteTheme/WebsiteLogoPath were provided but will not be applied because website ownership is unmanaged. Use -AdoptExistingWebsite or run 'ue-tools docs theme apply' after adoption."
+      Warn "WebsiteTheme/WebsiteLogoPath were provided but are blocked for unmanaged sites. Re-run with -AdoptExistingWebsite to adopt + override now, or run 'ue-tools docs theme apply -Theme <id> --adopt-existing' later."
     }
   }
 }

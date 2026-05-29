@@ -1491,8 +1491,14 @@ function Build-Editor([string]$engineRoot, [string]$uprojectPath, [string]$proje
 function Test-BlueprintOnlyProject {
   param([Parameter(Mandatory)]$ProjectContext)
 
-  $modules = @($ProjectContext.Modules)
-  if ($modules.Count -gt 0) {
+  $declaredModules = @(
+    @($ProjectContext.Modules) | Where-Object {
+      $null -ne $_ -and
+      $_.PSObject.Properties["Name"] -and
+      -not [string]::IsNullOrWhiteSpace([string]$_.Name)
+    }
+  )
+  if ($declaredModules.Count -gt 0) {
     return $false
   }
 
@@ -2030,4 +2036,3 @@ return
 }
 
 Export-ModuleMember -Function Invoke-UEToolSuiteUnrealRuntime
-
