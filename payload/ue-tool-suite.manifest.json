@@ -1,6 +1,7 @@
 {
   "manifestVersion": 1,
   "payloadVersion": "1.0.0",
+  "docsManagedFileIndexPath": "docs-managed-file-index.json",
   "managedTextItems": [
     ".gitattributes",
     ".gitignore"
@@ -54,4 +55,3 @@
     "Scripts/Unreal/UESyncShellAliases.ps1"
   ]
 }
-

@@ -106,6 +106,7 @@ Pass-through:
 
 Other:
   install-bridge                Install the optional VS Code TOC bridge
+  theme <list|apply>            List/apply docs website theme presets
   help [command]
 
 Examples:
@@ -117,6 +118,8 @@ Examples:
   ue-tools docs start --port 3001
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs theme list
+  ue-tools docs theme apply -Theme neutral
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
@@ -405,6 +408,285 @@ function Get-DocsRoot {
 function Get-WebsiteRoot {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
   return (Join-Path $ResolvedRepoRoot "website")
+}
+
+function ConvertTo-DocsThemeSingleQuotedValue {
+  param([AllowEmptyString()][string]$Value)
+
+  return $Value.Replace("\", "\\").Replace("'", "\'")
+}
+
+function Set-DocsThemeSingleQuotedProperty {
+  param(
+    [Parameter(Mandatory)][string]$Text,
+    [Parameter(Mandatory)][string]$Pattern,
+    [Parameter(Mandatory)][string]$Value,
+    [Parameter(Mandatory)][string]$PropertyDisplayName
+  )
+
+  $match = [regex]::Match($Text, $Pattern)
+  if (-not $match.Success) {
+    throw "Could not locate $PropertyDisplayName in website/docusaurus.config.ts."
+  }
+
+  $escapedValue = ConvertTo-DocsThemeSingleQuotedValue -Value $Value
+  return [regex]::Replace($Text, $Pattern, ('$1''{0}'',' -f $escapedValue), 1)
+}
+
+function Write-DocsThemeUtf8NoBomFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Content
+  )
+
+  if (Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue) {
+    Write-UEToolSuiteUtf8NoBomFile -Path $Path -Content $Content -EnsureParentDirectory
+    return
+  }
+
+  $parent = Split-Path -Path $Path -Parent
+  if (-not [string]::IsNullOrWhiteSpace($parent)) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  }
+
+  [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Get-DocsWebsiteOwnershipMarkerPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  return (Join-Path (Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot) ".ue-tools\ownership.json")
+}
+
+function Test-DocsWebsiteManaged {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $markerPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Test-Path -LiteralPath $markerPath -PathType Leaf)
+}
+
+function Write-DocsWebsiteOwnershipMarker {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$ThemeId,
+    [switch]$Adopted
+  )
+
+  $markerPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+  $projectName = Split-Path -Leaf $ResolvedRepoRoot
+  $marker = [ordered]@{
+    schemaVersion = 1
+    managedBy = "UEToolSuiteDocs"
+    projectName = $projectName
+    themeId = $ThemeId
+    adoptedViaDocsTheme = [bool]$Adopted
+    updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  }
+
+  Write-DocsThemeUtf8NoBomFile -Path $markerPath -Content ($marker | ConvertTo-Json -Depth 8)
+}
+
+function Resolve-DocsThemeProjectName {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $uprojects = @(Get-ChildItem -LiteralPath $ResolvedRepoRoot -Filter "*.uproject" -File -ErrorAction SilentlyContinue | Sort-Object Name)
+  if ($uprojects.Count -gt 0) {
+    return [System.IO.Path]::GetFileNameWithoutExtension($uprojects[0].Name)
+  }
+
+  return (Split-Path -Leaf $ResolvedRepoRoot)
+}
+
+function Read-DocsThemeCatalog {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $catalogPath = Join-Path (Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot) "theme-presets\theme-catalog.json"
+  if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
+    throw "Website theme catalog is missing: $catalogPath"
+  }
+
+  try {
+    $catalog = (Get-Content -LiteralPath $catalogPath -Raw) | ConvertFrom-Json
+  }
+  catch {
+    throw "Website theme catalog is not valid JSON: $catalogPath"
+  }
+
+  $themes = @($catalog.themes)
+  if ($themes.Count -eq 0) {
+    throw "Website theme catalog has no themes: $catalogPath"
+  }
+
+  return [pscustomobject]@{
+    CatalogPath = $catalogPath
+    DefaultTheme = [string]$catalog.defaultTheme
+    Themes = @($themes | ForEach-Object {
+      [pscustomobject]@{
+        id = ([string]$_.id).Trim()
+        label = ([string]$_.label).Trim()
+        description = [string]$_.description
+        cssPath = ([string]$_.cssPath).Trim()
+      }
+    })
+  }
+}
+
+function Resolve-DocsThemeEntry {
+  param(
+    [Parameter(Mandatory)]$ThemeCatalog,
+    [string]$ThemeId
+  )
+
+  $requested = if ([string]::IsNullOrWhiteSpace($ThemeId)) { [string]$ThemeCatalog.DefaultTheme } else { $ThemeId.Trim() }
+  $match = @($ThemeCatalog.Themes | Where-Object { $_.id.Equals($requested, [System.StringComparison]::OrdinalIgnoreCase) })
+  if ($match.Count -gt 0) {
+    return $match[0]
+  }
+
+  $allowed = @($ThemeCatalog.Themes | ForEach-Object { $_.id } | Sort-Object -Unique)
+  throw "Unknown website theme '$requested'. Allowed themes: $($allowed -join ', ')."
+}
+
+function Invoke-DocsThemeList {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $catalog = Read-DocsThemeCatalog -ResolvedRepoRoot $ResolvedRepoRoot
+  $defaultTheme = [string]$catalog.DefaultTheme
+  Write-Output ("Default theme: {0}" -f $defaultTheme)
+  foreach ($theme in @($catalog.Themes | Sort-Object id)) {
+    Write-Output ("- {0}: {1}" -f $theme.id, $theme.label)
+  }
+}
+
+function Invoke-DocsThemeApply {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string]$ThemeId,
+    [string]$LogoPath,
+    [switch]$AdoptExisting
+  )
+
+  $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not (Test-Path -LiteralPath $websiteRoot -PathType Container)) {
+    throw "No website directory was found at '$websiteRoot'. Install website payload first."
+  }
+
+  $isManaged = Test-DocsWebsiteManaged -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not $isManaged -and -not $AdoptExisting) {
+    throw "Website is unmanaged. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -AdoptExistingWebsite."
+  }
+
+  $configPath = Join-Path $websiteRoot "docusaurus.config.ts"
+  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    throw "Docusaurus config is missing: $configPath"
+  }
+
+  $catalog = Read-DocsThemeCatalog -ResolvedRepoRoot $ResolvedRepoRoot
+  $themeEntry = Resolve-DocsThemeEntry -ThemeCatalog $catalog -ThemeId $ThemeId
+  $themeSourcePath = Join-Path $ResolvedRepoRoot ($themeEntry.cssPath -replace "/", "\")
+  if (-not (Test-Path -LiteralPath $themeSourcePath -PathType Leaf)) {
+    throw "Theme CSS file is missing for '$($themeEntry.id)': $themeSourcePath"
+  }
+
+  $themeDestination = Join-Path $websiteRoot "src\css\custom.css"
+  $themeDestinationParent = Split-Path -Path $themeDestination -Parent
+  if (-not [string]::IsNullOrWhiteSpace($themeDestinationParent)) {
+    New-Item -ItemType Directory -Force -Path $themeDestinationParent | Out-Null
+  }
+  Copy-Item -LiteralPath $themeSourcePath -Destination $themeDestination -Force
+
+  $projectName = Resolve-DocsThemeProjectName -ResolvedRepoRoot $ResolvedRepoRoot
+  $docsTitle = "$projectName Docs"
+  $tagline = "Repo tooling, Unreal workflow, and living project documentation for $projectName."
+  $logoAlt = $docsTitle
+  $logoRelativePath = "img/logo.svg"
+  if (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
+    if (-not (Test-Path -LiteralPath $LogoPath -PathType Leaf)) {
+      throw "LogoPath does not exist or is not a file: $LogoPath"
+    }
+
+    $extension = [System.IO.Path]::GetExtension($LogoPath).ToLowerInvariant()
+    if ($extension -ne ".svg" -and $extension -ne ".png") {
+      throw "LogoPath must end with .svg or .png. Received: $LogoPath"
+    }
+
+    $logoRelativePath = "img/branding/project-logo$extension"
+    $logoDestination = Join-Path $websiteRoot ("static\" + $logoRelativePath.Replace("/", "\"))
+    $logoParent = Split-Path -Path $logoDestination -Parent
+    if (-not [string]::IsNullOrWhiteSpace($logoParent)) {
+      New-Item -ItemType Directory -Force -Path $logoParent | Out-Null
+    }
+    Copy-Item -LiteralPath $LogoPath -Destination $logoDestination -Force
+  }
+
+  $configText = Get-Content -LiteralPath $configPath -Raw
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $configText -Pattern "(?m)^(\s*title:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "config title"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(navbar:\s*\{.*?^\s*title:\s*)'[^']*'," -Value $projectName -PropertyDisplayName "navbar title"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*alt:\s*)'[^']*'," -Value $logoAlt -PropertyDisplayName "navbar logo alt"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*src:\s*)'[^']*'," -Value $logoRelativePath -PropertyDisplayName "navbar logo src"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteProjectName:\s*)'[^']*'," -Value $projectName -PropertyDisplayName "customFields.suiteProjectName"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteDocsTitle:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "customFields.suiteDocsTitle"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteTagline:\s*)'[^']*'," -Value $tagline -PropertyDisplayName "customFields.suiteTagline"
+  $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteThemeId:\s*)'[^']*'," -Value $themeEntry.id -PropertyDisplayName "customFields.suiteThemeId"
+  Write-DocsThemeUtf8NoBomFile -Path $configPath -Content $updatedConfig
+
+  Write-DocsWebsiteOwnershipMarker -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeEntry.id -Adopted:$AdoptExisting
+  if ($AdoptExisting -and -not $isManaged) {
+    Write-Output ("Adopted existing website for suite-managed theme updates.")
+  }
+  Write-Output ("Applied website theme '{0}'." -f $themeEntry.id)
+}
+
+function Invoke-DocsThemeCommand {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments
+  )
+
+  $argsList = @(Get-NormalizedArgumentList -Values $CommandArguments)
+  if ($argsList.Count -eq 0) {
+    Write-Output (Get-DocsToolsCommandHelp -CommandName "theme")
+    return
+  }
+
+  $subcommand = [string]$argsList[0]
+  if (Test-DocsToolsHelpToken -Token $subcommand) {
+    Write-Output (Get-DocsToolsCommandHelp -CommandName "theme")
+    return
+  }
+
+  $normalizedSubcommand = $subcommand.Trim().ToLowerInvariant()
+  switch ($normalizedSubcommand) {
+    "list" {
+      Invoke-DocsThemeList -ResolvedRepoRoot $ResolvedRepoRoot
+      return
+    }
+    "apply" {
+      $themeId = $null
+      $logoPath = $null
+      $adoptExisting = $false
+      $tokens = if ($argsList.Count -gt 1) { @($argsList[1..($argsList.Count - 1)]) } else { @() }
+      for ($i = 0; $i -lt $tokens.Count; $i++) {
+        $token = [string]$tokens[$i]
+        switch ($token.Trim().ToLowerInvariant()) {
+          "-theme" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for -Theme." }; $themeId = [string]$tokens[$i + 1]; $i++; continue }
+          "--theme" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for --theme." }; $themeId = [string]$tokens[$i + 1]; $i++; continue }
+          "-logopath" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for -LogoPath." }; $logoPath = [string]$tokens[$i + 1]; $i++; continue }
+          "--logo-path" { if (($i + 1) -ge $tokens.Count) { throw "Missing value for --logo-path." }; $logoPath = [string]$tokens[$i + 1]; $i++; continue }
+          "--adopt-existing" { $adoptExisting = $true; continue }
+          "-adoptexisting" { $adoptExisting = $true; continue }
+          "-adoptexistingwebsite" { $adoptExisting = $true; continue }
+          default { throw "Unknown theme apply option '$token'. Run 'ue-tools docs help theme'." }
+        }
+      }
+
+      Invoke-DocsThemeApply -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeId -LogoPath $logoPath -AdoptExisting:$adoptExisting
+      return
+    }
+    default {
+      throw "Unknown ue-tools docs theme command '$subcommand'. Run 'ue-tools docs help theme'."
+    }
+  }
 }
 
 function Get-DocsToolsRuntimeDirectory {
@@ -757,6 +1039,7 @@ Pass-through:
 
 Other:
   install-bridge                Install the optional VS Code TOC bridge
+  theme <list|apply>            List/apply docs website theme presets
   help [command]
 
 Examples:
@@ -768,6 +1051,8 @@ Examples:
   ue-tools docs start --port 3001
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
+  ue-tools docs theme list
+  ue-tools docs theme apply -Theme neutral
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
@@ -1031,6 +1316,25 @@ Checks common local docs prerequisites:
 ue-tools docs install-bridge
 
 Installs the optional UE project VS Code bridge used for TOC generation. Markdown All in One still needs to be installed separately.
+"@
+      return
+    }
+    "theme" {
+@"
+ue-tools docs theme
+
+Usage:
+  ue-tools docs theme list
+  ue-tools docs theme apply -Theme <id> [-LogoPath <path>] [--adopt-existing]
+
+Commands:
+  list                           Show available website theme presets from website/theme-presets/theme-catalog.json
+  apply                          Apply a theme preset to website/src/css/custom.css and update branding fields in website/docusaurus.config.ts
+
+Notes:
+  - Theme apply requires a managed website marker by default.
+  - Use --adopt-existing to write the marker for an existing unmanaged website before applying.
+  - LogoPath accepts .svg or .png files.
 "@
       return
     }
@@ -3035,6 +3339,10 @@ function Invoke-DocsToolsMain {
       }
       return
     }
+    "theme" {
+      Invoke-DocsThemeCommand -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
+      return
+    }
     "preview" {
       Write-Output "preview is deprecated. Use 'ue-tools docs start' or 'ue-tools docs start --background'."
       if ($remaining.Count -gt 0) {
@@ -3198,4 +3506,3 @@ function Invoke-DocsToolsMain {
 }
 
 Export-ModuleMember -Function Get-DocsToolsRepoRoot, Invoke-DocsToolsMain
-

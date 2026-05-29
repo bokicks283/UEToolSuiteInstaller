@@ -5,6 +5,9 @@ param(
   [Parameter(Mandatory)][string]$TargetRepoRoot,
   [string]$PayloadRoot,
   [string]$TargetUProjectPath,
+  [string]$WebsiteTheme = "neutral",
+  [string]$WebsiteLogoPath,
+  [switch]$AdoptExistingWebsite,
   [switch]$RunInit,
   [switch]$InitNonInteractive,
   [switch]$SkipLfsPull,
@@ -42,6 +45,20 @@ function Resolve-ExistingDirectory {
   $resolved = [System.IO.Path]::GetFullPath($Path)
   if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
     throw "$Name does not exist or is not a directory: $resolved"
+  }
+
+  return (Resolve-Path -LiteralPath $resolved).Path
+}
+
+function Resolve-ExistingFile {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$Name
+  )
+
+  $resolved = [System.IO.Path]::GetFullPath($Path)
+  if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+    throw "$Name does not exist or is not a file: $resolved"
   }
 
   return (Resolve-Path -LiteralPath $resolved).Path
@@ -110,6 +127,8 @@ function Read-UEToolSuitePayloadManifest {
 
   return [pscustomobject]@{
     ManifestPath = $manifestPath
+    PayloadVersion = [string]$manifest.payloadVersion
+    DocsManagedFileIndexPath = [string]$manifest.docsManagedFileIndexPath
     ManagedTextItems = ConvertTo-StringArray -Value $manifest.managedTextItems -Name "managedTextItems"
     ManagedBaseItems = $baseItems
     ManagedArtToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.artTools -Name "managedItems.artTools"
@@ -203,6 +222,674 @@ function Write-Utf8NoBomFile {
   }
 
   [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
+function ConvertTo-TypeScriptSingleQuotedValue {
+  param([AllowEmptyString()][string]$Value)
+
+  return $Value.Replace("\", "\\").Replace("'", "\'")
+}
+
+function Set-TypeScriptSingleQuotedProperty {
+  param(
+    [Parameter(Mandatory)][string]$Text,
+    [Parameter(Mandatory)][string]$Pattern,
+    [Parameter(Mandatory)][string]$Value,
+    [Parameter(Mandatory)][string]$PropertyDisplayName
+  )
+
+  $match = [regex]::Match($Text, $Pattern)
+  if (-not $match.Success) {
+    throw "Could not locate $PropertyDisplayName in website/docusaurus.config.ts."
+  }
+
+  $escapedValue = ConvertTo-TypeScriptSingleQuotedValue -Value $Value
+  $replacement = ('$1''{0}'',' -f $escapedValue)
+  $updated = [regex]::Replace($Text, $Pattern, $replacement, 1)
+  return $updated
+}
+
+function Read-WebsiteThemeCatalog {
+  param([Parameter(Mandatory)][string]$PayloadRoot)
+
+  $catalogPath = Join-Path $PayloadRoot "website\theme-presets\theme-catalog.json"
+  if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
+    throw "Website theme catalog is missing: $catalogPath"
+  }
+
+  $catalogRaw = Get-Content -LiteralPath $catalogPath -Raw
+  try {
+    $catalog = $catalogRaw | ConvertFrom-Json
+  }
+  catch {
+    throw "Website theme catalog is not valid JSON: $catalogPath"
+  }
+
+  if (-not $catalog.themes) {
+    throw "Website theme catalog is missing required array 'themes': $catalogPath"
+  }
+
+  $themes = @($catalog.themes)
+  if ($themes.Count -eq 0) {
+    throw "Website theme catalog has no themes: $catalogPath"
+  }
+
+  $defaultTheme = [string]$catalog.defaultTheme
+  if ([string]::IsNullOrWhiteSpace($defaultTheme)) {
+    throw "Website theme catalog is missing required value 'defaultTheme': $catalogPath"
+  }
+
+  $normalizedThemes = New-Object System.Collections.Generic.List[object]
+  foreach ($theme in $themes) {
+    if ($null -eq $theme) { continue }
+
+    $themeId = [string]$theme.id
+    $themeLabel = [string]$theme.label
+    $themeCssPath = [string]$theme.cssPath
+
+    if ([string]::IsNullOrWhiteSpace($themeId) -or [string]::IsNullOrWhiteSpace($themeCssPath)) {
+      throw "Website theme catalog has an entry with missing id/cssPath: $catalogPath"
+    }
+
+    $normalizedThemes.Add([pscustomobject]@{
+      id = $themeId.Trim()
+      label = if ([string]::IsNullOrWhiteSpace($themeLabel)) { $themeId.Trim() } else { $themeLabel.Trim() }
+      cssPath = $themeCssPath.Trim()
+    }) | Out-Null
+  }
+
+  $defaultThemeEntry = @($normalizedThemes.ToArray() | Where-Object { $_.id.Equals($defaultTheme, [System.StringComparison]::OrdinalIgnoreCase) })
+  if ($defaultThemeEntry.Count -eq 0) {
+    throw "Website theme catalog defaultTheme '$defaultTheme' is not present in themes: $catalogPath"
+  }
+
+  return [pscustomobject]@{
+    CatalogPath = $catalogPath
+    DefaultTheme = $defaultThemeEntry[0].id
+    Themes = @($normalizedThemes.ToArray())
+  }
+}
+
+function Resolve-WebsiteThemeEntry {
+  param(
+    [Parameter(Mandatory)]$ThemeCatalog,
+    [string]$RequestedTheme
+  )
+
+  $themeId = if ([string]::IsNullOrWhiteSpace($RequestedTheme)) { [string]$ThemeCatalog.DefaultTheme } else { $RequestedTheme.Trim() }
+  $matches = @($ThemeCatalog.Themes | Where-Object { $_.id.Equals($themeId, [System.StringComparison]::OrdinalIgnoreCase) })
+  if ($matches.Count -gt 0) {
+    return $matches[0]
+  }
+
+  $allowed = @($ThemeCatalog.Themes | ForEach-Object { $_.id } | Sort-Object -Unique)
+  throw "Unknown website theme '$themeId'. Allowed themes: $($allowed -join ', ')."
+}
+
+function Apply-WebsiteThemeAndBranding {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$TargetUProjectPath,
+    [string]$RequestedTheme,
+    [string]$LogoPath
+  )
+
+  $websiteRoot = Join-Path $TargetRoot "website"
+  if (-not (Test-Path -LiteralPath $websiteRoot -PathType Container)) {
+    Warn "Skipping website theme/branding because website payload is not installed."
+    return
+  }
+
+  $configPath = Join-Path $websiteRoot "docusaurus.config.ts"
+  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    Warn "Skipping website theme/branding because docusaurus config is missing: $configPath"
+    return
+  }
+
+  $themeCatalog = Read-WebsiteThemeCatalog -PayloadRoot $PayloadRoot
+  $themeEntry = Resolve-WebsiteThemeEntry -ThemeCatalog $themeCatalog -RequestedTheme $RequestedTheme
+  $themeSourcePath = Join-Path $PayloadRoot $themeEntry.cssPath
+  if (-not (Test-Path -LiteralPath $themeSourcePath -PathType Leaf)) {
+    throw "Theme CSS payload is missing for '$($themeEntry.id)': $themeSourcePath"
+  }
+
+  $themeDestinationPath = Join-Path $websiteRoot "src\css\custom.css"
+  $themeDestinationParent = Split-Path -Path $themeDestinationPath -Parent
+  if ($themeDestinationParent -and $PSCmdlet.ShouldProcess($themeDestinationParent, "Ensure website theme destination directory")) {
+    New-Item -ItemType Directory -Force -Path $themeDestinationParent | Out-Null
+  }
+  if ($PSCmdlet.ShouldProcess($themeDestinationPath, "Apply website theme '$($themeEntry.id)'")) {
+    Copy-Item -LiteralPath $themeSourcePath -Destination $themeDestinationPath -Force
+  }
+
+  $resolvedLogoPath = $null
+  $logoRelativePath = "img/logo.svg"
+  if (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
+    $resolvedLogoPath = Resolve-ExistingFile -Path $LogoPath -Name "WebsiteLogoPath"
+    $logoExtension = ([System.IO.Path]::GetExtension($resolvedLogoPath) ?? "").ToLowerInvariant()
+    if (($logoExtension -ne ".svg") -and ($logoExtension -ne ".png")) {
+      throw "WebsiteLogoPath must use .svg or .png. Received: $resolvedLogoPath"
+    }
+
+    $logoRelativePath = "img/branding/project-logo$logoExtension"
+    $logoDestination = Join-Path $websiteRoot ("static\" + $logoRelativePath.Replace("/", "\"))
+    $logoDestinationParent = Split-Path -Path $logoDestination -Parent
+    if ($logoDestinationParent -and $PSCmdlet.ShouldProcess($logoDestinationParent, "Ensure website branding directory")) {
+      New-Item -ItemType Directory -Force -Path $logoDestinationParent | Out-Null
+    }
+    if ($PSCmdlet.ShouldProcess($logoDestination, "Install website logo asset")) {
+      Copy-Item -LiteralPath $resolvedLogoPath -Destination $logoDestination -Force
+    }
+  }
+
+  $projectName = [System.IO.Path]::GetFileNameWithoutExtension($TargetUProjectPath)
+  $docsTitle = "$projectName Docs"
+  $tagline = "Repo tooling, Unreal workflow, and living project documentation for $projectName."
+  $logoAlt = "$docsTitle"
+
+  $configText = Get-Content -LiteralPath $configPath -Raw
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $configText -Pattern "(?m)^(\s*title:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "config title"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(navbar:\s*\{.*?^\s*title:\s*)'[^']*'," -Value $projectName -PropertyDisplayName "navbar title"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*alt:\s*)'[^']*'," -Value $logoAlt -PropertyDisplayName "navbar logo alt"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?ms)(logo:\s*\{.*?^\s*src:\s*)'[^']*'," -Value $logoRelativePath -PropertyDisplayName "navbar logo src"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteProjectName:\s*)'[^']*'," -Value $projectName -PropertyDisplayName "customFields.suiteProjectName"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteDocsTitle:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "customFields.suiteDocsTitle"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteTagline:\s*)'[^']*'," -Value $tagline -PropertyDisplayName "customFields.suiteTagline"
+  $updatedConfig = Set-TypeScriptSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteThemeId:\s*)'[^']*'," -Value $themeEntry.id -PropertyDisplayName "customFields.suiteThemeId"
+
+  if ($PSCmdlet.ShouldProcess($configPath, "Apply website project branding metadata")) {
+    Write-Utf8NoBomFile -Path $configPath -Content $updatedConfig
+  }
+
+  if ($resolvedLogoPath) {
+    Ok ("Applied website theme '{0}' and custom logo '{1}' for project '{2}'." -f $themeEntry.id, [System.IO.Path]::GetFileName($resolvedLogoPath), $projectName)
+  }
+  else {
+    Ok ("Applied website theme '{0}' and project branding for '{1}'." -f $themeEntry.id, $projectName)
+  }
+
+  return [pscustomobject]@{
+    ThemeId = $themeEntry.id
+    ProjectName = $projectName
+  }
+}
+
+function ConvertTo-RelativeForwardSlashPath {
+  param([Parameter(Mandatory)][string]$RelativePath)
+
+  $normalized = $RelativePath.Replace("\", "/").Trim()
+  $normalized = $normalized.TrimStart("/")
+  if ([string]::IsNullOrWhiteSpace($normalized)) {
+    throw "Relative path cannot be empty."
+  }
+
+  return $normalized
+}
+
+function Get-FileSha256 {
+  param([Parameter(Mandatory)][string]$Path)
+
+  return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-ManagedDocsLedgerPath {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  return (Join-Path $TargetRoot ".ue-tools\state\docs-managed-ledger.json")
+}
+
+function Read-ManagedDocsLedger {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $ledgerPath = Get-ManagedDocsLedgerPath -TargetRoot $TargetRoot
+  $entries = @{}
+  if (-not (Test-Path -LiteralPath $ledgerPath -PathType Leaf)) {
+    return [pscustomobject]@{
+      LedgerPath = $ledgerPath
+      EntriesByPath = $entries
+    }
+  }
+
+  try {
+    $raw = Get-Content -LiteralPath $ledgerPath -Raw
+    $parsed = $raw | ConvertFrom-Json
+  }
+  catch {
+    Warn "Docs ledger is invalid and will be ignored for this run: $ledgerPath"
+    return [pscustomobject]@{
+      LedgerPath = $ledgerPath
+      EntriesByPath = $entries
+    }
+  }
+
+  foreach ($entry in @($parsed.files)) {
+    if ($null -eq $entry) { continue }
+    $relativePath = [string]$entry.relativePath
+    if ([string]::IsNullOrWhiteSpace($relativePath)) { continue }
+    $normalizedPath = ConvertTo-RelativeForwardSlashPath -RelativePath $relativePath
+    $installedHash = [string]$entry.installedHash
+    if ([string]::IsNullOrWhiteSpace($installedHash)) { continue }
+    $entries[$normalizedPath] = [pscustomobject]@{
+      relativePath = $normalizedPath
+      installedPayloadVersion = [string]$entry.installedPayloadVersion
+      installedHash = $installedHash.ToLowerInvariant()
+      updatedUtc = [string]$entry.updatedUtc
+      category = [string]$entry.category
+    }
+  }
+
+  return [pscustomobject]@{
+    LedgerPath = $ledgerPath
+    EntriesByPath = $entries
+  }
+}
+
+function Write-ManagedDocsLedger {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][hashtable]$EntriesByPath,
+    [Parameter(Mandatory)][string]$PayloadVersion
+  )
+
+  $ledgerPath = Get-ManagedDocsLedgerPath -TargetRoot $TargetRoot
+  $entries = @()
+  foreach ($path in @($EntriesByPath.Keys | Sort-Object)) {
+    $entry = $EntriesByPath[$path]
+    if ($null -eq $entry) { continue }
+    $entries += [pscustomobject]@{
+      relativePath = $path
+      installedPayloadVersion = [string]$entry.installedPayloadVersion
+      installedHash = [string]$entry.installedHash
+      updatedUtc = [string]$entry.updatedUtc
+      category = [string]$entry.category
+    }
+  }
+
+  $ledgerDocument = [ordered]@{
+    schemaVersion = 1
+    payloadVersion = $PayloadVersion
+    updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    files = $entries
+  }
+
+  $content = $ledgerDocument | ConvertTo-Json -Depth 10
+  if ($PSCmdlet.ShouldProcess($ledgerPath, "Write managed docs ledger")) {
+    Write-Utf8NoBomFile -Path $ledgerPath -Content $content
+  }
+}
+
+function Resolve-DocsManagedFileIndexPath {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)]$PayloadManifest
+  )
+
+  $configured = [string]$PayloadManifest.DocsManagedFileIndexPath
+  $relativePath = if ([string]::IsNullOrWhiteSpace($configured)) { "docs-managed-file-index.json" } else { $configured.Trim() }
+  return (Join-Path $PayloadRoot ($relativePath -replace "/", "\"))
+}
+
+function Read-DocsManagedFileIndex {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)]$PayloadManifest
+  )
+
+  $indexPath = Resolve-DocsManagedFileIndexPath -PayloadRoot $PayloadRoot -PayloadManifest $PayloadManifest
+  if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf)) {
+    throw "Docs managed file index is missing: $indexPath"
+  }
+
+  try {
+    $parsed = (Get-Content -LiteralPath $indexPath -Raw) | ConvertFrom-Json
+  }
+  catch {
+    throw "Docs managed file index is not valid JSON: $indexPath"
+  }
+
+  if (-not $parsed.files) {
+    throw "Docs managed file index is missing required array 'files': $indexPath"
+  }
+
+  $normalizedFiles = New-Object System.Collections.Generic.List[object]
+  foreach ($file in @($parsed.files)) {
+    if ($null -eq $file) { continue }
+    $relativePath = ConvertTo-RelativeForwardSlashPath -RelativePath ([string]$file.relativePath)
+    $category = [string]$file.category
+    $sha256 = ([string]$file.sha256).ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($category) -or [string]::IsNullOrWhiteSpace($sha256)) {
+      throw "Docs managed file index entry is missing required category/hash: $indexPath"
+    }
+    if ($sha256 -notmatch "^[0-9a-f]{64}$") {
+      throw "Docs managed file index entry has invalid sha256 for '$relativePath': $sha256"
+    }
+
+    $normalizedFiles.Add([pscustomobject]@{
+      relativePath = $relativePath
+      category = $category.Trim()
+      sha256 = $sha256
+    }) | Out-Null
+  }
+
+  return [pscustomobject]@{
+    IndexPath = $indexPath
+    PayloadVersion = [string]$parsed.payloadVersion
+    Files = @($normalizedFiles.ToArray())
+  }
+}
+
+function Get-WebsiteOwnershipMarkerRelativePath {
+  return "website/.ue-tools/ownership.json"
+}
+
+function Get-WebsiteOwnershipMarkerPath {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $relativePath = Get-WebsiteOwnershipMarkerRelativePath
+  return (Join-Path $TargetRoot ($relativePath -replace "/", "\"))
+}
+
+function Test-WebsiteOwnershipMarkerInstalled {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $markerPath = Get-WebsiteOwnershipMarkerPath -TargetRoot $TargetRoot
+  return (Test-Path -LiteralPath $markerPath -PathType Leaf)
+}
+
+function Write-WebsiteOwnershipMarker {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$PayloadVersion,
+    [Parameter(Mandatory)][string]$ProjectName,
+    [Parameter(Mandatory)][string]$InstallMode,
+    [Parameter(Mandatory)][string]$ThemeId
+  )
+
+  $markerPath = Get-WebsiteOwnershipMarkerPath -TargetRoot $TargetRoot
+  $marker = [ordered]@{
+    schemaVersion = 1
+    managedBy = "UEToolSuiteInstaller"
+    payloadVersion = $PayloadVersion
+    projectName = $ProjectName
+    installMode = $InstallMode
+    themeId = $ThemeId
+    updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  }
+
+  if ($PSCmdlet.ShouldProcess($markerPath, "Write website ownership marker")) {
+    Write-Utf8NoBomFile -Path $markerPath -Content ($marker | ConvertTo-Json -Depth 10)
+  }
+}
+
+function Resolve-WebsiteInstallMode {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [switch]$AdoptExisting
+  )
+
+  $websitePath = Join-Path $TargetRoot "website"
+  if (-not (Test-Path -LiteralPath $websitePath)) {
+    return "install_new"
+  }
+
+  if (Test-WebsiteOwnershipMarkerInstalled -TargetRoot $TargetRoot) {
+    return "managed_update"
+  }
+
+  if ($AdoptExisting) {
+    return "adopt_existing"
+  }
+
+  return "preserve_existing"
+}
+
+function Write-DocsSmartUpdateReport {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$ReportRoot,
+    [Parameter(Mandatory)][hashtable]$Report
+  )
+
+  $preservedCount = $Report.PreservedCustomized.Count + $Report.MissingPreserved.Count
+  if ($preservedCount -eq 0) {
+    return $null
+  }
+
+  $jsonPath = Join-Path $ReportRoot "update-report.json"
+  $markdownPath = Join-Path $ReportRoot "Update-Report.md"
+  $autoUpdated = @($Report.AutoUpdated | ForEach-Object { $_ })
+  $installedNew = @($Report.InstalledNew | ForEach-Object { $_ })
+  $alreadyCurrent = @($Report.AlreadyCurrent | ForEach-Object { $_ })
+  $preservedCustomized = @($Report.PreservedCustomized | ForEach-Object { $_ })
+  $missingPreserved = @($Report.MissingPreserved | ForEach-Object { $_ })
+  $jsonDocument = [pscustomobject]@{
+    schemaVersion = 1
+    generatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    reportRoot = [System.IO.Path]::GetRelativePath($TargetRoot, $ReportRoot).Replace("\", "/")
+    autoUpdated = $autoUpdated
+    installedNew = $installedNew
+    alreadyCurrent = $alreadyCurrent
+    preservedCustomized = $preservedCustomized
+    missingPreserved = $missingPreserved
+  }
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add("# UE Tool Suite Docs Smart Update Report") | Out-Null
+  $lines.Add("") | Out-Null
+  $lines.Add("- Auto-updated files: $($Report.AutoUpdated.Count)") | Out-Null
+  $lines.Add("- Newly installed defaults: $($Report.InstalledNew.Count)") | Out-Null
+  $lines.Add("- Already current files: $($Report.AlreadyCurrent.Count)") | Out-Null
+  $lines.Add("- Preserved customized files: $($Report.PreservedCustomized.Count)") | Out-Null
+  $lines.Add("- Missing defaults preserved: $($Report.MissingPreserved.Count)") | Out-Null
+  $lines.Add("") | Out-Null
+
+  if ($Report.PreservedCustomized.Count -gt 0) {
+    $lines.Add("## Preserved Customized Files") | Out-Null
+    foreach ($entry in @($Report.PreservedCustomized | ForEach-Object { $_ })) {
+      $lines.Add("- $($entry.relativePath) (`$reason=$($entry.reason)`) -> candidate: $($entry.candidateRelativePath)") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  if ($Report.MissingPreserved.Count -gt 0) {
+    $lines.Add("## Missing Defaults (Not Recreated)") | Out-Null
+    foreach ($entry in @($Report.MissingPreserved | ForEach-Object { $_ })) {
+      $lines.Add("- $($entry.relativePath) -> candidate: $($entry.candidateRelativePath)") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  $lines.Add("Use the candidate files to manually merge payload updates into project-customized docs.") | Out-Null
+
+  if ($PSCmdlet.ShouldProcess($jsonPath, "Write docs update report json")) {
+    Write-Utf8NoBomFile -Path $jsonPath -Content ($jsonDocument | ConvertTo-Json -Depth 12)
+  }
+  if ($PSCmdlet.ShouldProcess($markdownPath, "Write docs update report markdown")) {
+    Write-Utf8NoBomFile -Path $markdownPath -Content ($lines -join "`n")
+  }
+
+  return [pscustomobject]@{
+    ReportRoot = $ReportRoot
+    JsonPath = $jsonPath
+    MarkdownPath = $markdownPath
+  }
+}
+
+function Copy-DocsUpdateCandidate {
+  param(
+    [Parameter(Mandatory)][string]$ReportRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$SourcePath,
+    [Parameter(Mandatory)][string]$TargetRoot
+  )
+
+  $relativeCandidatePath = (Join-Path "candidates" ($RelativePath -replace "/", "\")).Replace("\", "/")
+  $candidatePath = Join-Path $ReportRoot ($relativeCandidatePath -replace "/", "\")
+  $candidateParent = Split-Path -Path $candidatePath -Parent
+  if ($candidateParent -and -not (Test-PathInsideRoot -Root $TargetRoot -Path $candidateParent)) {
+    throw "Refusing to write docs update candidate outside target repo root: $candidatePath"
+  }
+
+  if ($candidateParent -and $PSCmdlet.ShouldProcess($candidateParent, "Ensure docs update candidate directory")) {
+    New-Item -ItemType Directory -Force -Path $candidateParent | Out-Null
+  }
+  if ($PSCmdlet.ShouldProcess($candidatePath, "Write docs update candidate file")) {
+    Copy-Item -LiteralPath $SourcePath -Destination $candidatePath -Force
+  }
+
+  return [System.IO.Path]::GetRelativePath($TargetRoot, $candidatePath).Replace("\", "/")
+}
+
+function Invoke-ManagedDocsSmartUpdate {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$BackupRoot,
+    [Parameter(Mandatory)]$PayloadManifest,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [Parameter(Mandatory)]$InstalledList,
+    [switch]$IncludeCodingStandards
+  )
+
+  $index = Read-DocsManagedFileIndex -PayloadRoot $PayloadRoot -PayloadManifest $PayloadManifest
+  $selectedFiles = @($index.Files | Where-Object {
+      $_.category.Equals("docs", [System.StringComparison]::OrdinalIgnoreCase) -or
+      ($IncludeCodingStandards -and $_.category.Equals("codingStandards", [System.StringComparison]::OrdinalIgnoreCase))
+    })
+  if ($selectedFiles.Count -eq 0) {
+    return
+  }
+
+  $ledger = Read-ManagedDocsLedger -TargetRoot $TargetRoot
+  $entriesByPath = @{}
+  foreach ($existingKey in @($ledger.EntriesByPath.Keys)) {
+    $entriesByPath[$existingKey] = $ledger.EntriesByPath[$existingKey]
+  }
+
+  $report = @{
+    AutoUpdated = New-Object System.Collections.Generic.List[object]
+    InstalledNew = New-Object System.Collections.Generic.List[object]
+    AlreadyCurrent = New-Object System.Collections.Generic.List[object]
+    PreservedCustomized = New-Object System.Collections.Generic.List[object]
+    MissingPreserved = New-Object System.Collections.Generic.List[object]
+  }
+  $reportRoot = Join-Path $TargetRoot ".ue-tools-installer-updates\$InstallStamp"
+
+  foreach ($file in $selectedFiles) {
+    $relativePath = ConvertTo-RelativeForwardSlashPath -RelativePath ([string]$file.relativePath)
+    $sourcePath = Join-Path $PayloadRoot ($relativePath -replace "/", "\")
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+      throw "Managed docs source file is missing from payload: $relativePath"
+    }
+
+    $targetPath = Join-Path $TargetRoot ($relativePath -replace "/", "\")
+    if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetPath)) {
+      throw "Refusing to update docs file outside target repo root: $targetPath"
+    }
+
+    $payloadHash = ([string]$file.sha256).ToLowerInvariant()
+    $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $category = [string]$file.category
+    $ledgerEntry = $entriesByPath[$relativePath]
+
+    if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
+      $currentHash = Get-FileSha256 -Path $targetPath
+
+      if ($currentHash.Equals($payloadHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $entriesByPath[$relativePath] = [pscustomobject]@{
+          relativePath = $relativePath
+          installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+          installedHash = $payloadHash
+          updatedUtc = $nowUtc
+          category = $category
+        }
+        $report.AlreadyCurrent.Add([pscustomobject]@{ relativePath = $relativePath }) | Out-Null
+        continue
+      }
+
+      $canAutoUpdate = $false
+      if ($null -ne $ledgerEntry) {
+        $installedHash = [string]$ledgerEntry.installedHash
+        if (-not [string]::IsNullOrWhiteSpace($installedHash) -and $currentHash.Equals($installedHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+          $canAutoUpdate = $true
+        }
+      }
+
+      if ($canAutoUpdate) {
+        Copy-ToBackup -TargetRoot $TargetRoot -RelativePath ($relativePath -replace "/", "\") -ExistingPath $targetPath -BackupRoot $BackupRoot
+        if ($PSCmdlet.ShouldProcess($targetPath, "Auto-update managed docs file")) {
+          Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+        }
+
+        $entriesByPath[$relativePath] = [pscustomobject]@{
+          relativePath = $relativePath
+          installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+          installedHash = $payloadHash
+          updatedUtc = $nowUtc
+          category = $category
+        }
+        $InstalledList.Add($relativePath) | Out-Null
+        $report.AutoUpdated.Add([pscustomobject]@{ relativePath = $relativePath }) | Out-Null
+        continue
+      }
+
+      $candidateRelative = Copy-DocsUpdateCandidate -ReportRoot $reportRoot -RelativePath $relativePath -SourcePath $sourcePath -TargetRoot $TargetRoot
+      $reason = if ($null -eq $ledgerEntry) { "no-ledger-entry" } else { "modified-since-last-managed-version" }
+      $report.PreservedCustomized.Add([pscustomobject]@{
+        relativePath = $relativePath
+        reason = $reason
+        candidateRelativePath = $candidateRelative
+      }) | Out-Null
+      continue
+    }
+
+    if (Test-Path -LiteralPath $targetPath -PathType Container) {
+      $candidateRelative = Copy-DocsUpdateCandidate -ReportRoot $reportRoot -RelativePath $relativePath -SourcePath $sourcePath -TargetRoot $TargetRoot
+      $report.PreservedCustomized.Add([pscustomobject]@{
+        relativePath = $relativePath
+        reason = "path-conflict-directory"
+        candidateRelativePath = $candidateRelative
+      }) | Out-Null
+      continue
+    }
+
+    if ($null -ne $ledgerEntry) {
+      $candidateRelative = Copy-DocsUpdateCandidate -ReportRoot $reportRoot -RelativePath $relativePath -SourcePath $sourcePath -TargetRoot $TargetRoot
+      $report.MissingPreserved.Add([pscustomobject]@{
+        relativePath = $relativePath
+        reason = "missing-from-target"
+        candidateRelativePath = $candidateRelative
+      }) | Out-Null
+      continue
+    }
+
+    $targetParent = Split-Path -Path $targetPath -Parent
+    if ($targetParent -and $PSCmdlet.ShouldProcess($targetParent, "Ensure managed docs directory")) {
+      New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+    }
+    if ($PSCmdlet.ShouldProcess($targetPath, "Install managed docs default file")) {
+      Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+    }
+
+    $entriesByPath[$relativePath] = [pscustomobject]@{
+      relativePath = $relativePath
+      installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+      installedHash = $payloadHash
+      updatedUtc = $nowUtc
+      category = $category
+    }
+    $InstalledList.Add($relativePath) | Out-Null
+    $report.InstalledNew.Add([pscustomobject]@{ relativePath = $relativePath }) | Out-Null
+  }
+
+  Write-ManagedDocsLedger -TargetRoot $TargetRoot -EntriesByPath $entriesByPath -PayloadVersion ([string]$PayloadManifest.PayloadVersion
+  )
+
+  $reportPaths = Write-DocsSmartUpdateReport -TargetRoot $TargetRoot -ReportRoot $reportRoot -Report $report
+  if ($null -ne $reportPaths) {
+    Warn ("Preserved customized docs files were not overwritten. Review update report: {0}" -f $reportPaths.MarkdownPath)
+  }
 }
 
 function Get-ManagedTextBlockMarkers {
@@ -425,7 +1112,8 @@ $resolvedTargetRoot = Resolve-ExistingDirectory -Path $TargetRepoRoot -Name "Tar
 $targetUProject = Resolve-TargetUProjectPath -RepoRoot $resolvedTargetRoot -UProjectPath $TargetUProjectPath
 Test-TargetLooksLikeUE5Project -UProjectPath $targetUProject
 
-$backupRoot = Join-Path $resolvedTargetRoot (".ue-tools-installer-backups\" + (Get-Date).ToString("yyyyMMdd-HHmmss"))
+$installStamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
+$backupRoot = Join-Path $resolvedTargetRoot (".ue-tools-installer-backups\" + $installStamp)
 
 Info "Payload: $resolvedPayloadRoot"
 Info "Target repo: $resolvedTargetRoot"
@@ -434,6 +1122,17 @@ if (-not $NoBackup) { Info "Backup root for replaced paths: $backupRoot" }
  
 $payloadManifest = Read-UEToolSuitePayloadManifest -PayloadRoot $resolvedPayloadRoot
 Info "Payload manifest: $($payloadManifest.ManifestPath)"
+
+$websiteInstallMode = $null
+if (-not $SkipWebsite) {
+  $websiteInstallMode = Resolve-WebsiteInstallMode -TargetRoot $resolvedTargetRoot -AdoptExisting:$AdoptExistingWebsite
+  if ($websiteInstallMode -eq "preserve_existing") {
+    Warn "Existing website directory is not managed by this installer. Preserving current Docusaurus site; website payload + theme apply are skipped."
+    if (-not [string]::IsNullOrWhiteSpace($WebsiteTheme) -or -not [string]::IsNullOrWhiteSpace($WebsiteLogoPath)) {
+      Warn "WebsiteTheme/WebsiteLogoPath were provided but will not be applied because website ownership is unmanaged. Use -AdoptExistingWebsite or run 'ue-tools docs theme apply' after adoption."
+    }
+  }
+}
 
 $managedItems = New-Object System.Collections.Generic.List[string]
 foreach ($item in @($payloadManifest.ManagedBaseItems)) {
@@ -456,29 +1155,23 @@ if (-not $SkipTests) {
   }
 }
 
-if (-not $SkipDocs) {
-  foreach ($item in @($payloadManifest.ManagedDocsItems)) {
-    [void]$managedItems.Add($item)
-  }
-
-  if (-not $SkipCodingStandardsTools) {
-    foreach ($item in @($payloadManifest.ManagedCodingStandardsItems)) {
-      [void]$managedItems.Add($item)
-    }
-  }
-}
-
-if (-not $SkipWebsite) {
+if ((-not $SkipWebsite) -or (-not $SkipDocs)) {
   foreach ($item in @($payloadManifest.ManagedDocsToolsItems)) {
     [void]$managedItems.Add($item)
   }
+}
+
+if (-not $SkipWebsite -and $websiteInstallMode -ne "preserve_existing") {
   foreach ($item in @($payloadManifest.ManagedWebsiteItems)) {
     [void]$managedItems.Add($item)
   }
 }
-elseif (-not $SkipDocs) {
-  foreach ($item in @($payloadManifest.ManagedDocsToolsItems)) {
-    [void]$managedItems.Add($item)
+
+if ($websiteInstallMode -eq "adopt_existing") {
+  $existingWebsitePath = Join-Path $resolvedTargetRoot "website"
+  if (Test-Path -LiteralPath $existingWebsitePath) {
+    Copy-ToBackup -TargetRoot $resolvedTargetRoot -RelativePath "website-adopt-snapshot" -ExistingPath $existingWebsitePath -BackupRoot $backupRoot
+    Info "Backed up existing website before adoption: $existingWebsitePath"
   }
 }
 
@@ -492,6 +1185,35 @@ foreach ($item in @($payloadManifest.ManagedTextItems)) {
 foreach ($item in @($managedItems.ToArray() | Sort-Object -Unique)) {
   if (Copy-ManagedItem -SourceRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot -RelativePath $item -BackupRoot $backupRoot -Optional) {
     [void]$installed.Add($item)
+  }
+}
+
+if (-not $SkipDocs) {
+  Invoke-ManagedDocsSmartUpdate `
+    -PayloadRoot $resolvedPayloadRoot `
+    -TargetRoot $resolvedTargetRoot `
+    -BackupRoot $backupRoot `
+    -PayloadManifest $payloadManifest `
+    -InstallStamp $installStamp `
+    -InstalledList $installed `
+    -IncludeCodingStandards:(-not $SkipCodingStandardsTools)
+}
+
+if (-not $SkipWebsite -and $websiteInstallMode -ne "preserve_existing") {
+  $themeResult = Apply-WebsiteThemeAndBranding `
+    -PayloadRoot $resolvedPayloadRoot `
+    -TargetRoot $resolvedTargetRoot `
+    -TargetUProjectPath $targetUProject `
+    -RequestedTheme $WebsiteTheme `
+    -LogoPath $WebsiteLogoPath
+
+  if ($null -ne $themeResult) {
+    Write-WebsiteOwnershipMarker `
+      -TargetRoot $resolvedTargetRoot `
+      -PayloadVersion ([string]$payloadManifest.PayloadVersion) `
+      -ProjectName ([string]$themeResult.ProjectName) `
+      -InstallMode ([string]$websiteInstallMode) `
+      -ThemeId ([string]$themeResult.ThemeId)
   }
 }
 

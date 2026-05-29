@@ -60,6 +60,23 @@ Minimal docs root for ue-tools docs testing.
   if (Test-Path -LiteralPath $packageSource) {
     Copy-Item -LiteralPath $packageSource -Destination (Join-Path $scratchWebsiteRoot "package.json") -Force
   }
+  $configSource = Join-Path $repoRoot "website\docusaurus.config.ts"
+  if (Test-Path -LiteralPath $configSource) {
+    Copy-Item -LiteralPath $configSource -Destination (Join-Path $scratchWebsiteRoot "docusaurus.config.ts") -Force
+  }
+  $themePresetsSource = Join-Path $repoRoot "website\theme-presets"
+  if (Test-Path -LiteralPath $themePresetsSource -PathType Container) {
+    Copy-Item -LiteralPath $themePresetsSource -Destination (Join-Path $scratchWebsiteRoot "theme-presets") -Recurse -Force
+  }
+  $cssSource = Join-Path $repoRoot "website\src\css\custom.css"
+  if (Test-Path -LiteralPath $cssSource -PathType Leaf) {
+    $cssDestination = Join-Path $scratchWebsiteRoot "src\css\custom.css"
+    $cssDestinationParent = Split-Path -Path $cssDestination -Parent
+    if ($cssDestinationParent) {
+      New-Item -ItemType Directory -Force -Path $cssDestinationParent | Out-Null
+    }
+    Copy-Item -LiteralPath $cssSource -Destination $cssDestination -Force
+  }
 
   return $scratchRepo
 }
@@ -280,6 +297,51 @@ try {
   Assert-Condition "case1c reorder without position exits nonzero" ($reorderMissingPositionResult.ExitCode -ne 0) "nonzero exit code returned" "exit code=$($reorderMissingPositionResult.ExitCode)"
   Assert-TextContains "case1c reorder without position names the missing parameter" $reorderMissingPositionResult.OutputText "Error: Position is required."
   Assert-TextNotContains "case1c reorder without position avoids binder noise" $reorderMissingPositionResult.OutputText "Cannot bind argument to parameter 'Args'"
+
+  Step "Case 1d: theme list shows available website themes"
+  $themeListRepo = New-MinimalDocsRepo -Name "repo-theme-list"
+  $themeListToolset = New-StubToolset -Name "toolset-theme-list"
+  $themeListResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $themeListRepo `
+    -CliArgs @("theme", "list") `
+    -Toolset $themeListToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-theme-list")
+  Assert-Condition "case1d theme list exits cleanly" ($themeListResult.ExitCode -eq 0) "exit code=0" "exit code=$($themeListResult.ExitCode)"
+  Assert-TextContains "case1d theme list includes neutral" $themeListResult.OutputText "- neutral:"
+  Assert-TextContains "case1d theme list includes ocean" $themeListResult.OutputText "- ocean:"
+
+  Step "Case 1e: theme apply requires managed marker unless explicitly adopted"
+  $themeGuardRepo = New-MinimalDocsRepo -Name "repo-theme-guard"
+  $themeGuardToolset = New-StubToolset -Name "toolset-theme-guard"
+  $themeGuardResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $themeGuardRepo `
+    -CliArgs @("theme", "apply", "-Theme", "ocean") `
+    -Toolset $themeGuardToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-theme-guard")
+  Assert-Condition "case1e unmanaged theme apply exits nonzero" ($themeGuardResult.ExitCode -ne 0) "exit code=$($themeGuardResult.ExitCode)" "expected non-zero exit code"
+  Assert-TextContains "case1e unmanaged theme apply guidance" $themeGuardResult.OutputText "Website is unmanaged."
+
+  Step "Case 1f: theme apply can adopt existing website and update branding files"
+  $themeAdoptRepo = New-MinimalDocsRepo -Name "repo-theme-adopt"
+  $themeAdoptToolset = New-StubToolset -Name "toolset-theme-adopt"
+  $themeLogoPath = Join-Path (New-ScratchPath "assets-theme-adopt") "project-logo.svg"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Path $themeLogoPath -Parent) | Out-Null
+  Write-Utf8NoBomFile -Path $themeLogoPath -Content @'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <rect width="16" height="16" fill="#0d7ea2"/>
+</svg>
+'@
+  $themeAdoptResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $themeAdoptRepo `
+    -CliArgs @("theme", "apply", "-Theme", "ocean", "-LogoPath", $themeLogoPath, "--adopt-existing") `
+    -Toolset $themeAdoptToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-theme-adopt")
+  Assert-Condition "case1f adopt theme apply exits cleanly" ($themeAdoptResult.ExitCode -eq 0) "exit code=0" "exit code=$($themeAdoptResult.ExitCode)"
+  Assert-TextContains "case1f adopt message emitted" $themeAdoptResult.OutputText "Adopted existing website"
+  Assert-TextContains "case1f apply message emitted" $themeAdoptResult.OutputText "Applied website theme 'ocean'."
+  Assert-TextContains "case1f custom css updated to ocean palette" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\src\css\custom.css") -Raw) "--ifm-color-primary: #0d7ea2;"
+  Assert-TextContains "case1f config stores updated theme id" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\docusaurus.config.ts") -Raw) "suiteThemeId: 'ocean'"
+  Assert-Condition "case1f ownership marker written" (Test-Path -LiteralPath (Join-Path $themeAdoptRepo "website\.ue-tools\ownership.json") -PathType Leaf) "ownership marker present"
 
   Step "Case 2: new-section scaffolds a section and skips TOC without the bridge"
   $noTocRepo = New-MinimalDocsRepo -Name "repo-no-toc"

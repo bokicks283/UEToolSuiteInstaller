@@ -1,0 +1,41 @@
+{
+  "defaultTheme": "neutral",
+  "themes": [
+    {
+      "id": "neutral",
+      "label": "Neutral Slate",
+      "description": "Balanced neutral docs theme with restrained contrast.",
+      "cssPath": "website/theme-presets/neutral.css"
+    },
+    {
+      "id": "graphite",
+      "label": "Graphite",
+      "description": "Cool gray palette tuned for engineering-heavy docs.",
+      "cssPath": "website/theme-presets/graphite.css"
+    },
+    {
+      "id": "ocean",
+      "label": "Ocean",
+      "description": "Blue-forward palette with clean, high readability surfaces.",
+      "cssPath": "website/theme-presets/ocean.css"
+    },
+    {
+      "id": "forest",
+      "label": "Forest",
+      "description": "Green palette with natural contrast for long-form reading.",
+      "cssPath": "website/theme-presets/forest.css"
+    },
+    {
+      "id": "amber",
+      "label": "Amber",
+      "description": "Warm amber palette with strong callout contrast.",
+      "cssPath": "website/theme-presets/amber.css"
+    },
+    {
+      "id": "violet",
+      "label": "Violet",
+      "description": "Modern violet palette with subdued dark-mode tones.",
+      "cssPath": "website/theme-presets/violet.css"
+    }
+  ]
+}

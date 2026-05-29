@@ -125,6 +125,33 @@ ue-tools docs install-bridge
 
 After that, `ue-tools docs new-page` and `ue-tools docs new-section` will queue Markdown All in One's `Create Table of Contents` command through the local bridge extension. If either dependency is missing, `ue-tools docs` falls back to plain scaffolding and skips TOC generation.
 
+## Theme And Branding Updates
+
+List available presets:
+
+```powershell
+ue-tools docs theme list
+```
+
+Apply a preset and optional logo:
+
+```powershell
+ue-tools docs theme apply -Theme neutral
+ue-tools docs theme apply -Theme ocean -LogoPath C:\Path\ProjectLogo.svg
+```
+
+`ue-tools docs theme apply` updates:
+
+- `website/src/css/custom.css`
+- `website/docusaurus.config.ts` branding fields (`title`, navbar title/logo, suite custom fields)
+- `website/.ue-tools/ownership.json` management marker
+
+If the website was not previously managed by this installer/suite, run with `--adopt-existing` to opt in:
+
+```powershell
+ue-tools docs theme apply -Theme neutral --adopt-existing
+```
+
 ## Deployment Notes
 
 - Update `website/docusaurus.config.ts` `url` and repository metadata before a real deployment target is chosen.

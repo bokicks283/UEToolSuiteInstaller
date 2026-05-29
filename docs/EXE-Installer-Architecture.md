@@ -28,7 +28,7 @@ Main form structure:
   - title/subtitle
   - `.uproject` picker
   - core options
-  - advanced options (shown by default, collapsible)
+  - advanced options (hidden by default, collapsible)
   - install/cancel buttons + terminal toggle
   - always-visible progress bar and status text
 - Bottom panel:
@@ -71,6 +71,7 @@ Advanced payload scope options:
 |---|---|
 | Skip Docs payload | `-SkipDocs` |
 | Skip website payload | `-SkipWebsite` |
+| Adopt existing unmanaged website | `-AdoptExistingWebsite` |
 | Skip payload test scripts | `-SkipTests` |
 | Skip AI docs/tooling payload | `-SkipAITools` |
 | Skip ArtSource tooling payload | `-SkipArtSourceTools` |
@@ -99,6 +100,9 @@ The GUI enforces option dependencies before command construction:
 
 - If `Run repo initialization after install` is disabled:
   - all init-specific options are disabled.
+- If `Skip website payload` is enabled:
+  - website theme/logo controls are disabled.
+  - `Adopt existing unmanaged website` is disabled.
 - If `Skip docs setup during init` is enabled:
   - docs setup sub-options (`Skip/Force npm install`, `Skip docs bridge install`) are disabled.
 - `Skip docs npm install` and `Force docs npm install` are mutually exclusive.

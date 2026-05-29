@@ -103,6 +103,7 @@ function New-InstalledToolSuiteFixture {
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
     "-TargetRepoRoot", $fixtureRepo,
+    "-AdoptExistingWebsite",
     "-RunInit",
     "-InitNonInteractive",
     "-SkipLfsPull",

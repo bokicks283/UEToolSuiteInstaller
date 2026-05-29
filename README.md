@@ -21,6 +21,11 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 -TargetR
 
 The installer uses `payload/ue-tool-suite.manifest.json` to decide managed paths and marker-managed root text blocks (`.gitattributes`, `.gitignore`).
 
+Docs and website updates are preserve-first:
+- existing unmanaged `website/` folders are left untouched by default
+- managed docs defaults are only auto-updated when the file matches the last installed hash
+- customized/default-missing docs files are preserved and staged as candidates under `.ue-tools-installer-updates/<timestamp>/`
+
 By default, replaced managed content is backed up under:
 - `.ue-tools-installer-backups/<timestamp>/`
 
@@ -38,12 +43,15 @@ By default, replaced managed content is backed up under:
 - `-NoBuild`
 - `-NoRegen`
 - `-SkipDocs`, `-SkipWebsite`, `-SkipTests`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
+- `-AdoptExistingWebsite` (explicitly convert an existing unmanaged `website/` folder to installer-managed)
+- `-WebsiteTheme <id>` (default: `neutral`)
+- `-WebsiteLogoPath <path-to-svg-or-png>`
 - `-NoBackup`
 - `-NoLegacyCleanup`
 
 The GUI installer now runs `-RunInit` with `-InitNonInteractive` by default, shows stage progress in a progress bar, and keeps terminal output available behind a `Show terminal output` toggle.
 The terminal panel starts hidden by default, can be toggled on demand, and is resizable when shown. After a successful install, the GUI asks whether to install into another project (Yes resets the form, No exits).
-Advanced options are shown by default and expose all user-safe installer/init flags, including explicit `-SkipShellAliases` control.
+Core installer controls include docs theme preset selection and optional SVG/PNG logo branding; advanced options remain hidden by default and expose all user-safe installer/init flags, including explicit `-SkipShellAliases` control.
 
 ## Test Entry Points
 

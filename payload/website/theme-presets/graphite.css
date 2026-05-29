@@ -1,0 +1,101 @@
+:root {
+  --ifm-color-primary: #4b5c74;
+  --ifm-color-primary-dark: #435267;
+  --ifm-color-primary-darker: #3f4d61;
+  --ifm-color-primary-darkest: #334050;
+  --ifm-color-primary-light: #596b85;
+  --ifm-color-primary-lighter: #677a95;
+  --ifm-color-primary-lightest: #8797ad;
+  --ifm-background-color: #f3f5f7;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-navbar-background-color: rgba(249, 250, 251, 0.94);
+  --ifm-footer-background-color: #121720;
+  --ifm-font-family-base: "Inter", "Segoe UI", sans-serif;
+  --ifm-heading-font-family: "Inter", "Segoe UI", sans-serif;
+  --ifm-font-color-base: #1e2630;
+  --ifm-heading-color: #121821;
+  --ifm-link-color: #43566f;
+  --ifm-menu-color: #394958;
+  --ifm-menu-color-active: #ffffff;
+  --ifm-menu-color-background-active: #4b5c74;
+  --ifm-menu-color-background-hover: rgba(75, 92, 116, 0.11);
+  --ifm-toc-border-color: rgba(18, 24, 33, 0.11);
+  --ifm-blockquote-border-left-color: #4b5c74;
+  --ifm-global-radius: 8px;
+  --ifm-code-font-size: 94%;
+  --docusaurus-highlighted-code-line-bg: rgba(75, 92, 116, 0.12);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #9aabc2;
+  --ifm-color-primary-dark: #8b9eb8;
+  --ifm-color-primary-darker: #8296b2;
+  --ifm-color-primary-darkest: #657c9d;
+  --ifm-color-primary-light: #a9b8cb;
+  --ifm-color-primary-lighter: #b2bfd2;
+  --ifm-color-primary-lightest: #cad3df;
+  --ifm-background-color: #0b0f15;
+  --ifm-background-surface-color: #121924;
+  --ifm-navbar-background-color: rgba(11, 15, 21, 0.92);
+  --ifm-footer-background-color: #070a10;
+  --ifm-font-color-base: #dde4ee;
+  --ifm-heading-color: #f7f9fc;
+  --ifm-link-color: #b9cadf;
+  --ifm-menu-color: rgba(221, 228, 238, 0.82);
+  --ifm-menu-color-active: #ffffff;
+  --ifm-menu-color-background-active: rgba(75, 92, 116, 0.85);
+  --ifm-menu-color-background-hover: rgba(255, 255, 255, 0.07);
+  --ifm-toc-border-color: rgba(255, 255, 255, 0.12);
+  --docusaurus-highlighted-code-line-bg: rgba(154, 171, 194, 0.14);
+}
+
+html,
+body {
+  background-color: var(--ifm-background-color);
+}
+
+.navbar {
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+  backdrop-filter: blur(8px);
+}
+
+.navbar__title {
+  letter-spacing: 0;
+  font-weight: 700;
+}
+
+.navbar__link {
+  font-weight: 600;
+}
+
+.footer {
+  border-top: 1px solid var(--ifm-toc-border-color);
+}
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ifm-toc-border-color);
+}
+
+.menu__link {
+  border-radius: 6px;
+}
+
+.table-of-contents__link--active {
+  font-weight: 700;
+}
+
+.theme-doc-markdown > h2 {
+  border-top: 1px solid var(--ifm-toc-border-color);
+  padding-top: 0.4rem;
+  margin-top: 2.4rem;
+}
+
+.button {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+blockquote {
+  border-radius: 0 8px 8px 0;
+  background: rgba(75, 92, 116, 0.08);
+}

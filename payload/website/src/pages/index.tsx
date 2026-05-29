@@ -1,26 +1,39 @@
 import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
 import useBaseUrl from '@docusaurus/useBaseUrl';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 
 import styles from './index.module.css';
 
+type SuiteBrandingFields = {
+  suiteProjectName?: string;
+  suiteDocsTitle?: string;
+  suiteTagline?: string;
+  suiteThemeId?: string;
+};
+
+type NavbarLogoConfig = {
+  src?: string;
+  alt?: string;
+};
+
 const primaryActions = [
   {
-    title: 'Start Setup',
-    body: 'Bootstrap the repo, verify the tools, and get back into Unreal quickly.',
+    title: 'Setup',
+    body: 'Bootstrap the repo, verify suite prerequisites, and align local tooling in one pass.',
     to: '/docs/setup',
   },
   {
-    title: 'Ship Safely',
-    body: 'Use the repo workflow, guarded binary tooling, and testing notes without letting process take over the project.',
+    title: 'Workflow',
+    body: 'Use the documented branch, hook, and validation flows without adding unnecessary process overhead.',
     to: '/docs/workflow',
   },
   {
-    title: 'Get Running',
-    body: 'Bootstrap the repo, sync the project, and get back into Unreal quickly.',
-    to: '/docs/setup',
+    title: 'Testing',
+    body: 'Run suite tests and branch-mutating validations with clear expectations and recovery guidance.',
+    to: '/docs/testing',
   },
 ];
 
@@ -53,38 +66,46 @@ const readOrder = [
 ];
 
 const principles = [
-  'Build the project first. Tooling exists to remove friction, not create it.',
-  'Keep docs in the repo so workflow, validation, and code stay in the same review loop.',
-  'Use the documented Unreal-safe flows for project-file regeneration and validation.',
+  'Keep tooling predictable across fresh installs and updater runs.',
+  'Keep docs in-repo so workflow and code review stay aligned.',
+  'Automate what can regress, and keep manual checks focused on true edge cases.',
 ];
 
 const metrics = [
   {value: 'UE 5', label: 'Engine target'},
-  {value: '1', label: 'Docs site'},
-  {value: '1', label: 'Tooling suite'},
+  {value: '6', label: 'Theme presets'},
+  {value: '1', label: 'Unified installer'},
 ];
 
 export default function Home(): ReactNode {
-  const logoSrc = useBaseUrl('/img/logo.svg');
+  const {siteConfig} = useDocusaurusContext();
+  const customFields = (siteConfig.customFields ?? {}) as SuiteBrandingFields;
+  const projectName = customFields.suiteProjectName?.trim() || 'UE Project';
+  const docsTitle = customFields.suiteDocsTitle?.trim() || `${projectName} Docs`;
+  const siteTagline =
+    customFields.suiteTagline?.trim() ||
+    'Repo tooling, Unreal workflow, and living project documentation.';
+  const activeTheme = customFields.suiteThemeId?.trim() || 'neutral';
+
+  const navbarLogo = (((siteConfig.themeConfig as {navbar?: {logo?: NavbarLogoConfig}} | undefined)?.navbar)?.logo);
+  const logoSrc = useBaseUrl(navbarLogo?.src ?? '/img/logo.svg');
+  const logoAlt = navbarLogo?.alt ?? `${docsTitle} logo`;
 
   return (
-    <Layout
-      title="UE Project Docs"
-      description="Repo tooling, Unreal workflow, and project documentation.">
+    <Layout title={docsTitle} description={siteTagline}>
       <header className={styles.hero}>
         <div className={styles.heroBackdrop} />
         <div className={styles.heroGrid}>
           <div className={styles.heroCopy}>
             <div className={styles.brandLockup}>
-              <img className={styles.brandMark} src={logoSrc} alt="UE project mark" />
-              <p className={styles.eyebrow}>Unreal project overview</p>
+              <img className={styles.brandMark} src={logoSrc} alt={logoAlt} />
+              <p className={styles.eyebrow}>Project documentation hub</p>
             </div>
             <Heading as="h1" className={styles.title}>
-              UE Project
+              {projectName}
             </Heading>
             <p className={styles.subtitle}>
-              A lean project overview for Unreal workflow, repo tooling, and
-              the rules that actually matter during development.
+              {siteTagline}
             </p>
             <div className={styles.actions}>
               <Link className="button button--primary button--lg" to="/docs/">
@@ -104,8 +125,8 @@ export default function Home(): ReactNode {
             </div>
           </div>
           <aside className={styles.heroPanel}>
-            <p className={styles.panelEyebrow}>Recommended Read Order</p>
-            <Heading as="h2">Start building the game, not wrestling the tooling.</Heading>
+            <p className={styles.panelEyebrow}>Recommended read order</p>
+            <Heading as="h2">Get setup and workflow aligned first.</Heading>
             <ol className={styles.readOrder}>
               {readOrder.map((item) => (
                 <li key={item.label}>
@@ -113,17 +134,17 @@ export default function Home(): ReactNode {
                 </li>
               ))}
             </ol>
+            <p className={styles.themeNote}>Active theme preset: {activeTheme}</p>
           </aside>
         </div>
       </header>
       <main>
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <p className={styles.sectionLabel}>Build Tonight</p>
-            <Heading as="h2">Use the docs like a production handbook.</Heading>
+            <p className={styles.sectionLabel}>Daily execution</p>
+            <Heading as="h2">Use docs as an operational reference.</Heading>
             <p>
-              The goal is not to document everything. The goal is to keep the
-              next important decision obvious.
+              Keep the next important decision obvious instead of documenting everything.
             </p>
           </div>
           <div className={styles.grid}>
@@ -139,7 +160,7 @@ export default function Home(): ReactNode {
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <p className={styles.sectionLabel}>Core Sections</p>
+            <p className={styles.sectionLabel}>Core sections</p>
             <Heading as="h2">Keep the important pages close.</Heading>
           </div>
           <div className={styles.cardGrid}>
@@ -157,8 +178,8 @@ export default function Home(): ReactNode {
         <section className={styles.section}>
           <div className={styles.principles}>
             <div className={styles.principlesCopy}>
-              <p className={styles.sectionLabel}>Ground Rules</p>
-              <Heading as="h2">Keep the docs sharp. Keep the process lean.</Heading>
+              <p className={styles.sectionLabel}>Operating principles</p>
+              <Heading as="h2">Keep docs clear, current, and actionable.</Heading>
             </div>
             <div className={styles.principlesList}>
               {principles.map((item) => (
@@ -173,11 +194,9 @@ export default function Home(): ReactNode {
 
         <section className={styles.section}>
           <div className={styles.closingPanel}>
-            <Heading as="h2">Docs belong next to the work.</Heading>
+            <Heading as="h2">Documentation should support delivery.</Heading>
             <p>
-              This project does not need a sprawling wiki. It needs a readable
-              workflow, trustworthy setup notes, and enough structure to help
-              the team ship.
+              Keep the workflow readable, setup trustworthy, and validation repeatable across installs.
             </p>
             <div className={styles.actions}>
               <Link className="button button--primary button--lg" to="/docs/workflow">

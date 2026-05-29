@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'UE Project Docs',
-  tagline: 'Repo tooling, Unreal workflow, and living project documentation.',
+  tagline: 'Repo tooling, Unreal workflow, and living project documentation for UE projects.',
   favicon: 'img/logo.svg',
 
   future: {
@@ -46,18 +46,25 @@ const config: Config = {
     ],
   ],
 
+  customFields: {
+    suiteProjectName: 'UE Project',
+    suiteDocsTitle: 'UE Project Docs',
+    suiteTagline: 'Repo tooling, Unreal workflow, and living project documentation for UE projects.',
+    suiteThemeId: 'neutral',
+  },
+
   themeConfig: {
     image: 'img/docusaurus-social-card.jpg',
     announcementBar: {
       id: 'lean-docs',
-      content: 'Living repo docs. Use process only where it removes friction.',
-      backgroundColor: '#7d101f',
-      textColor: '#fff5f7',
+      content: 'Living repo docs. Keep setup and workflow clear, lean, and project-focused.',
+      backgroundColor: '#1f4f7f',
+      textColor: '#f2f7fc',
       isCloseable: true,
     },
     colorMode: {
-      defaultMode: 'dark',
-      respectPrefersColorScheme: false,
+      defaultMode: 'light',
+      respectPrefersColorScheme: true,
     },
     navbar: {
       title: 'UE Project',
