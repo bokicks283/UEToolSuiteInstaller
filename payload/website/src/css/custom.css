@@ -1,4 +1,7 @@
 :root {
+  --ue-doc-sidebar-width: 300px;
+  --ue-scrollbar-thumb: color-mix(in srgb, var(--ifm-color-primary) 42%, transparent);
+  --ifm-font-size-base: 17px;
   --ifm-color-primary: #3a6ea5;
   --ifm-color-primary-dark: #346394;
   --ifm-color-primary-darker: #305a87;
@@ -59,6 +62,87 @@
 html,
 body {
   background: var(--ifm-background-color);
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 0.72rem;
+  height: 0.72rem;
+  background: transparent;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+html::-webkit-scrollbar-button,
+body::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent !important;
+}
+
+html::-webkit-scrollbar-button:single-button,
+body::-webkit-scrollbar-button:single-button,
+*::-webkit-scrollbar-button:single-button,
+html::-webkit-scrollbar-button:single-button:vertical:decrement,
+body::-webkit-scrollbar-button:single-button:vertical:decrement,
+*::-webkit-scrollbar-button:single-button:vertical:decrement,
+html::-webkit-scrollbar-button:single-button:vertical:increment,
+body::-webkit-scrollbar-button:single-button:vertical:increment,
+*::-webkit-scrollbar-button:single-button:vertical:increment,
+html::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body::-webkit-scrollbar-button:single-button:horizontal:decrement,
+*::-webkit-scrollbar-button:single-button:horizontal:decrement,
+html::-webkit-scrollbar-button:single-button:horizontal:increment,
+body::-webkit-scrollbar-button:single-button:horizontal:increment,
+*::-webkit-scrollbar-button:single-button:horizontal:increment {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+html::-webkit-scrollbar-track-piece,
+body::-webkit-scrollbar-track-piece,
+*::-webkit-scrollbar-track-piece {
+  background: transparent !important;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 0.18rem solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+html[data-ue-scrollbars-active='true'],
+html[data-ue-scrollbars-active='true'] body,
+html[data-ue-scrollbars-active='true'] * {
+  scrollbar-color: var(--ue-scrollbar-thumb) transparent;
+}
+
+html[data-ue-scrollbars-active='true']::-webkit-scrollbar-thumb,
+html[data-ue-scrollbars-active='true'] body::-webkit-scrollbar-thumb,
+html[data-ue-scrollbars-active='true'] *::-webkit-scrollbar-thumb,
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background: var(--ue-scrollbar-thumb);
 }
 
 .main-wrapper {
@@ -90,6 +174,50 @@ body {
 .theme-doc-sidebar-container {
   border-right: 1px solid var(--ifm-toc-border-color);
   background: color-mix(in srgb, var(--ifm-background-surface-color) 92%, transparent);
+  width: var(--ue-doc-sidebar-width) !important;
+  min-width: var(--ue-doc-sidebar-width) !important;
+  flex-basis: var(--ue-doc-sidebar-width) !important;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateX(0);
+  transform-origin: left center;
+  transition:
+    width 280ms ease,
+    min-width 280ms ease,
+    flex-basis 280ms ease,
+    opacity 220ms ease,
+    transform 280ms ease,
+    border-color 220ms ease;
+}
+
+.theme-doc-sidebar-container > div {
+  width: var(--ue-doc-sidebar-width);
+  min-width: var(--ue-doc-sidebar-width);
+  transition:
+    opacity 220ms ease,
+    transform 280ms ease;
+}
+
+main[class*='docMainContainer'] {
+  transition:
+    width 280ms ease,
+    max-width 280ms ease,
+    flex-basis 280ms ease;
+}
+
+html[data-ue-docs-left-sidebar-collapsed='true'] .theme-doc-sidebar-container {
+  width: 0 !important;
+  min-width: 0 !important;
+  flex-basis: 0 !important;
+  opacity: 0;
+  transform: translateX(-1rem);
+  border-right-color: transparent;
+  pointer-events: none;
+}
+
+html[data-ue-docs-left-sidebar-collapsed='true'] .theme-doc-sidebar-container > div {
+  opacity: 0;
+  transform: translateX(-0.65rem);
 }
 
 .menu__list-item {
@@ -128,7 +256,7 @@ body {
 }
 
 .theme-doc-markdown {
-  font-size: 0.98rem;
+  font-size: 1.02rem;
   line-height: 1.72;
 }
 
@@ -140,14 +268,30 @@ body {
   color: var(--ifm-heading-color);
 }
 
+.theme-doc-markdown h1 {
+  font-size: clamp(2.85rem, 2.45rem + 0.9vw, 3.45rem);
+  line-height: 1.08;
+  margin-bottom: 1rem;
+}
+
 .theme-doc-markdown h2 {
+  font-size: clamp(2.15rem, 1.9rem + 0.45vw, 2.45rem);
+  line-height: 1.14;
   border-top: 1px solid var(--ifm-toc-border-color);
   margin-top: 2.35rem;
   padding-top: 0.55rem;
 }
 
 .theme-doc-markdown h3 {
+  font-size: clamp(1.7rem, 1.55rem + 0.25vw, 1.9rem);
+  line-height: 1.18;
   margin-top: 1.7rem;
+}
+
+.theme-doc-markdown h4 {
+  font-size: clamp(1.35rem, 1.24rem + 0.18vw, 1.5rem);
+  line-height: 1.24;
+  margin-top: 1.35rem;
 }
 
 .theme-doc-markdown p,
@@ -165,13 +309,23 @@ body {
 }
 
 .theme-doc-markdown pre code {
+  display: block;
   border: 0;
   padding: 0;
+  min-width: max-content;
 }
 
 .theme-doc-markdown pre {
   border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 24%, transparent);
   border-radius: 8px;
+  padding: 0.72rem 0.82rem;
+  overflow: auto;
+  background: var(--ifm-pre-background);
+  color: var(--ifm-pre-color);
+}
+
+.theme-doc-markdown div[class*='codeBlockContent'] pre {
+  margin: 0;
 }
 
 .theme-doc-markdown table {
@@ -201,6 +355,19 @@ body {
 .alert {
   border-radius: 8px;
   border-width: 1px;
+}
+
+.theme-doc-markdown .alert--secondary,
+.theme-doc-markdown .theme-admonition.theme-admonition-note {
+  --ifm-alert-background-color: color-mix(in srgb, #8b5cf6 10%, var(--ifm-background-color));
+  --ifm-alert-background-color-highlight: color-mix(in srgb, #8b5cf6 18%, transparent);
+  --ifm-alert-border-color: color-mix(in srgb, #8b5cf6 46%, var(--ifm-toc-border-color));
+  --ifm-alert-color: inherit;
+}
+
+.theme-doc-markdown .alert--secondary .alert__title,
+.theme-doc-markdown .theme-admonition.theme-admonition-note .alert__title {
+  color: #7c3aed;
 }
 
 .button {

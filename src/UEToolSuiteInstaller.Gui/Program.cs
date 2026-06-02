@@ -1230,9 +1230,16 @@ internal sealed class InstallerForm : Form
             return;
         }
 
-        if (line.Contains("[Init] Installing docs site dependencies with npm install...", StringComparison.OrdinalIgnoreCase))
+        if (line.Contains("[Init] Installing docs site dependencies with npm", StringComparison.OrdinalIgnoreCase))
         {
-            SetProgress(93, "Installing docs dependencies (npm install)...");
+            if (line.Contains("npm ci", StringComparison.OrdinalIgnoreCase))
+            {
+                SetProgress(93, "Installing docs dependencies (npm ci)...");
+            }
+            else
+            {
+                SetProgress(93, "Installing docs dependencies (npm install)...");
+            }
             return;
         }
 

@@ -31,6 +31,15 @@ function Assert-HasLiteral {
   Assert-Condition -Name $Name -Condition ($Text -like "*$Needle*") -PassDetail "found '$Needle'" -FailDetail "missing '$Needle'"
 }
 
+function Assert-LacksLiteral {
+  param(
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)][string]$Text,
+    [Parameter(Mandatory)][string]$Needle
+  )
+  Assert-Condition -Name $Name -Condition ($Text -notlike "*$Needle*") -PassDetail "missing '$Needle'" -FailDetail "unexpected '$Needle'"
+}
+
 try {
   Step "Packaging contract checks ($stamp)"
   Write-Log "Repo: $repoRoot" Cyan
@@ -42,6 +51,19 @@ try {
   $publishScriptPath = Join-Path $repoRoot "Scripts\Publish-InstallerExe.ps1"
   $workflowPath = Join-Path $repoRoot ".github\workflows\release.yml"
   $themeCatalogPath = Join-Path $repoRoot "payload\website\theme-presets\theme-catalog.json"
+  $docsEditorHostPath = Join-Path $repoRoot "payload\Scripts\UETools\DocsEditorApiHost.ps1"
+  $docsSidebarSwizzlePath = Join-Path $repoRoot "payload\website\src\theme\DocSidebar\index.tsx"
+  $docsDocItemLayoutPath = Join-Path $repoRoot "payload\website\src\theme\DocItem\Layout\index.tsx"
+  $docsAuthoringApiPath = Join-Path $repoRoot "payload\website\src\theme\authoring\api.ts"
+  $docsShortcodeModulePath = Join-Path $repoRoot "payload\website\src\clientModules\lucideShortcodes.ts"
+  $docsModulePath = Join-Path $repoRoot "payload\Scripts\UETools\UEToolSuite.Docs.psm1"
+  $docsConfigPath = Join-Path $repoRoot "payload\website\docusaurus.config.ts"
+  $docsPackageJsonPath = Join-Path $repoRoot "payload\website\package.json"
+  $docsPackageLockPath = Join-Path $repoRoot "payload\website\package-lock.json"
+  $docsBrowserQaPath = Join-Path $repoRoot "Tests\DocsAuthoringBrowserQA.md"
+  $docsStandaloneEditorPagePath = Join-Path $repoRoot "payload\website\src\pages\editor.tsx"
+  $docsStandaloneEditorStylesPath = Join-Path $repoRoot "payload\website\src\pages\editor.module.css"
+  $payloadManifestPath = Join-Path $repoRoot "payload\ue-tool-suite.manifest.json"
 
   Assert-Condition -Name "GUI project file exists" -Condition (Test-Path -LiteralPath $csprojPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $csprojPath"
   Assert-Condition -Name "GUI runtime file exists" -Condition (Test-Path -LiteralPath $programPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $programPath"
@@ -49,6 +71,17 @@ try {
   Assert-Condition -Name "Publish script exists" -Condition (Test-Path -LiteralPath $publishScriptPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $publishScriptPath"
   Assert-Condition -Name "Release workflow exists" -Condition (Test-Path -LiteralPath $workflowPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $workflowPath"
   Assert-Condition -Name "Website theme catalog exists" -Condition (Test-Path -LiteralPath $themeCatalogPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $themeCatalogPath"
+  Assert-Condition -Name "Docs editor API host exists" -Condition (Test-Path -LiteralPath $docsEditorHostPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsEditorHostPath"
+  Assert-Condition -Name "Docs sidebar swizzle exists" -Condition (Test-Path -LiteralPath $docsSidebarSwizzlePath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsSidebarSwizzlePath"
+  Assert-Condition -Name "Docs doc item layout swizzle exists" -Condition (Test-Path -LiteralPath $docsDocItemLayoutPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsDocItemLayoutPath"
+  Assert-Condition -Name "Docs authoring API helper exists" -Condition (Test-Path -LiteralPath $docsAuthoringApiPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsAuthoringApiPath"
+  Assert-Condition -Name "Docs shortcode module exists" -Condition (Test-Path -LiteralPath $docsShortcodeModulePath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsShortcodeModulePath"
+  Assert-Condition -Name "Docs module exists" -Condition (Test-Path -LiteralPath $docsModulePath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsModulePath"
+  Assert-Condition -Name "Docs config exists" -Condition (Test-Path -LiteralPath $docsConfigPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsConfigPath"
+  Assert-Condition -Name "Docs package.json exists" -Condition (Test-Path -LiteralPath $docsPackageJsonPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsPackageJsonPath"
+  Assert-Condition -Name "Docs package-lock.json exists" -Condition (Test-Path -LiteralPath $docsPackageLockPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsPackageLockPath"
+  Assert-Condition -Name "Docs browser QA checklist exists" -Condition (Test-Path -LiteralPath $docsBrowserQaPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsBrowserQaPath"
+  Assert-Condition -Name "Payload manifest exists" -Condition (Test-Path -LiteralPath $payloadManifestPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $payloadManifestPath"
 
   Step "GUI publish content contract"
   [xml]$csprojXml = Get-Content -LiteralPath $csprojPath -Raw
@@ -73,8 +106,9 @@ try {
   Assert-HasLiteral -Name "gui terminal is resizable split layout" -Text $programText -Needle "SplitContainer"
   Assert-HasLiteral -Name "gui startup failures show explicit error dialog" -Text $programText -Needle "Installer UI failed to start."
   Assert-HasLiteral -Name "gui includes progress bar" -Text $programText -Needle "ProgressBar"
-  Assert-HasLiteral -Name "gui progress parser tracks docs npm install phase" -Text $programText -Needle "Installing docs site dependencies with npm install..."
+  Assert-HasLiteral -Name "gui progress parser tracks docs npm dependency phase" -Text $programText -Needle "Installing docs site dependencies with npm"
   Assert-HasLiteral -Name "gui progress text reports docs npm install phase" -Text $programText -Needle "Installing docs dependencies (npm install)..."
+  Assert-HasLiteral -Name "gui progress text reports docs npm ci phase" -Text $programText -Needle "Installing docs dependencies (npm ci)..."
   Assert-HasLiteral -Name "gui progress parser tracks docs doctor phase" -Text $programText -Needle "Running ue-tools docs doctor..."
   Assert-HasLiteral -Name "gui progress text reports docs doctor phase" -Text $programText -Needle "Running docs doctor (Docusaurus validation)..."
   Assert-HasLiteral -Name "gui progress text reports first-time ue build phase" -Text $programText -Needle "Running first-time Unreal build setup..."
@@ -107,6 +141,85 @@ try {
   Assert-HasLiteral -Name "gui supports skip docs bridge option" -Text $programText -Needle "-SkipDocsBridgeInstall"
   Assert-HasLiteral -Name "gui supports no build option" -Text $programText -Needle "-NoBuild"
   Assert-HasLiteral -Name "gui supports no regen option" -Text $programText -Needle "-NoRegen"
+
+  Step "Docs editor contract"
+  $docsModuleText = Get-Content -LiteralPath $docsModulePath -Raw
+  $docsConfigText = Get-Content -LiteralPath $docsConfigPath -Raw
+  $docsSidebarText = Get-Content -LiteralPath $docsSidebarSwizzlePath -Raw
+  $docsDocItemLayoutText = Get-Content -LiteralPath $docsDocItemLayoutPath -Raw
+  $docsBrowserQaText = Get-Content -LiteralPath $docsBrowserQaPath -Raw
+  $payloadManifestText = Get-Content -LiteralPath $payloadManifestPath -Raw
+  Assert-HasLiteral -Name "docs module starts editor api in foreground start" -Text $docsModuleText -Needle "Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot"
+  Assert-HasLiteral -Name "docs module writes editor runtime config" -Text $docsModuleText -Needle "editor-runtime.json"
+  Assert-LacksLiteral -Name "docs module removed docs edit command" -Text $docsModuleText -Needle "ue-tools docs edit"
+  Assert-LacksLiteral -Name "docs config removed editor navbar route" -Text $docsConfigText -Needle "to: '/editor'"
+  Assert-Condition -Name "docs payload omits standalone editor route" -Condition (-not (Test-Path -LiteralPath $docsStandaloneEditorPagePath -PathType Leaf)) -PassDetail "standalone editor page absent" -FailDetail "unexpected file: $docsStandaloneEditorPagePath"
+  Assert-Condition -Name "docs payload omits standalone editor styles" -Condition (-not (Test-Path -LiteralPath $docsStandaloneEditorStylesPath -PathType Leaf)) -PassDetail "standalone editor styles absent" -FailDetail "unexpected file: $docsStandaloneEditorStylesPath"
+  Assert-HasLiteral -Name "payload cleanup removes retired standalone editor page" -Text $payloadManifestText -Needle "website/src/pages/editor.tsx"
+  Assert-HasLiteral -Name "payload cleanup removes retired standalone editor styles" -Text $payloadManifestText -Needle "website/src/pages/editor.module.css"
+  Assert-HasLiteral -Name "docs config declares client modules" -Text $docsConfigText -Needle "clientModules:"
+  Assert-HasLiteral -Name "docs config wires shortcode client module" -Text $docsConfigText -Needle "lucideShortcodes.ts"
+  Assert-HasLiteral -Name "docs config enables Docusaurus Mermaid markdown" -Text $docsConfigText -Needle "mermaid: true"
+  Assert-HasLiteral -Name "docs config includes Docusaurus Mermaid theme" -Text $docsConfigText -Needle "@docusaurus/theme-mermaid"
+  Assert-LacksLiteral -Name "docs sidebar removed separate structure label" -Text $docsSidebarText -Needle "Structure (drag to reorder)"
+  Assert-LacksLiteral -Name "docs sidebar removed separate structure panel" -Text $docsSidebarText -Needle "structurePanel"
+  Assert-HasLiteral -Name "docs sidebar attaches drag to real sidebar rows" -Text $docsSidebarText -Needle "data-ue-docs-path"
+  Assert-HasLiteral -Name "docs sidebar tracks before after inside drop modes" -Text $docsSidebarText -Needle "data-ue-drop-mode"
+  Assert-HasLiteral -Name "docs sidebar supports nested section drop mode" -Text $docsSidebarText -Needle "'inside'"
+  Assert-HasLiteral -Name "doc layout exposes single edit entrypoint" -Text $docsDocItemLayoutText -Needle "setEditMode(true)"
+  Assert-HasLiteral -Name "doc layout uses tiptap editor content" -Text $docsDocItemLayoutText -Needle "EditorContent"
+  Assert-HasLiteral -Name "doc layout exposes formatting toolbar" -Text $docsDocItemLayoutText -Needle "toggleBold"
+  Assert-HasLiteral -Name "doc layout exposes alignment toolbar" -Text $docsDocItemLayoutText -Needle "setTextAlign('center')"
+  Assert-HasLiteral -Name "doc layout exposes link insert UI" -Text $docsDocItemLayoutText -Needle "Insert link"
+  Assert-HasLiteral -Name "doc layout exposes image insert UI" -Text $docsDocItemLayoutText -Needle "Insert image"
+  Assert-HasLiteral -Name "doc layout exposes task list UI" -Text $docsDocItemLayoutText -Needle "Task list"
+  Assert-HasLiteral -Name "doc layout exposes code block UI" -Text $docsDocItemLayoutText -Needle "Code block"
+  Assert-HasLiteral -Name "doc layout exposes clear formatting UI" -Text $docsDocItemLayoutText -Needle "Clear formatting"
+  Assert-HasLiteral -Name "doc layout exposes unlink UI" -Text $docsDocItemLayoutText -Needle "Remove link"
+  Assert-HasLiteral -Name "doc layout applies rich editor links" -Text $docsDocItemLayoutText -Needle "setLink({href})"
+  Assert-HasLiteral -Name "doc layout applies rich editor images" -Text $docsDocItemLayoutText -Needle "setImage({src, alt:"
+  Assert-HasLiteral -Name "doc layout applies task list commands" -Text $docsDocItemLayoutText -Needle "toggleTaskList"
+  Assert-HasLiteral -Name "doc layout applies code block commands" -Text $docsDocItemLayoutText -Needle "toggleCodeBlock"
+  Assert-HasLiteral -Name "doc layout applies clear formatting commands" -Text $docsDocItemLayoutText -Needle "unsetAllMarks"
+  Assert-HasLiteral -Name "doc layout supports deleting table columns" -Text $docsDocItemLayoutText -Needle "deleteColumn"
+  Assert-HasLiteral -Name "doc layout supports deleting table rows" -Text $docsDocItemLayoutText -Needle "deleteRow"
+  Assert-HasLiteral -Name "doc layout serializes TOC placeholder safely" -Text $docsDocItemLayoutText -Needle "[[docs-tools-toc]]"
+  Assert-HasLiteral -Name "doc layout renders Docusaurus admonitions in rich editor" -Text $docsDocItemLayoutText -Needle "DocusaurusAdmonition"
+  Assert-HasLiteral -Name "doc layout parses admonition markdown containers" -Text $docsDocItemLayoutText -Needle "markdownTokenizer"
+  Assert-HasLiteral -Name "doc layout serializes admonitions back to Docusaurus markdown" -Text $docsDocItemLayoutText -Needle "renderMarkdown"
+  Assert-HasLiteral -Name "doc layout renders Mermaid diagrams in edit mode" -Text $docsDocItemLayoutText -Needle "DocusaurusMermaid"
+  Assert-HasLiteral -Name "doc layout uses Mermaid renderer for edit previews" -Text $docsDocItemLayoutText -Needle "import('mermaid')"
+  Assert-HasLiteral -Name "doc layout blocks advanced mdx with source fallback" -Text $docsDocItemLayoutText -Needle "Source Mode Required"
+  Assert-HasLiteral -Name "docs browser QA covers toolbar readability" -Text $docsBrowserQaText -Needle "at least 28x28 px"
+  Assert-HasLiteral -Name "docs browser QA covers sidebar nesting" -Text $docsBrowserQaText -Needle "Drag a root section into another section"
+  Assert-HasLiteral -Name "docs browser QA covers rich insert saves" -Text $docsBrowserQaText -Needle "save and reload to confirm"
+
+  Step "Docs dependency contract"
+  $docsPackage = Get-Content -LiteralPath $docsPackageJsonPath -Raw | ConvertFrom-Json -AsHashtable
+  $docsPackageLock = Get-Content -LiteralPath $docsPackageLockPath -Raw | ConvertFrom-Json -AsHashtable
+  $lockRootPackage = $docsPackageLock["packages"][""]
+  Assert-Condition -Name "docs package declares tiptap react dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/react")) -PassDetail "@tiptap/react declared" -FailDetail "@tiptap/react missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap markdown dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/markdown")) -PassDetail "@tiptap/markdown declared" -FailDetail "@tiptap/markdown missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap table dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/extension-table")) -PassDetail "@tiptap/extension-table declared" -FailDetail "@tiptap/extension-table missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap starter-kit dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/starter-kit")) -PassDetail "@tiptap/starter-kit declared" -FailDetail "@tiptap/starter-kit missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap underline dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/extension-underline")) -PassDetail "@tiptap/extension-underline declared" -FailDetail "@tiptap/extension-underline missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap text-align dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/extension-text-align")) -PassDetail "@tiptap/extension-text-align declared" -FailDetail "@tiptap/extension-text-align missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap link dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/extension-link")) -PassDetail "@tiptap/extension-link declared" -FailDetail "@tiptap/extension-link missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares tiptap image dependency" -Condition ($docsPackage["dependencies"].ContainsKey("@tiptap/extension-image")) -PassDetail "@tiptap/extension-image declared" -FailDetail "@tiptap/extension-image missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares lucide dependency" -Condition ($docsPackage["dependencies"].ContainsKey("lucide")) -PassDetail "lucide declared" -FailDetail "lucide missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares mermaid dependency" -Condition ($docsPackage["dependencies"].ContainsKey("mermaid")) -PassDetail "mermaid declared" -FailDetail "mermaid missing from package.json dependencies"
+  Assert-Condition -Name "docs package declares Docusaurus mermaid theme" -Condition ($docsPackage["dependencies"].ContainsKey("@docusaurus/theme-mermaid")) -PassDetail "@docusaurus/theme-mermaid declared" -FailDetail "@docusaurus/theme-mermaid missing from package.json dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap react dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/react")) -PassDetail "@tiptap/react locked" -FailDetail "@tiptap/react missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap markdown dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/markdown")) -PassDetail "@tiptap/markdown locked" -FailDetail "@tiptap/markdown missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap table dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/extension-table")) -PassDetail "@tiptap/extension-table locked" -FailDetail "@tiptap/extension-table missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap starter-kit dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/starter-kit")) -PassDetail "@tiptap/starter-kit locked" -FailDetail "@tiptap/starter-kit missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap underline dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/extension-underline")) -PassDetail "@tiptap/extension-underline locked" -FailDetail "@tiptap/extension-underline missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap text-align dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/extension-text-align")) -PassDetail "@tiptap/extension-text-align locked" -FailDetail "@tiptap/extension-text-align missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap link dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/extension-link")) -PassDetail "@tiptap/extension-link locked" -FailDetail "@tiptap/extension-link missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains tiptap image dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("@tiptap/extension-image")) -PassDetail "@tiptap/extension-image locked" -FailDetail "@tiptap/extension-image missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains lucide dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("lucide")) -PassDetail "lucide locked" -FailDetail "lucide missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains mermaid dependency" -Condition ($lockRootPackage["dependencies"].ContainsKey("mermaid")) -PassDetail "mermaid locked" -FailDetail "mermaid missing from lockfile root dependencies"
+  Assert-Condition -Name "docs lockfile contains Docusaurus mermaid theme" -Condition ($lockRootPackage["dependencies"].ContainsKey("@docusaurus/theme-mermaid")) -PassDetail "@docusaurus/theme-mermaid locked" -FailDetail "@docusaurus/theme-mermaid missing from lockfile root dependencies"
 
   Step "Website theme catalog contract"
   $themeCatalog = (Get-Content -LiteralPath $themeCatalogPath -Raw | ConvertFrom-Json)

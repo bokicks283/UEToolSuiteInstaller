@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/payload/website"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docs-site"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      docusaurus-core:
+        patterns:
+          - "@docusaurus/*"
+      docs-ui-runtime:
+        patterns:
+          - "@toast-ui/editor"
+          - "lucide"
+          - "react"
+          - "react-dom"
+          - "@mdx-js/react"
+          - "clsx"
+          - "prism-react-renderer"
+      docs-typescript-tooling:
+        patterns:
+          - "typescript"
+          - "@docusaurus/module-type-aliases"
+          - "@docusaurus/tsconfig"
+          - "@docusaurus/types"

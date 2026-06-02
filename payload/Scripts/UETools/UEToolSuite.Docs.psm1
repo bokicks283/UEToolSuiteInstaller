@@ -93,7 +93,7 @@ Create:
   reorder                       Reorder a page or section and shift sibling positions
 
 Run:
-  start                         Start Docusaurus in the current terminal
+  start                         Start Docusaurus (and the editor API) in the current terminal
   stop                          Stop the tracked background Docusaurus server
   status                        Show tracked background server status
   check                         Validate docs and run the production build
@@ -123,6 +123,7 @@ Examples:
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
+  - Inline page editing is available directly on docs pages when the local editor API is running.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
   - Use ue-tools docs help <command> for detailed option help.
 "@
@@ -744,6 +745,20 @@ function Get-DocsServerStatePath {
   return (Join-Path (Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot) "docs-server.json")
 }
 
+function Get-DocsEditorRuntimeConfigPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Join-Path $websiteRoot "static\ue-tools\editor-runtime.json")
+}
+
+function Get-LegacyDocsEditorRuntimeConfigPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Join-Path $websiteRoot "static\.ue-tools\editor-runtime.json")
+}
+
 function ConvertTo-CmdArgument {
   param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
 
@@ -957,16 +972,112 @@ function Save-DocsServerEntries {
     [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Entries
   )
 
-  if (@($Entries).Count -eq 0) {
+  $existingState = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  $existingEditorEntry = $null
+  if ($existingState -and $existingState.PSObject.Properties["editorApi"]) {
+    $existingEditorEntry = $existingState.editorApi
+  }
+
+  $payload = [ordered]@{
+    version = if ($null -ne $existingEditorEntry) { 3 } else { 2 }
+    servers = @($Entries)
+  }
+  if ($null -ne $existingEditorEntry) {
+    $payload.editorApi = $existingEditorEntry
+  }
+
+  if (@($Entries).Count -eq 0 -and $null -eq $existingEditorEntry) {
+    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+    return $null
+  }
+
+  return (Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $payload)
+}
+
+function Save-DocsServerCompositeState {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [AllowEmptyCollection()][object[]]$ServerEntries = @(),
+    [AllowNull()]$EditorApiEntry = $null
+  )
+
+  $servers = @($ServerEntries)
+  if ($servers.Count -eq 0 -and $null -eq $EditorApiEntry) {
     Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
     return $null
   }
 
   $payload = [ordered]@{
-    version = 2
-    servers = @($Entries)
+    version = if ($null -ne $EditorApiEntry) { 3 } else { 2 }
+    servers = $servers
   }
+  if ($null -ne $EditorApiEntry) {
+    $payload.editorApi = $EditorApiEntry
+  }
+
   return (Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $payload)
+}
+
+function Get-DocsEditorApiEntry {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not $state) {
+    return $null
+  }
+
+  if ($state.PSObject.Properties["editorApi"]) {
+    return $state.editorApi
+  }
+
+  return $null
+}
+
+function Save-DocsEditorApiEntry {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [AllowNull()]$Entry = $null
+  )
+
+  $serverEntries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  return (Save-DocsServerCompositeState -ResolvedRepoRoot $ResolvedRepoRoot -ServerEntries $serverEntries -EditorApiEntry $Entry)
+}
+
+function Write-DocsEditorRuntimeConfig {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$ApiUrl
+  )
+
+  $configPath = Get-DocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  $parent = Split-Path -Path $configPath -Parent
+  if (-not [string]::IsNullOrWhiteSpace($parent)) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  }
+
+  $payload = [ordered]@{
+    apiUrl = $ApiUrl
+    generatedAt = (Get-Date).ToString("o")
+  }
+  Write-Utf8NoBomFile -Path $configPath -Content ($payload | ConvertTo-Json -Depth 5)
+  $legacyConfigPath = Get-LegacyDocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyConfigPath -Force
+  }
+  return $configPath
+}
+
+function Remove-DocsEditorRuntimeConfig {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $configPath = Get-DocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+    Remove-Item -LiteralPath $configPath -Force
+  }
+  $legacyConfigPath = Get-LegacyDocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyConfigPath -Force
+  }
 }
 
 function Test-DocsStartPromptAvailable {
@@ -985,21 +1096,18 @@ function Test-DocsStartPromptAvailable {
 function Read-DocsStartContinueChoice {
   param([Parameter(Mandatory)][string]$Prompt)
 
-  if (-not (Test-DocsStartPromptAvailable)) {
-    return $true
-  }
-
-  while ($true) {
-    $response = ([string](Read-Host "$Prompt [Y/n]")).Trim().ToLowerInvariant()
-    if ([string]::IsNullOrWhiteSpace($response)) { return $true }
-    switch ($response) {
-      "y" { return $true }
-      "yes" { return $true }
-      "n" { return $false }
-      "no" { return $false }
-      default { Write-Output "Please enter y or n." }
+  $forceChoice = [string]$env:UE_TOOLS_DOCS_START_CONTINUE
+  if (-not [string]::IsNullOrWhiteSpace($forceChoice)) {
+    $normalizedForceChoice = $forceChoice.Trim().ToLowerInvariant()
+    if ($normalizedForceChoice -in @("1", "y", "yes", "true")) {
+      return $true
+    }
+    if ($normalizedForceChoice -in @("0", "n", "no", "false")) {
+      return $false
     }
   }
+
+  return $true
 }
 
 function Get-DocsStartPort {
@@ -1071,7 +1179,7 @@ Create:
   reorder                       Reorder a page or section and shift sibling positions
 
 Run:
-  start                         Start Docusaurus in the current terminal
+  start                         Start Docusaurus (and the editor API) in the current terminal
   stop                          Stop the tracked background Docusaurus server
   status                        Show tracked background server status
   check                         Validate docs and run the production build
@@ -1101,6 +1209,7 @@ Examples:
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
+  - Inline page editing is available directly on docs pages when the local editor API is running.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
   - Use 'ue-tools docs help <command>' for detailed option help.
 "@
@@ -1268,9 +1377,10 @@ Usage:
   ue-tools docs start [--background] [docusaurus start args]
 
 Default behavior runs `npm run start -- <args...>` in website/ attached to the current terminal so stdout/stderr stream live.
+The local editor API is started automatically so inline docs-page editing works while the docs runtime is active.
 
 Options:
-  --background                  Run detached and track the server for `status` and `stop`
+  --background                  Run detached and track docs + editor API for `status` and `stop`
 
 Examples:
   ue-tools docs start
@@ -1330,7 +1440,10 @@ Validates docs metadata, catches common docs-site mistakes, and runs the Docusau
 @"
 ue-tools docs status
 
-Shows whether the tracked background docs dev server is running and prints the URL/log paths when state exists.
+Shows tracked docs runtime status:
+  - Docusaurus server process state
+  - Editor API process state
+  - Docs URLs and log paths when available
 "@
       return
     }
@@ -1338,7 +1451,10 @@ Shows whether the tracked background docs dev server is running and prints the U
 @"
 ue-tools docs stop
 
-Stops the tracked background docs dev server process tree and removes its saved state.
+Stops the tracked background docs runtime:
+  - Docusaurus server process tree
+  - Editor API process tree
+and removes saved runtime state.
 "@
       return
     }
@@ -1353,6 +1469,7 @@ Checks common local docs prerequisites:
   - Markdown All in One installation
   - docs bridge installation
   - tracked docs dev server state
+  - tracked editor API state
 "@
       return
     }
@@ -2960,6 +3077,255 @@ function Split-DocsStartArguments {
   }
 }
 
+function Get-DocsEditorApiDefaultPort {
+  return 38473
+}
+
+function Resolve-DocsEditorApiPort {
+  param([int]$PreferredPort = 0)
+
+  $candidatePorts = New-Object System.Collections.Generic.List[int]
+  if ($PreferredPort -gt 0) {
+    $candidatePorts.Add($PreferredPort) | Out-Null
+  }
+
+  $defaultPort = Get-DocsEditorApiDefaultPort
+  if ($defaultPort -gt 0 -and -not $candidatePorts.Contains($defaultPort)) {
+    $candidatePorts.Add($defaultPort) | Out-Null
+  }
+
+  for ($port = 38474; $port -le 38490; $port++) {
+    if (-not $candidatePorts.Contains($port)) {
+      $candidatePorts.Add($port) | Out-Null
+    }
+  }
+
+  foreach ($port in $candidatePorts) {
+    if (-not (Test-DocsStartPortInUse -Port $port)) {
+      return $port
+    }
+  }
+
+  throw "No free local port found for docs editor API (tried $($candidatePorts -join ', '))."
+}
+
+function Resolve-DocsPwshPath {
+  [CmdletBinding()]
+  param()
+
+  $candidatePaths = New-Object System.Collections.Generic.List[string]
+
+  try {
+    $currentProcessPath = (Get-Process -Id $PID -ErrorAction Stop).Path
+    if (-not [string]::IsNullOrWhiteSpace($currentProcessPath)) {
+      $candidatePaths.Add($currentProcessPath) | Out-Null
+    }
+  }
+  catch {
+    # no-op
+  }
+
+  $psHomePwsh = Join-Path $PSHOME "pwsh.exe"
+  if (-not [string]::IsNullOrWhiteSpace($psHomePwsh)) {
+    $candidatePaths.Add($psHomePwsh) | Out-Null
+  }
+
+  foreach ($commandName in @("pwsh", "powershell")) {
+    $resolvedCommand = Get-Command -Name $commandName -ErrorAction SilentlyContinue
+    if ($resolvedCommand -and -not [string]::IsNullOrWhiteSpace([string]$resolvedCommand.Source)) {
+      $candidatePaths.Add([string]$resolvedCommand.Source) | Out-Null
+    }
+  }
+
+  foreach ($candidate in @($candidatePaths | Select-Object -Unique)) {
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      return $candidate
+    }
+  }
+
+  throw "Unable to resolve a PowerShell executable path for docs runtime startup."
+}
+
+function Get-DocsEditorApiStatus {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $entry = Get-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot
+  if ($null -eq $entry) {
+    return [pscustomobject]@{
+      Status = "not_running"
+    }
+  }
+
+  $processId = [int]$entry.processId
+  $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+  $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
+  if (-not $isRunning) {
+    return [pscustomobject]@{
+      Status = "stale_state"
+      ProcessId = $processId
+      RootProcessId = $rootProcessId
+      Url = [string]$entry.url
+      LogPath = [string]$entry.logPath
+      ErrorLogPath = [string]$entry.errorLogPath
+    }
+  }
+
+  return [pscustomobject]@{
+    Status = "running"
+    ProcessId = $processId
+    RootProcessId = $rootProcessId
+    Url = [string]$entry.url
+    LogPath = [string]$entry.logPath
+    ErrorLogPath = [string]$entry.errorLogPath
+    StartedAt = [string]$entry.startedAt
+  }
+}
+
+function Start-DocsEditorApiBackground {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [int]$PreferredPort = 0
+  )
+
+  $existingStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+  if ($existingStatus.Status -eq "running") {
+    [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $existingStatus.Url)
+    return [pscustomobject]@{
+      AlreadyRunning = $true
+      ProcessId = $existingStatus.ProcessId
+      RootProcessId = $existingStatus.RootProcessId
+      Url = $existingStatus.Url
+      LogPath = $existingStatus.LogPath
+      ErrorLogPath = $existingStatus.ErrorLogPath
+      StartedAt = $existingStatus.StartedAt
+    }
+  }
+
+  if ($existingStatus.Status -eq "stale_state") {
+    [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+  }
+
+  $resolvedPort = Resolve-DocsEditorApiPort -PreferredPort $PreferredPort
+  $url = "http://127.0.0.1:$resolvedPort/"
+  $runtimeDir = Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot
+  New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+  $scriptPath = Join-Path $PSScriptRoot "DocsEditorApiHost.ps1"
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "Docs editor API host script not found: $scriptPath"
+  }
+
+  $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
+  $stdoutPath = Join-Path $runtimeDir "docs-editor-api-$stamp.stdout.log"
+  $stderrPath = Join-Path $runtimeDir "docs-editor-api-$stamp.stderr.log"
+
+  $pwshPath = Resolve-DocsPwshPath
+  $modulePath = $MyInvocation.MyCommand.Module.Path
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    $modulePath = $PSCommandPath
+  }
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    throw "Unable to resolve docs module path for editor API startup."
+  }
+  $commandParts = @(
+    (ConvertTo-CmdArgument -Value "-NoLogo")
+    (ConvertTo-CmdArgument -Value "-NoProfile")
+    (ConvertTo-CmdArgument -Value "-ExecutionPolicy")
+    (ConvertTo-CmdArgument -Value "Bypass")
+    (ConvertTo-CmdArgument -Value "-File")
+    (ConvertTo-CmdArgument -Value $scriptPath)
+    (ConvertTo-CmdArgument -Value "-RepoRoot")
+    (ConvertTo-CmdArgument -Value $ResolvedRepoRoot)
+    (ConvertTo-CmdArgument -Value "-DocsModulePath")
+    (ConvertTo-CmdArgument -Value $modulePath)
+    (ConvertTo-CmdArgument -Value "-Port")
+    (ConvertTo-CmdArgument -Value "$resolvedPort")
+  )
+  $commandLine = ($commandParts -join ' ')
+
+  $process = Start-Process `
+    -FilePath $pwshPath `
+    -ArgumentList $commandLine `
+    -WorkingDirectory $ResolvedRepoRoot `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput $stdoutPath `
+    -RedirectStandardError $stderrPath `
+    -PassThru
+
+  Start-Sleep -Milliseconds 1200
+  $trackedProcessId = if (Test-ProcessRunning -ProcessId $process.Id) { $process.Id } else { Get-DescendantProcessId -RootProcessId $process.Id }
+  if ($null -eq $trackedProcessId) {
+    $errorText = ""
+    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) {
+      $errorText = (Get-Content -LiteralPath $stderrPath -Raw).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($errorText) -and (Test-Path -LiteralPath $stdoutPath -PathType Leaf)) {
+      $errorText = (Get-Content -LiteralPath $stdoutPath -Raw).Trim()
+    }
+    $details = if ([string]::IsNullOrWhiteSpace($errorText)) { "Check $stdoutPath and $stderrPath." } else { $errorText }
+    throw "Docs editor API exited immediately. $details"
+  }
+
+  $entry = [ordered]@{
+    version = 1
+    rootProcessId = $process.Id
+    processId = $trackedProcessId
+    startedAt = (Get-Date).ToString("o")
+    url = $url
+    port = $resolvedPort
+    logPath = $stdoutPath
+    errorLogPath = $stderrPath
+    scriptPath = $scriptPath
+    commandLine = $commandLine
+  }
+  [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $entry)
+  [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $url)
+
+  return [pscustomobject]@{
+    AlreadyRunning = $false
+    ProcessId = $trackedProcessId
+    RootProcessId = $process.Id
+    Url = $url
+    LogPath = $stdoutPath
+    ErrorLogPath = $stderrPath
+  }
+}
+
+function Stop-DocsEditorApiBackground {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $entry = Get-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot
+  if ($null -eq $entry) {
+    Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+    return [pscustomobject]@{
+      Status = "not_running"
+    }
+  }
+
+  $processId = [int]$entry.processId
+  $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+  $wasRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
+
+  if ($wasRunning) {
+    $targetPid = if (Test-ProcessRunning -ProcessId $rootProcessId) { $rootProcessId } else { $processId }
+    $taskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
+    if (Test-Path -LiteralPath $taskKillPath -PathType Leaf) {
+      & $taskKillPath /PID $targetPid /T /F | Out-Null
+    }
+    else {
+      Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+  Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+  return [pscustomobject]@{
+    Status = if ($wasRunning) { "stopped" } else { "stale_state_removed" }
+    ProcessId = $processId
+    RootProcessId = $rootProcessId
+  }
+}
+
 function Invoke-DocsStartForeground {
   param(
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
@@ -2969,9 +3335,11 @@ function Invoke-DocsStartForeground {
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
   $url = Get-DocsStartUrl -StartArgs $normalizedStartArgs
   $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  $editorApi = Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
 
   Write-Output "Starting docs dev server in the current terminal."
   Write-Output "URL: $url"
+  Write-Output "Editor API: $($editorApi.Url)"
 
   Push-Location $websiteRoot
   try {
@@ -2987,6 +3355,9 @@ function Invoke-DocsStartForeground {
     }
   }
   finally {
+    if (-not $editorApi.AlreadyRunning) {
+      [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
+    }
     Pop-Location
   }
 }
@@ -2998,6 +3369,7 @@ function Invoke-DocsStartBackground {
   )
 
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
+  $editorApi = Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
   $existingEntries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
   $runningEntries = New-Object System.Collections.Generic.List[object]
   foreach ($entry in $existingEntries) {
@@ -3028,11 +3400,15 @@ function Invoke-DocsStartBackground {
 
     $shouldContinue = Read-DocsStartContinueChoice -Prompt "Start another docs server instance?"
     if (-not $shouldContinue) {
+      if (-not $editorApi.AlreadyRunning) {
+        [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
+      }
       return [pscustomobject]@{
         Command = "start"
         Aborted = $true
         AlreadyRunning = ($runningEntries.Count -gt 0)
         ExistingCount = $runningEntries.Count
+        EditorApiUrl = $editorApi.Url
       }
     }
   }
@@ -3052,7 +3428,7 @@ function Invoke-DocsStartBackground {
   }
 
   $commandLine = (@($npmCommandParts) | ForEach-Object { ConvertTo-CmdArgument "$_" }) -join ' '
-  $pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
+  $pwshPath = Resolve-DocsPwshPath
   $process = Start-Process `
     -FilePath $pwshPath `
     -ArgumentList @("-NoLogo", "-NoProfile", "-Command", $commandLine) `
@@ -3075,6 +3451,9 @@ function Invoke-DocsStartBackground {
     }
 
     $details = if ([string]::IsNullOrWhiteSpace($errorText)) { "Check $stdoutPath and $stderrPath." } else { $errorText }
+    if (-not $editorApi.AlreadyRunning) {
+      [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
+    }
     throw "Docs dev server exited immediately. $details"
   }
 
@@ -3104,6 +3483,9 @@ function Invoke-DocsStartBackground {
     ErrorLogPath = $stderrPath
     StatePath = $statePath
     Url = $url
+    EditorApiUrl = $editorApi.Url
+    EditorApiLogPath = $editorApi.LogPath
+    EditorApiErrorLogPath = $editorApi.ErrorLogPath
     NpmCommandLine = $commandLine
     TrackedServerCount = $updatedEntries.Count
   }
@@ -3113,7 +3495,17 @@ function Invoke-DocsStop {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  $editorStopResult = $null
+
   if ($entries.Count -eq 0) {
+    $editorStopResult = Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
+    if ($editorStopResult.Status -ne "not_running") {
+      return [pscustomobject]@{
+        Command = "stop"
+        Status = "editor_only_stopped"
+        EditorStatus = $editorStopResult.Status
+      }
+    }
     return [pscustomobject]@{
       Command = "stop"
       Status = "not_running"
@@ -3156,7 +3548,8 @@ function Invoke-DocsStop {
     $stoppedCount += 1
   }
 
-  Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  $editorStopResult = Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
+  [void](Save-DocsServerCompositeState -ResolvedRepoRoot $ResolvedRepoRoot -ServerEntries @() -EditorApiEntry $null)
 
   $status = if ($stoppedCount -gt 0) {
     if ($stoppedCount -gt 1) { "stopped_multiple" } else { "stopped" }
@@ -3171,17 +3564,33 @@ function Invoke-DocsStop {
     ProcessId = $firstProcessId
     StoppedCount = $stoppedCount
     StaleCount = $staleCount
+    EditorStatus = if ($null -ne $editorStopResult) { $editorStopResult.Status } else { "not_running" }
   }
 }
 
 function Invoke-DocsStatus {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
+  $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
   $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
   if ($entries.Count -eq 0) {
+    if ($editorStatus.Status -eq "stale_state") {
+      [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+      Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+      $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+    }
+
+    if ($editorStatus.Status -eq "running") {
+      [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
+    }
+
     return [pscustomobject]@{
       Command = "status"
-      Status = "not_running"
+      Status = if ($editorStatus.Status -eq "running") { "editor_running_only" } else { "not_running" }
+      EditorStatus = $editorStatus.Status
+      EditorUrl = $editorStatus.Url
+      EditorLogPath = $editorStatus.LogPath
+      EditorErrorLogPath = $editorStatus.ErrorLogPath
     }
   }
 
@@ -3207,6 +3616,14 @@ function Invoke-DocsStatus {
     $firstStale = $staleEntries[0]
     $processId = [int]$firstStale.processId
     $rootProcessId = if ($null -ne $firstStale.rootProcessId) { [int]$firstStale.rootProcessId } else { $processId }
+    if ($editorStatus.Status -eq "stale_state") {
+      [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+      Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+      $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+    }
+    if ($editorStatus.Status -eq "running") {
+      [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
+    }
     return [pscustomobject]@{
       Command = "status"
       Status = if ($staleEntries.Count -gt 1) { "stale_state_multiple" } else { "stale_state" }
@@ -3216,12 +3633,25 @@ function Invoke-DocsStatus {
       ErrorLogPath = [string]$firstStale.errorLogPath
       Url = [string]$firstStale.url
       StaleCount = $staleEntries.Count
+      EditorStatus = $editorStatus.Status
+      EditorUrl = $editorStatus.Url
+      EditorLogPath = $editorStatus.LogPath
+      EditorErrorLogPath = $editorStatus.ErrorLogPath
     }
   }
 
   $firstRunning = $runningEntries[0]
   $processId = [int]$firstRunning.processId
   $rootProcessId = if ($null -ne $firstRunning.rootProcessId) { [int]$firstRunning.rootProcessId } else { $processId }
+  if ($editorStatus.Status -eq "stale_state") {
+    [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+    $editorStatus = Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
+    $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+  }
+  if ($editorStatus.Status -eq "running") {
+    [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
+  }
+
   return [pscustomobject]@{
     Command = "status"
     Status = if ($runningEntries.Count -gt 1) { "running_multiple" } else { "running" }
@@ -3235,6 +3665,10 @@ function Invoke-DocsStatus {
     RunningCount = $runningEntries.Count
     StaleCount = $staleEntries.Count
     RunningEntries = @($runningEntries.ToArray())
+    EditorStatus = $editorStatus.Status
+    EditorUrl = $editorStatus.Url
+    EditorLogPath = $editorStatus.LogPath
+    EditorErrorLogPath = $editorStatus.ErrorLogPath
   }
 }
 
@@ -3262,6 +3696,10 @@ function Invoke-DocsDoctor {
     ServerUrl = $status.Url
     ServerLogPath = $status.LogPath
     ServerErrorLogPath = $status.ErrorLogPath
+    EditorStatus = $status.EditorStatus
+    EditorApiUrl = $status.EditorUrl
+    EditorApiLogPath = $status.EditorLogPath
+    EditorApiErrorLogPath = $status.EditorErrorLogPath
   }
 }
 
@@ -3409,6 +3847,9 @@ function Invoke-DocsToolsMain {
       }
       Write-Output "Stdout log: $($result.LogPath)"
       Write-Output "Stderr log: $($result.ErrorLogPath)"
+      if ($result.EditorApiUrl) {
+        Write-Output "Editor API: $($result.EditorApiUrl)"
+      }
       return
     }
     "start" {
@@ -3439,6 +3880,15 @@ function Invoke-DocsToolsMain {
         }
         Write-Output "Stdout log: $($result.LogPath)"
         Write-Output "Stderr log: $($result.ErrorLogPath)"
+        if ($result.EditorApiUrl) {
+          Write-Output "Editor API: $($result.EditorApiUrl)"
+          if (-not [string]::IsNullOrWhiteSpace([string]$result.EditorApiLogPath)) {
+            Write-Output "Editor stdout log: $($result.EditorApiLogPath)"
+          }
+          if (-not [string]::IsNullOrWhiteSpace([string]$result.EditorApiErrorLogPath)) {
+            Write-Output "Editor stderr log: $($result.EditorApiErrorLogPath)"
+          }
+        }
         return
       }
 
@@ -3449,10 +3899,14 @@ function Invoke-DocsToolsMain {
       $result = Invoke-DocsStop -ResolvedRepoRoot $ResolvedRepoRoot
       switch ($result.Status) {
         "not_running" { Write-Output "Tracked background docs dev server is not running." }
+        "editor_only_stopped" { Write-Output "Stopped docs editor API runtime." }
         "stale_state_removed" { Write-Output "Removed stale background docs dev server state for PID $($result.ProcessId)." }
         "stale_state_removed_multiple" { Write-Output "Removed stale background docs dev server state entries ($($result.StaleCount))." }
         "stopped_multiple" { Write-Output "Stopped background docs dev servers ($($result.StoppedCount))." }
         default { Write-Output "Stopped background docs dev server (PID $($result.ProcessId))." }
+      }
+      if ($result.EditorStatus) {
+        Write-Output "Editor API status: $($result.EditorStatus)"
       }
       return
     }
@@ -3460,6 +3914,18 @@ function Invoke-DocsToolsMain {
       $result = Invoke-DocsStatus -ResolvedRepoRoot $ResolvedRepoRoot
       switch ($result.Status) {
         "not_running" { Write-Output "Tracked background docs dev server is not running." }
+        "editor_running_only" {
+          Write-Output "Docs server is not running, but editor API is active."
+          if ($result.EditorUrl) {
+            Write-Output "Editor API: $($result.EditorUrl)"
+          }
+          if ($result.EditorLogPath) {
+            Write-Output "Editor stdout log: $($result.EditorLogPath)"
+          }
+          if ($result.EditorErrorLogPath) {
+            Write-Output "Editor stderr log: $($result.EditorErrorLogPath)"
+          }
+        }
         "stale_state" {
           Write-Output "Background docs dev server is not running, but stale state still exists for PID $($result.ProcessId)."
           Write-Output "URL: $($result.Url)"
@@ -3486,6 +3952,18 @@ function Invoke-DocsToolsMain {
           Write-Output "Started: $($result.StartedAt)"
           Write-Output "Stdout log: $($result.LogPath)"
           Write-Output "Stderr log: $($result.ErrorLogPath)"
+        }
+      }
+      if ($result.EditorStatus) {
+        Write-Output "Editor API status: $($result.EditorStatus)"
+        if ($result.EditorUrl) {
+          Write-Output "Editor API: $($result.EditorUrl)"
+        }
+        if ($result.EditorLogPath) {
+          Write-Output "Editor stdout log: $($result.EditorLogPath)"
+        }
+        if ($result.EditorErrorLogPath) {
+          Write-Output "Editor stderr log: $($result.EditorErrorLogPath)"
         }
       }
       return
@@ -3518,6 +3996,16 @@ function Invoke-DocsToolsMain {
       }
       if ($result.ServerErrorLogPath) {
         Write-Output "Background docs dev server stderr log: $($result.ServerErrorLogPath)"
+      }
+      Write-Output "Editor API status: $($result.EditorStatus)"
+      if ($result.EditorApiUrl) {
+        Write-Output "Editor API URL: $($result.EditorApiUrl)"
+      }
+      if ($result.EditorApiLogPath) {
+        Write-Output "Editor API stdout log: $($result.EditorApiLogPath)"
+      }
+      if ($result.EditorApiErrorLogPath) {
+        Write-Output "Editor API stderr log: $($result.EditorApiErrorLogPath)"
       }
       return
     }

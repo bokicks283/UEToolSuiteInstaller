@@ -18,6 +18,7 @@ const config: Config = {
 
   onBrokenLinks: 'throw',
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: 'throw',
     },
@@ -27,6 +28,9 @@ const config: Config = {
     defaultLocale: 'en',
     locales: ['en'],
   },
+
+  clientModules: ['./src/clientModules/lucideShortcodes.ts'],
+  themes: ['@docusaurus/theme-mermaid'],
 
   presets: [
     [
@@ -136,6 +140,9 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
+    },
+    mermaid: {
+      theme: {light: 'neutral', dark: 'dark'},
     },
   } satisfies Preset.ThemeConfig,
 };

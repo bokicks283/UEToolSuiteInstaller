@@ -51,6 +51,8 @@
     "Scripts/Unreal/New-ArtSourcePath.ps1",
     "Scripts/git-tools/conflicts.ps1",
     "Scripts/Unreal/ProjectShellAliases.ps1",
-    "Scripts/Unreal/UESyncShellAliases.ps1"
+    "Scripts/Unreal/UESyncShellAliases.ps1",
+    "website/src/pages/editor.tsx",
+    "website/src/pages/editor.module.css"
   ]
 }

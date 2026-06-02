@@ -73,7 +73,7 @@ Goal: add a script that validates plugin bootstrap setup.
 
 It also prepares installed optional tooling so commands are ready after init:
 
-- If `Scripts/UETools/UEToolSuite.Docs.psm1` and `website/package.json` exist, init verifies Node.js 20+ and npm, runs `npm install` when `website/node_modules` is missing, installs the optional VS Code docs bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
+- If `Scripts/UETools/UEToolSuite.Docs.psm1` and `website/package.json` exist, init verifies Node.js 20+ and npm, synchronizes website dependencies (`npm ci` when `website/package-lock.json` exists, otherwise `npm install`), validates required packages listed in `website/package.json`, installs the optional VS Code docs bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
 - If `Scripts/UETools/UEToolSuite.Art.psm1` and `ArtSource/` exist, init checks that `ArtSource/_Template` has the expected `Source`, `Textures`, and `Exports` folders.
 - If optional tools are not installed in a target UE repo, init reports them as skipped instead of failing the core bootstrap.
 
@@ -103,4 +103,3 @@ Scripts/Tests/
 ```
 
 Keep cleanup of old logs in separate maintenance commits.
-

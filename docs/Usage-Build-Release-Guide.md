@@ -109,6 +109,7 @@ GUI behavior highlights:
 - Managed docs defaults use ledger-based smart updates. Customized or intentionally deleted defaults are preserved and candidate updates are written under `.ue-tools-installer-updates/<timestamp>/`.
 - Advanced options are hidden by default and expose full user-safe installer/init switches while keeping internal maintenance flags CLI-only.
 - Cancel button requests cancellation and terminates the running installer process tree best-effort.
+- Docs dependency setup is deterministic: init validates website dependencies and uses `npm ci` when `website/package-lock.json` exists (fallback `npm install` only when no lockfile exists).
 
 This keeps the behavior auditable: the CLI installer and GUI installer use the same install engine.
 
@@ -119,6 +120,11 @@ Run the installer test suite after any payload or installer change:
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Test-Install-UEToolSuite.ps1
 ```
+
+Docs dependency maintenance policy:
+- Keep `payload/website/package-lock.json` committed and in sync with `payload/website/package.json`.
+- Weekly dependency PR automation is defined in `.github/dependabot.yml` for `payload/website`.
+- Validate dependency updates with docs build + test gates before merge.
 
 Run a parser check across PowerShell files:
 

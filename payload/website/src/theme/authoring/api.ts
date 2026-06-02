@@ -1,0 +1,219 @@
+import {useCallback, useEffect, useMemo, useState} from 'react';
+
+export type DocsNodeType = 'page' | 'section';
+
+export type DocsTreeNode = {
+  type: DocsNodeType;
+  path: string;
+  name: string;
+  position: number;
+  children?: DocsTreeNode[];
+};
+
+export type DocsTreePayload = {
+  root: string;
+  children: DocsTreeNode[];
+};
+
+export type DocsContentPayload = {
+  path: string;
+  content: string;
+  hash: string;
+  modifiedUtc: string;
+};
+
+export const DEFAULT_EDITOR_API_URL = 'http://127.0.0.1:38473/';
+const EDITOR_API_HEALTH_PATH = 'health';
+
+function trimTrailingSlash(value: string): string {
+  return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+export function normalizeApiBase(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_EDITOR_API_URL;
+  }
+  return `${trimTrailingSlash(trimmed)}/`;
+}
+
+function stripLeadingSlash(value: string): string {
+  return value.startsWith('/') ? value.slice(1) : value;
+}
+
+function toPosixPath(value: string): string {
+  return value.replaceAll('\\', '/');
+}
+
+function toSlugSegment(value: string): string {
+  const withWordBreaks = value.trim().replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  return withWordBreaks
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function resolveSourceToken(sourcePath: string): string {
+  const normalized = toPosixPath((sourcePath || '').trim());
+  if (!normalized) {
+    return '';
+  }
+
+  let candidate = normalized;
+  if (candidate.startsWith('@site/')) {
+    candidate = candidate.slice('@site/'.length);
+  }
+
+  if (candidate.startsWith('Docs/')) {
+    candidate = candidate.slice('Docs/'.length);
+  }
+
+  return stripLeadingSlash(candidate);
+}
+
+export function getSectionPathFromToken(token: string): string {
+  const normalized = toPosixPath((token || '').trim()).replace(/\/+$/, '');
+  if (!normalized) {
+    return '';
+  }
+
+  const withoutExtension = normalized.replace(/\.md$/i, '');
+  const parts = withoutExtension.split('/');
+  if (parts.length <= 1) {
+    return '';
+  }
+
+  if (parts[parts.length - 1].toLowerCase() === 'readme') {
+    parts.pop();
+  } else {
+    parts.pop();
+  }
+  return parts.join('/');
+}
+
+export function getDocsRouteFromToken(token: string): string {
+  const normalized = toPosixPath((token || '').trim()).replace(/^\/+|\/+$/g, '');
+  if (!normalized) {
+    return '/docs/';
+  }
+
+  let tokenPath = normalized.replace(/\.md$/i, '');
+  if (tokenPath.toLowerCase().endsWith('/readme')) {
+    tokenPath = tokenPath.slice(0, -('/readme'.length));
+  }
+
+  if (!tokenPath) {
+    return '/docs/';
+  }
+
+  const slugPath = tokenPath
+    .split('/')
+    .map((segment) => toSlugSegment(segment))
+    .filter(Boolean)
+    .join('/');
+
+  return slugPath ? `/docs/${slugPath}` : '/docs/';
+}
+
+function buildApiCandidates(preferredApiBase: string): string[] {
+  const candidates = new Set<string>();
+  const preferred = normalizeApiBase(preferredApiBase || DEFAULT_EDITOR_API_URL);
+  candidates.add(preferred);
+  candidates.add(normalizeApiBase(DEFAULT_EDITOR_API_URL));
+  return [...candidates];
+}
+
+async function probeApiBase(apiBase: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), 1000);
+  try {
+    const response = await fetch(`${apiBase}${EDITOR_API_HEALTH_PATH}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const payload = (await response.json()) as {ok?: boolean};
+    return payload.ok !== false;
+  } catch {
+    return false;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+}
+
+async function resolveReachableApiBase(preferredApiBase: string): Promise<string> {
+  const candidates = buildApiCandidates(preferredApiBase);
+  for (const candidate of candidates) {
+    if (await probeApiBase(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
+export function useDocsAuthoringApi() {
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>(DEFAULT_EDITOR_API_URL);
+  const [runtimeReady, setRuntimeReady] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRuntimeConfig() {
+      let preferredApiBase = DEFAULT_EDITOR_API_URL;
+      try {
+        const runtimeConfigPaths = ['/ue-tools/editor-runtime.json', '/.ue-tools/editor-runtime.json'];
+        for (const runtimeConfigPath of runtimeConfigPaths) {
+          const response = await fetch(runtimeConfigPath, {cache: 'no-store'});
+          if (!response.ok) {
+            continue;
+          }
+
+          const payload = (await response.json()) as {apiUrl?: string};
+          if (payload.apiUrl) {
+            preferredApiBase = normalizeApiBase(payload.apiUrl);
+          }
+          break;
+        }
+      } catch {
+        // Keep default loopback API URL.
+      } finally {
+        if (!cancelled) {
+          const reachableApiBase = await resolveReachableApiBase(preferredApiBase);
+          setApiBaseUrl(reachableApiBase);
+          setRuntimeReady(true);
+        }
+      }
+    }
+
+    void loadRuntimeConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const requestJson = useCallback(
+    async <T,>(path: string, init?: RequestInit): Promise<T> => {
+      const response = await fetch(`${apiBaseUrl}${path.replace(/^\//, '')}`, init);
+      const payload = (await response.json()) as {ok?: boolean; error?: string};
+      if (!response.ok || payload.ok === false) {
+        const message = payload.error || `Request failed (${response.status})`;
+        throw new Error(message);
+      }
+      return payload as T;
+    },
+    [apiBaseUrl],
+  );
+
+  const docsRuntimeBaseUrl = useMemo(() => {
+    return trimTrailingSlash(apiBaseUrl).replace('/api', '');
+  }, [apiBaseUrl]);
+
+  return {
+    apiBaseUrl,
+    docsRuntimeBaseUrl,
+    runtimeReady,
+    requestJson,
+  };
+}
