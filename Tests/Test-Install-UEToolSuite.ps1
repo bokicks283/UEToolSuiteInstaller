@@ -47,6 +47,10 @@ function Assert-FileContains([string]$Name, [string]$Path, [string]$ExpectedText
   Assert-Condition $Name ($content.Contains($ExpectedText)) "found expected text" "expected text missing from $Path"
 }
 
+function Get-LineMatchCount([string]$Text, [string]$Line) {
+  return ([regex]::Matches($Text, "(?m)^" + [regex]::Escape($Line) + "$")).Count
+}
+
 function Invoke-Installer {
   param([Parameter(Mandatory)][string]$TargetRoot, [string[]]$ExtraArgs)
 
@@ -277,6 +281,31 @@ try {
     Assert-Condition "case2c report includes docs readme preserve entry" ($legacyReportText -like "*Docs/README.md*") "docs readme listed" "docs readme missing from report"
     Assert-PathExists "case2c candidate generated for preserved legacy docs file" (Join-Path $legacyReport[0].Directory.FullName "candidates\Docs\README.md")
   }
+
+  Step "Case 2d: managed git metadata removes duplicate unmanaged payload entries and reruns idempotently"
+  $managedGitMetadataRepo = New-TargetRepo "managed git metadata target"
+  $payloadGitIgnore = Get-Content -LiteralPath (Join-Path $payloadRoot ".gitignore") -Raw
+  $payloadGitAttributes = Get-Content -LiteralPath (Join-Path $payloadRoot ".gitattributes") -Raw
+  $legacyGitIgnore = $payloadGitIgnore -replace "(?ms)^# >>> ue tool suite git ignore >>>\r?\n", "" -replace "\r?\n# <<< ue tool suite git ignore <<<\r?\n?$", "`n"
+  $legacyGitAttributes = $payloadGitAttributes -replace "(?ms)^# >>> ue tool suite git attributes >>>\r?\n", "" -replace "\r?\n# <<< ue tool suite git attributes <<<\r?\n?$", "`n"
+  Write-Utf8NoBomFile -Path (Join-Path $managedGitMetadataRepo ".gitignore") -Content ("project-local-ignore/`n`n" + $legacyGitIgnore + "`nwebsite/node_modules/`n")
+  Write-Utf8NoBomFile -Path (Join-Path $managedGitMetadataRepo ".gitattributes") -Content ("*.generated text eol=crlf`n`n" + $legacyGitAttributes + "`n*.uasset filter=lfs diff=lfs merge=binary -text`n")
+  $managedGitMetadataResult = Invoke-Installer -TargetRoot $managedGitMetadataRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2d installer exits cleanly" ($managedGitMetadataResult.Code -eq 0) "exit=0" "exit=$($managedGitMetadataResult.Code)"
+  $managedGitIgnoreText = Get-Content -LiteralPath (Join-Path $managedGitMetadataRepo ".gitignore") -Raw
+  $managedGitAttributesText = Get-Content -LiteralPath (Join-Path $managedGitMetadataRepo ".gitattributes") -Raw
+  Assert-Condition "case2d git ignore marker occurs once" ((Get-LineMatchCount -Text $managedGitIgnoreText -Line "# >>> ue tool suite git ignore >>>") -eq 1) "single managed block" "duplicate managed block markers remain"
+  Assert-Condition "case2d git attributes marker occurs once" ((Get-LineMatchCount -Text $managedGitAttributesText -Line "# >>> ue tool suite git attributes >>>") -eq 1) "single managed block" "duplicate managed block markers remain"
+  Assert-Condition "case2d git ignore duplicate entry removed" ((Get-LineMatchCount -Text $managedGitIgnoreText -Line "website/node_modules/") -eq 1) "single managed entry" "duplicate website/node_modules/ entry remains"
+  Assert-Condition "case2d git attributes duplicate entry removed" ((Get-LineMatchCount -Text $managedGitAttributesText -Line "*.uasset filter=lfs diff=lfs merge=binary -text") -eq 1) "single managed entry" "duplicate *.uasset managed entry remains"
+  Assert-FileContains "case2d git ignore preserves local rule" (Join-Path $managedGitMetadataRepo ".gitignore") "project-local-ignore/"
+  Assert-FileContains "case2d git attributes preserves local rule" (Join-Path $managedGitMetadataRepo ".gitattributes") "*.generated text eol=crlf"
+  $managedGitIgnoreFirstRun = $managedGitIgnoreText
+  $managedGitAttributesFirstRun = $managedGitAttributesText
+  $managedGitMetadataRerun = Invoke-Installer -TargetRoot $managedGitMetadataRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2d rerun exits cleanly" ($managedGitMetadataRerun.Code -eq 0) "exit=0" "exit=$($managedGitMetadataRerun.Code)"
+  Assert-Condition "case2d git ignore rerun is idempotent" ((Get-Content -LiteralPath (Join-Path $managedGitMetadataRepo ".gitignore") -Raw) -eq $managedGitIgnoreFirstRun) "content unchanged" "gitignore changed on rerun"
+  Assert-Condition "case2d git attributes rerun is idempotent" ((Get-Content -LiteralPath (Join-Path $managedGitMetadataRepo ".gitattributes") -Raw) -eq $managedGitAttributesFirstRun) "content unchanged" "gitattributes changed on rerun"
 
   Step "Case 3: installer can run target Init-Repo"
   $initRepo = New-TargetRepo "run init target"

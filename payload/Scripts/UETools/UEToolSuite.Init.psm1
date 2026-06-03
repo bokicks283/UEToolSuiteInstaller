@@ -558,22 +558,76 @@ function Invoke-UEToolSuiteInitRuntime {
     )
   }
 
+  function Write-UEToolSuiteInitGitPathspecFile {
+    param(
+      [Parameter(Mandatory)][string]$Path,
+      [Parameter(Mandatory)][string[]]$Paths
+    )
+
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try {
+      foreach ($entry in @($Paths)) {
+        $bytes = $encoding.GetBytes([string]$entry)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.WriteByte(0)
+      }
+    }
+    finally {
+      $stream.Dispose()
+    }
+  }
+
+  function Invoke-UEToolSuiteInitGitUntrackBatch {
+    param(
+      [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+      [Parameter(Mandatory)][string[]]$Paths
+    )
+
+    $pathspecFile = Join-Path ([System.IO.Path]::GetTempPath()) ("ue-tools-ignored-tracked-" + [Guid]::NewGuid().ToString("N") + ".txt")
+    try {
+      Write-UEToolSuiteInitGitPathspecFile -Path $pathspecFile -Paths $Paths
+      & git -C $ResolvedRepoRoot rm --cached --ignore-unmatch "--pathspec-from-file=$pathspecFile" --pathspec-file-nul 2>$null | Out-Null
+      return ($LASTEXITCODE -eq 0)
+    }
+    finally {
+      if (Test-Path -LiteralPath $pathspecFile) {
+        Remove-Item -LiteralPath $pathspecFile -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
   function Untrack-IgnoredFiles {
     param(
       [Parameter(Mandatory)][string]$ResolvedRepoRoot,
       [Parameter(Mandatory)][string[]]$Paths
     )
 
+    $batchSize = 512
+    $pathsToUntrack = @($Paths)
     $failures = New-Object System.Collections.Generic.List[string]
-    foreach ($path in @($Paths)) {
-      & git -C $ResolvedRepoRoot rm --cached -- $path 2>$null | Out-Null
-      if ($LASTEXITCODE -ne 0) {
-        [void]$failures.Add($path)
+    $batchCount = [Math]::Ceiling($pathsToUntrack.Count / $batchSize)
+
+    for ($offset = 0; $offset -lt $pathsToUntrack.Count; $offset += $batchSize) {
+      $upperBound = [Math]::Min($offset + $batchSize - 1, $pathsToUntrack.Count - 1)
+      $batch = @($pathsToUntrack[$offset..$upperBound])
+      $batchNumber = [int]([Math]::Floor($offset / $batchSize) + 1)
+      Info ("[Init] Untracking ignored tracked files batch {0}/{1} ({2}-{3} of {4})..." -f $batchNumber, $batchCount, ($offset + 1), ($upperBound + 1), $pathsToUntrack.Count)
+
+      if (Invoke-UEToolSuiteInitGitUntrackBatch -ResolvedRepoRoot $ResolvedRepoRoot -Paths $batch) {
+        continue
+      }
+
+      foreach ($path in $batch) {
+        & git -C $ResolvedRepoRoot rm --cached --ignore-unmatch -- $path 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+          [void]$failures.Add($path)
+        }
       }
     }
 
     return [pscustomobject]@{
-      Attempted = @($Paths).Count
+      Attempted = $pathsToUntrack.Count
       Failed = @($failures.ToArray())
     }
   }

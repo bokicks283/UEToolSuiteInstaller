@@ -944,6 +944,167 @@ function Get-ManagedTextBlockMarkers {
   }
 }
 
+function ConvertTo-NormalizedLfText {
+  param([AllowEmptyString()][string]$Text)
+
+  if ($null -eq $Text) {
+    return ""
+  }
+
+  return (($Text -replace "`r`n", "`n") -replace "`r", "`n")
+}
+
+function ConvertTo-ManagedTextLines {
+  param([AllowEmptyString()][string]$Text)
+
+  if ([string]::IsNullOrEmpty($Text)) {
+    return @()
+  }
+
+  $trimmed = $Text.TrimEnd("`n")
+  if ($trimmed.Length -eq 0) {
+    return @()
+  }
+
+  return @($trimmed.Split("`n"))
+}
+
+function Get-ManagedTextEntryKey {
+  param(
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$Line
+  )
+
+  $trimmed = $Line.Trim()
+  if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+    return $null
+  }
+
+  switch ($RelativePath) {
+    ".gitattributes" { return (($trimmed -split "\s+") -join " ") }
+    default { return $trimmed }
+  }
+}
+
+function Get-ManagedTextPayloadDefinition {
+  param(
+    [Parameter(Mandatory)][string]$SourceText,
+    [Parameter(Mandatory)][pscustomobject]$Markers,
+    [Parameter(Mandatory)][string]$RelativePath
+  )
+
+  $normalizedSourceText = ConvertTo-NormalizedLfText -Text $SourceText
+  $sourceLines = @(ConvertTo-ManagedTextLines -Text $normalizedSourceText)
+  $startIndex = [Array]::IndexOf($sourceLines, $Markers.Start)
+  $endIndex = [Array]::IndexOf($sourceLines, $Markers.End)
+  if ($startIndex -lt 0 -or $endIndex -le $startIndex) {
+    throw "Managed text payload is missing expected marker block: $RelativePath"
+  }
+
+  $bodyLines = if ($endIndex -gt ($startIndex + 1)) {
+    @($sourceLines[($startIndex + 1)..($endIndex - 1)])
+  }
+  else {
+    @()
+  }
+
+  $entryKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
+  foreach ($line in $bodyLines) {
+    $entryKey = Get-ManagedTextEntryKey -RelativePath $RelativePath -Line $line
+    if ($null -ne $entryKey) {
+      [void]$entryKeys.Add($entryKey)
+    }
+  }
+
+  return [pscustomobject]@{
+    BlockText = ($normalizedSourceText.TrimEnd("`n") + "`n")
+    BodyLines = $bodyLines
+    EntryKeys = $entryKeys
+  }
+}
+
+function Remove-ManagedTextLineSequence {
+  param(
+    [Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines,
+    [Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Sequence
+  )
+
+  if ($Sequence.Count -eq 0 -or $Lines.Count -lt $Sequence.Count) {
+    return @($Lines)
+  }
+
+  $result = New-Object System.Collections.Generic.List[string]
+  for ($index = 0; $index -lt $Lines.Count;) {
+    $isMatch = $true
+    if (($index + $Sequence.Count) -gt $Lines.Count) {
+      $isMatch = $false
+    }
+    else {
+      for ($sequenceIndex = 0; $sequenceIndex -lt $Sequence.Count; $sequenceIndex++) {
+        if ($Lines[$index + $sequenceIndex] -ne $Sequence[$sequenceIndex]) {
+          $isMatch = $false
+          break
+        }
+      }
+    }
+
+    if ($isMatch) {
+      $index += $Sequence.Count
+      continue
+    }
+
+    [void]$result.Add([string]$Lines[$index])
+    $index++
+  }
+
+  return @($result.ToArray())
+}
+
+function Clean-ManagedTextUnmanagedSection {
+  param(
+    [AllowEmptyString()][string]$Text,
+    [Parameter(Mandatory)][pscustomobject]$PayloadDefinition,
+    [Parameter(Mandatory)][string]$RelativePath
+  )
+
+  $lines = @(ConvertTo-ManagedTextLines -Text (ConvertTo-NormalizedLfText -Text $Text))
+  $withoutLegacyBlock = @(Remove-ManagedTextLineSequence -Lines $lines -Sequence $PayloadDefinition.BodyLines)
+
+  $filteredLines = New-Object System.Collections.Generic.List[string]
+  foreach ($line in $withoutLegacyBlock) {
+    $entryKey = Get-ManagedTextEntryKey -RelativePath $RelativePath -Line $line
+    if ($null -ne $entryKey -and $PayloadDefinition.EntryKeys.Contains($entryKey)) {
+      continue
+    }
+
+    [void]$filteredLines.Add([string]$line)
+  }
+
+  if ($filteredLines.Count -eq 0) {
+    return ""
+  }
+
+  return (($filteredLines.ToArray() -join "`n").TrimEnd("`n"))
+}
+
+function Join-ManagedTextSections {
+  param(
+    [AllowEmptyCollection()][string[]]$Sections
+  )
+
+  $contentSections = @(
+    @($Sections) |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      ForEach-Object { ([string]$_).TrimEnd("`n") }
+  )
+
+  if ($contentSections.Count -eq 0) {
+    return ""
+  }
+
+  return (($contentSections -join "`n`n").TrimEnd("`n") + "`n")
+}
+
 function Update-ManagedTextFile {
   param(
     [Parameter(Mandatory)][string]$SourceRoot,
@@ -965,9 +1126,7 @@ function Update-ManagedTextFile {
 
   $sourceText = Get-Content -LiteralPath $source -Raw
   $markers = Get-ManagedTextBlockMarkers -RelativePath $RelativePath
-  if ($sourceText -notlike "*$($markers.Start)*" -or $sourceText -notlike "*$($markers.End)*") {
-    throw "Managed text payload is missing expected marker block: $RelativePath"
-  }
+  $payloadDefinition = Get-ManagedTextPayloadDefinition -SourceText $sourceText -Markers $markers -RelativePath $RelativePath
 
   $destinationParent = Split-Path -Path $destination -Parent
   if (-not (Test-Path -LiteralPath $destination)) {
@@ -981,23 +1140,18 @@ function Update-ManagedTextFile {
   }
 
   $targetText = Get-Content -LiteralPath $destination -Raw
-  $sourceBlock = $sourceText.TrimEnd("`r", "`n") + "`n"
-  $blockPattern = "(?ms)^" + [regex]::Escape($markers.Start) + "\r?\n.*?^" + [regex]::Escape($markers.End) + "\r?\n?"
+  $normalizedTargetText = ConvertTo-NormalizedLfText -Text $targetText
+  $blockPattern = "(?ms)^" + [regex]::Escape($markers.Start) + "\n.*?^" + [regex]::Escape($markers.End) + "\n?"
+  $match = [regex]::Match($normalizedTargetText, $blockPattern)
 
-  if ([regex]::IsMatch($targetText, $blockPattern)) {
-    $updatedText = [regex]::Replace($targetText, $blockPattern, [System.Text.RegularExpressions.MatchEvaluator] { param($match) $sourceBlock }, 1)
+  if ($match.Success) {
+    $prefix = Clean-ManagedTextUnmanagedSection -Text $normalizedTargetText.Substring(0, $match.Index) -PayloadDefinition $payloadDefinition -RelativePath $RelativePath
+    $suffix = Clean-ManagedTextUnmanagedSection -Text $normalizedTargetText.Substring($match.Index + $match.Length) -PayloadDefinition $payloadDefinition -RelativePath $RelativePath
+    $updatedText = Join-ManagedTextSections -Sections @($prefix, $payloadDefinition.BlockText, $suffix)
   }
   else {
-    $separator = if ([string]::IsNullOrWhiteSpace($targetText)) {
-      ""
-    }
-    elseif ($targetText.EndsWith("`n")) {
-      "`n"
-    }
-    else {
-      "`n`n"
-    }
-    $updatedText = $targetText + $separator + $sourceBlock
+    $cleanedTargetText = Clean-ManagedTextUnmanagedSection -Text $normalizedTargetText -PayloadDefinition $payloadDefinition -RelativePath $RelativePath
+    $updatedText = Join-ManagedTextSections -Sections @($cleanedTargetText, $payloadDefinition.BlockText)
   }
 
   if ($updatedText -eq $targetText) {
