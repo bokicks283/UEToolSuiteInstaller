@@ -464,6 +464,7 @@ try {
     -ExtraArgs @("-NonInteractive")
   Assert-Condition "case4 init exits cleanly" ($result4.ExitCode -eq 0) "exit=0" "exit=$($result4.ExitCode)"
   Assert-TextContains "case4 output indicates non-interactive untrack" $result4.OutputText "Non-interactive mode: untracking"
+  Assert-TextContains "case4 output reports ignored tracked file batch progress" $result4.OutputText "Untracking ignored tracked files batch 1/1"
   Assert-Condition "case4 tracked ignored file still exists locally" (Test-Path -LiteralPath $trackedIgnoredPath -PathType Leaf) "local file preserved" "local file was unexpectedly removed"
   & git -C $targetRepoTrackedIgnored ls-files --error-unmatch -- "Binaries/Tracked-Ignored-By-Init.txt" 2>$null | Out-Null
   Assert-Condition "case4 tracked ignored file untracked from git" ($LASTEXITCODE -ne 0) "file is no longer tracked" "file is still tracked"
