@@ -459,6 +459,103 @@ function Get-DocsWebsiteOwnershipMarkerPath {
   return (Join-Path (Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot) ".ue-tools\ownership.json")
 }
 
+function Get-DocsWebsiteOverridesPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  return (Join-Path (Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot) ".ue-tools\site-overrides.json")
+}
+
+function Get-DefaultDocsWebsiteOverridesDocument {
+  param(
+    [string]$ThemeId = "neutral",
+    [string]$LogoPath = "",
+    [string]$FaviconPath = "",
+    [string]$SocialCardPath = ""
+  )
+
+  return [ordered]@{
+    schemaVersion = 1
+    theme = [ordered]@{
+      themeId = $ThemeId
+      logoPath = $LogoPath
+      faviconPath = $FaviconPath
+      socialCardPath = $SocialCardPath
+    }
+    fileOverrides = @()
+  }
+}
+
+function Get-DocsWebsiteOverrideCandidatePaths {
+  return @(
+    "website/docusaurus.config.ts",
+    "website/src/css/custom.css",
+    "website/src/pages/index.tsx",
+    "website/src/pages/index.module.css",
+    "Docs/README.md"
+  )
+}
+
+function Read-DocsWebsiteOverrides {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $path = Get-DocsWebsiteOverridesPath -ResolvedRepoRoot $ResolvedRepoRoot
+  $defaultDocument = Get-DefaultDocsWebsiteOverridesDocument
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return [pscustomobject]@{
+      Path = $path
+      Document = $defaultDocument
+    }
+  }
+
+  try {
+    $parsed = (Get-Content -LiteralPath $path -Raw) | ConvertFrom-Json
+  }
+  catch {
+    return [pscustomobject]@{
+      Path = $path
+      Document = $defaultDocument
+    }
+  }
+
+  $fileOverrides = @()
+  foreach ($entry in @($parsed.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    $relativePath = [string]$entry.path
+    $mode = ([string]$entry.mode).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($relativePath) -or $mode -notin @("suite", "project")) {
+      continue
+    }
+    $fileOverrides += [ordered]@{
+      path = $relativePath.Replace("\", "/").TrimStart("/")
+      mode = $mode
+    }
+  }
+
+  return [pscustomobject]@{
+    Path = $path
+    Document = [ordered]@{
+      schemaVersion = 1
+      theme = [ordered]@{
+        themeId = if ([string]::IsNullOrWhiteSpace([string]$parsed.theme.themeId)) { "neutral" } else { [string]$parsed.theme.themeId }
+        logoPath = [string]$parsed.theme.logoPath
+        faviconPath = [string]$parsed.theme.faviconPath
+        socialCardPath = [string]$parsed.theme.socialCardPath
+      }
+      fileOverrides = $fileOverrides
+    }
+  }
+}
+
+function Write-DocsWebsiteOverrides {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)]$Document
+  )
+
+  $path = Get-DocsWebsiteOverridesPath -ResolvedRepoRoot $ResolvedRepoRoot
+  Write-DocsThemeUtf8NoBomFile -Path $path -Content ($Document | ConvertTo-Json -Depth 10)
+}
+
 function Test-DocsWebsiteManaged {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
@@ -470,17 +567,31 @@ function Write-DocsWebsiteOwnershipMarker {
   param(
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
     [Parameter(Mandatory)][string]$ThemeId,
+    [string]$InstallMode = "managed_update",
+    [string]$LogoPath = "",
+    [string]$FaviconPath = "",
+    [string]$SocialCardPath = "",
     [switch]$Adopted
   )
 
   $markerPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
   $projectName = Split-Path -Leaf $ResolvedRepoRoot
   $marker = [ordered]@{
-    schemaVersion = 1
-    managedBy = "UEToolSuiteDocs"
+    schemaVersion = 2
+    managedBy = "UEToolSuiteInstaller"
     projectName = $projectName
-    themeId = $ThemeId
-    adoptedViaDocsTheme = [bool]$Adopted
+    installMode = $InstallMode
+    theme = [ordered]@{
+      themeId = $ThemeId
+      logoPath = $LogoPath
+      faviconPath = $FaviconPath
+      socialCardPath = $SocialCardPath
+    }
+    overridePolicy = [ordered]@{
+      schemaVersion = 1
+      source = "site-overrides.json"
+      adoptedViaDocsTheme = [bool]$Adopted
+    }
     updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   }
 
@@ -567,6 +678,8 @@ function Invoke-DocsThemeApply {
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
     [string]$ThemeId,
     [string]$LogoPath,
+    [string]$FaviconPath,
+    [string]$SocialCardPath,
     [switch]$AdoptExisting
   )
 
@@ -577,7 +690,7 @@ function Invoke-DocsThemeApply {
 
   $isManaged = Test-DocsWebsiteManaged -ResolvedRepoRoot $ResolvedRepoRoot
   if (-not $isManaged -and -not $AdoptExisting) {
-    throw "Website is unmanaged. Theme overrides are blocked by default. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -AdoptExistingWebsite."
+    throw "Website is unmanaged. Theme overrides are blocked by default. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -WebsiteInstallMode MergeExisting."
   }
 
   $configPath = Join-Path $websiteRoot "docusaurus.config.ts"
@@ -641,6 +754,45 @@ function Invoke-DocsThemeApply {
     }
     Copy-Item -LiteralPath $LogoPath -Destination $logoDestination -Force
   }
+  if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) {
+    if (-not (Test-Path -LiteralPath $FaviconPath -PathType Leaf)) {
+      throw "FaviconPath does not exist or is not a file: $FaviconPath"
+    }
+    $extension = [System.IO.Path]::GetExtension($FaviconPath).ToLowerInvariant()
+    if ($extension -notin @(".svg", ".png", ".ico")) {
+      throw "FaviconPath must end with .svg, .png, or .ico. Received: $FaviconPath"
+    }
+    $faviconRelativePath = "img/branding/project-favicon$extension"
+    $faviconDestination = Join-Path $websiteRoot ("static\" + $faviconRelativePath.Replace("/", "\"))
+    $faviconParent = Split-Path -Path $faviconDestination -Parent
+    if (-not [string]::IsNullOrWhiteSpace($faviconParent)) {
+      New-Item -ItemType Directory -Force -Path $faviconParent | Out-Null
+    }
+    Copy-Item -LiteralPath $FaviconPath -Destination $faviconDestination -Force
+  }
+  elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
+    $faviconRelativePath = $logoRelativePath
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) {
+    if (-not (Test-Path -LiteralPath $SocialCardPath -PathType Leaf)) {
+      throw "SocialCardPath does not exist or is not a file: $SocialCardPath"
+    }
+    $extension = [System.IO.Path]::GetExtension($SocialCardPath).ToLowerInvariant()
+    if ($extension -notin @(".svg", ".png", ".jpg", ".jpeg", ".webp")) {
+      throw "SocialCardPath must end with .svg, .png, .jpg, .jpeg, or .webp. Received: $SocialCardPath"
+    }
+    $socialCardRelativePath = "img/branding/project-social-card$extension"
+    $socialCardDestination = Join-Path $websiteRoot ("static\" + $socialCardRelativePath.Replace("/", "\"))
+    $socialCardParent = Split-Path -Path $socialCardDestination -Parent
+    if (-not [string]::IsNullOrWhiteSpace($socialCardParent)) {
+      New-Item -ItemType Directory -Force -Path $socialCardParent | Out-Null
+    }
+    Copy-Item -LiteralPath $SocialCardPath -Destination $socialCardDestination -Force
+  }
+  elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
+    $socialCardRelativePath = $logoRelativePath
+  }
 
   $configText = Get-Content -LiteralPath $configPath -Raw
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $configText -Pattern "(?m)^(\s*title:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "config title"
@@ -655,7 +807,26 @@ function Invoke-DocsThemeApply {
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteThemeId:\s*)'[^']*'," -Value $themeEntry.id -PropertyDisplayName "customFields.suiteThemeId"
   Write-DocsThemeUtf8NoBomFile -Path $configPath -Content $updatedConfig
 
-  Write-DocsWebsiteOwnershipMarker -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeEntry.id -Adopted:$AdoptExisting
+  $overridesState = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $overridesState.Document.theme.themeId = $themeEntry.id
+  $overridesState.Document.theme.logoPath = if (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $logoRelativePath } else { "" }
+  $overridesState.Document.theme.faviconPath = if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) { $faviconRelativePath } elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $faviconRelativePath } else { "" }
+  $overridesState.Document.theme.socialCardPath = if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) { $socialCardRelativePath } elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $socialCardRelativePath } else { "" }
+  Write-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot -Document $overridesState.Document
+
+  $installMode = "managed_update"
+  if ($AdoptExisting -and -not $isManaged) {
+    $installMode = "merge_existing"
+  }
+
+  Write-DocsWebsiteOwnershipMarker `
+    -ResolvedRepoRoot $ResolvedRepoRoot `
+    -ThemeId $themeEntry.id `
+    -InstallMode $installMode `
+    -LogoPath $logoRelativePath `
+    -FaviconPath $faviconRelativePath `
+    -SocialCardPath $socialCardRelativePath `
+    -Adopted:$AdoptExisting
   if ($AdoptExisting -and -not $isManaged) {
     Write-Output ("Adopted existing website for suite-managed theme updates.")
   }
@@ -689,8 +860,10 @@ function Invoke-DocsThemeCommand {
     "apply" {
       $themeId = $null
       $logoPath = $null
+      $faviconPath = $null
+      $socialCardPath = $null
       $adoptExisting = $false
-      $tokens = if ($argsList.Count -gt 1) { @($argsList[1..($argsList.Count - 1)]) } else { @() }
+      $tokens = if ($argsList.Count -gt 1) { @(Get-NormalizedArgumentTail -Values $argsList -Skip 1) } else { @() }
       for ($i = 0; $i -lt $tokens.Count; $i++) {
         $token = [string]$tokens[$i]
         $normalizedToken = $token.Trim().ToLowerInvariant()
@@ -706,6 +879,20 @@ function Invoke-DocsThemeCommand {
         if ($normalizedToken -eq "-logopath" -or $normalizedToken -eq "--logo-path") {
           if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
           $logoPath = [string]$tokens[$i + 1]
+          $i++
+          continue
+        }
+
+        if ($normalizedToken -eq "-faviconpath" -or $normalizedToken -eq "--favicon-path") {
+          if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
+          $faviconPath = [string]$tokens[$i + 1]
+          $i++
+          continue
+        }
+
+        if ($normalizedToken -eq "-socialcardpath" -or $normalizedToken -eq "--social-card-path") {
+          if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
+          $socialCardPath = [string]$tokens[$i + 1]
           $i++
           continue
         }
@@ -726,11 +913,181 @@ function Invoke-DocsThemeCommand {
         $themeId = $token
       }
 
-      Invoke-DocsThemeApply -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeId -LogoPath $logoPath -AdoptExisting:$adoptExisting
+      Invoke-DocsThemeApply -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeId -LogoPath $logoPath -FaviconPath $faviconPath -SocialCardPath $socialCardPath -AdoptExisting:$adoptExisting
       return
     }
     default {
       throw "Unknown ue-tools docs theme command '$subcommand'. Run 'ue-tools docs help theme'."
+    }
+  }
+}
+
+function Read-DocsWebsiteOwnershipMarker {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $path = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return $null
+  }
+
+  try {
+    return ((Get-Content -LiteralPath $path -Raw) | ConvertFrom-Json)
+  }
+  catch {
+    return $null
+  }
+}
+
+function Invoke-DocsSiteStatus {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $ownership = Read-DocsWebsiteOwnershipMarker -ResolvedRepoRoot $ResolvedRepoRoot
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $themeId = [string]$overrides.Document.theme.themeId
+  if ([string]::IsNullOrWhiteSpace($themeId) -and $ownership -and $ownership.theme.themeId) {
+    $themeId = [string]$ownership.theme.themeId
+  }
+
+  return [pscustomobject]@{
+    Managed = [bool]($null -ne $ownership)
+    OwnershipPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+    OverridesPath = $overrides.Path
+    InstallMode = if ($ownership) { [string]$ownership.installMode } else { "unmanaged" }
+    ThemeId = $themeId
+    LogoPath = [string]$overrides.Document.theme.logoPath
+    FaviconPath = [string]$overrides.Document.theme.faviconPath
+    SocialCardPath = [string]$overrides.Document.theme.socialCardPath
+    OverrideCount = @($overrides.Document.fileOverrides).Count
+    OverridePaths = @($overrides.Document.fileOverrides | ForEach-Object { [string]$_.path })
+  }
+}
+
+function Invoke-DocsSiteOverrideList {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  return @($overrides.Document.fileOverrides)
+}
+
+function Invoke-DocsSiteOverrideSet {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$Mode
+  )
+
+  $normalizedPath = $RelativePath.Replace("\", "/").Trim().TrimStart("/")
+  $normalizedMode = $Mode.Trim().ToLowerInvariant()
+  if ($normalizedMode -notin @("suite", "project")) {
+    throw "Mode must be 'suite' or 'project'."
+  }
+
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $remaining = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in @($overrides.Document.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    if ([string]$entry.path -eq $normalizedPath) {
+      continue
+    }
+    $remaining.Add($entry) | Out-Null
+  }
+  $remaining.Add([ordered]@{ path = $normalizedPath; mode = $normalizedMode }) | Out-Null
+  $overrides.Document.fileOverrides = @($remaining.ToArray() | Sort-Object path)
+  Write-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot -Document $overrides.Document
+
+  return [pscustomobject]@{
+    Path = $normalizedPath
+    Mode = $normalizedMode
+  }
+}
+
+function Invoke-DocsSiteOverrideClear {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$RelativePath
+  )
+
+  $normalizedPath = $RelativePath.Replace("\", "/").Trim().TrimStart("/")
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $remaining = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in @($overrides.Document.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    if ([string]$entry.path -eq $normalizedPath) {
+      continue
+    }
+    $remaining.Add($entry) | Out-Null
+  }
+  $overrides.Document.fileOverrides = @($remaining.ToArray() | Sort-Object path)
+  Write-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot -Document $overrides.Document
+
+  return [pscustomobject]@{
+    Path = $normalizedPath
+  }
+}
+
+function Invoke-DocsSiteCommand {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments
+  )
+
+  $argsList = @(Get-NormalizedArgumentList -Values $CommandArguments)
+  if ($argsList.Count -eq 0) {
+    Write-Output (Get-DocsToolsCommandHelp -CommandName "site")
+    return
+  }
+
+  $subcommand = [string]$argsList[0]
+  if (Test-DocsToolsHelpToken -Token $subcommand) {
+    Write-Output (Get-DocsToolsCommandHelp -CommandName "site")
+    return
+  }
+
+  switch ($subcommand.Trim().ToLowerInvariant()) {
+    "status" {
+      $result = Invoke-DocsSiteStatus -ResolvedRepoRoot $ResolvedRepoRoot
+      Write-Output ("Managed: {0}" -f $result.Managed)
+      Write-Output ("Install mode: {0}" -f $result.InstallMode)
+      Write-Output ("Theme: {0}" -f $result.ThemeId)
+      Write-Output ("Logo path: {0}" -f $result.LogoPath)
+      Write-Output ("Favicon path: {0}" -f $result.FaviconPath)
+      Write-Output ("Social card path: {0}" -f $result.SocialCardPath)
+      Write-Output ("Overrides path: {0}" -f $result.OverridesPath)
+      Write-Output ("Override count: {0}" -f $result.OverrideCount)
+      return
+    }
+    "override" {
+      if ($argsList.Count -lt 2) {
+        throw "Missing site override subcommand. Run 'ue-tools docs help site'."
+      }
+      $overrideCommand = [string]$argsList[1]
+      $remaining = if ($argsList.Count -gt 2) { @(Get-NormalizedArgumentTail -Values $argsList -Skip 2) } else { @() }
+      switch ($overrideCommand.Trim().ToLowerInvariant()) {
+        "list" {
+          foreach ($entry in @(Invoke-DocsSiteOverrideList -ResolvedRepoRoot $ResolvedRepoRoot)) {
+            Write-Output ("- {0}: {1}" -f [string]$entry.path, [string]$entry.mode)
+          }
+          return
+        }
+        "set" {
+          $parsed = Parse-SubcommandArguments -CommandArguments $remaining -ValueNames @("path", "mode")
+          $result = Invoke-DocsSiteOverrideSet -ResolvedRepoRoot $ResolvedRepoRoot -RelativePath ([string]$parsed.Values["path"]) -Mode ([string]$parsed.Values["mode"])
+          Write-Output ("Set override: {0} -> {1}" -f $result.Path, $result.Mode)
+          return
+        }
+        "clear" {
+          $parsed = Parse-SubcommandArguments -CommandArguments $remaining -ValueNames @("path")
+          $result = Invoke-DocsSiteOverrideClear -ResolvedRepoRoot $ResolvedRepoRoot -RelativePath ([string]$parsed.Values["path"])
+          Write-Output ("Cleared override: {0}" -f $result.Path)
+          return
+        }
+        default {
+          throw "Unknown ue-tools docs site override command '$overrideCommand'. Run 'ue-tools docs help site'."
+        }
+      }
+    }
+    default {
+      throw "Unknown ue-tools docs site command '$subcommand'. Run 'ue-tools docs help site'."
     }
   }
 }
@@ -803,6 +1160,37 @@ function Get-NormalizedArgumentList {
   }
 
   return $normalized.ToArray()
+}
+
+function Get-NormalizedArgumentTail {
+  param(
+    [AllowNull()][string[]]$Values,
+    [int]$Skip = 1
+  )
+
+  if ($null -eq $Values) {
+    return @()
+  }
+
+  if ($Skip -lt 0) {
+    $Skip = 0
+  }
+
+  $tail = New-Object System.Collections.Generic.List[string]
+  foreach ($value in @($Values | Select-Object -Skip $Skip)) {
+    if ($null -eq $value) {
+      continue
+    }
+
+    $stringValue = [string]$value
+    if ([string]::IsNullOrWhiteSpace($stringValue)) {
+      continue
+    }
+
+    $tail.Add($stringValue) | Out-Null
+  }
+
+  return ,($tail.ToArray())
 }
 
 function Resolve-DocsToolsCommandAlias {
@@ -1487,7 +1875,7 @@ ue-tools docs theme
 
 Usage:
   ue-tools docs theme list
-  ue-tools docs theme apply <id> [-LogoPath <path>] [--adopt-existing]
+  ue-tools docs theme apply <id> [-LogoPath <path>] [-FaviconPath <path>] [-SocialCardPath <path>] [--adopt-existing]
 
 Commands:
   list                           Show available website theme presets from website/theme-presets/theme-catalog.json
@@ -1497,6 +1885,26 @@ Notes:
   - Theme apply is preserve-first: unmanaged websites are not overridden by default.
   - Use --adopt-existing to write the marker for an existing unmanaged website before applying.
   - LogoPath accepts .svg or .png files.
+  - FaviconPath accepts .svg, .png, or .ico files.
+  - SocialCardPath accepts .svg, .png, .jpg, .jpeg, or .webp files.
+"@
+      return
+    }
+    "site" {
+@"
+ue-tools docs site
+
+Usage:
+  ue-tools docs site status
+  ue-tools docs site override list
+  ue-tools docs site override set -Path <relative> -Mode <suite|project>
+  ue-tools docs site override clear -Path <relative>
+
+Commands:
+  status                         Show current website ownership, install mode, branding, and override summary
+  override list                  Show persisted file override entries
+  override set                   Persist a file override mode for a managed docs/site file
+  override clear                 Remove a persisted file override entry
 "@
       return
     }
@@ -1565,8 +1973,29 @@ function Get-RelativeDocPath {
     [Parameter(Mandatory)][string]$FullPath
   )
 
-  $relative = [System.IO.Path]::GetRelativePath($DocsRoot, $FullPath)
+  $relative = Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $FullPath
   return ($relative -replace '\\', '/')
+}
+
+function Get-UEToolSuiteRelativePath {
+  param(
+    [Parameter(Mandatory)][string]$BasePath,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $baseFull = [System.IO.Path]::GetFullPath($BasePath)
+  $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+  $trimmedBase = $baseFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $trimmedTarget = $targetFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  if ($trimmedBase.Equals($trimmedTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return "."
+  }
+
+  $baseUri = New-Object System.Uri(($trimmedBase + [System.IO.Path]::DirectorySeparatorChar))
+  $targetUri = New-Object System.Uri($targetFull)
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+  return $relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
 }
 
 function Get-DocIdForPath {
@@ -2665,7 +3094,7 @@ function Get-DocsItemRelativePath {
     return (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $ItemPath)
   }
 
-  return ([System.IO.Path]::GetRelativePath($DocsRoot, $ItemPath) -replace '\\', '/')
+  return ((Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $ItemPath) -replace '\\', '/')
 }
 
 function Resolve-DocsNavigationTarget {
@@ -3774,7 +4203,7 @@ function Invoke-DocsToolsMain {
 
   $command = Resolve-DocsToolsCommandAlias -CommandName ([string]$allArgs[0])
 
-  $remaining = if ($allArgs.Count -gt 1) { @($allArgs[1..($allArgs.Count - 1)]) } else { @() }
+  $remaining = if ($allArgs.Count -gt 1) { @(Get-NormalizedArgumentTail -Values $allArgs -Skip 1) } else { @() }
   if ($remaining.Count -gt 0 -and (Test-DocsToolsHelpToken -Token ([string]$remaining[0]))) {
     Write-Output (Get-DocsToolsCommandHelp -CommandName $command)
     return
@@ -3824,6 +4253,10 @@ function Invoke-DocsToolsMain {
     }
     "theme" {
       Invoke-DocsThemeCommand -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
+      return
+    }
+    "site" {
+      Invoke-DocsSiteCommand -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
       return
     }
     "preview" {

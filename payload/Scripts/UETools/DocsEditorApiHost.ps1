@@ -140,9 +140,30 @@ function Read-JsonBody {
   return ($bodyText | ConvertFrom-Json)
 }
 
+function Get-UEToolSuiteRelativePath {
+  param(
+    [Parameter(Mandatory)][string]$BasePath,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $baseFull = [System.IO.Path]::GetFullPath($BasePath)
+  $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+  $trimmedBase = $baseFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $trimmedTarget = $targetFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  if ($trimmedBase.Equals($trimmedTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return "."
+  }
+
+  $baseUri = New-Object System.Uri(($trimmedBase + [System.IO.Path]::DirectorySeparatorChar))
+  $targetUri = New-Object System.Uri($targetFull)
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+  return $relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+}
+
 function Get-RelativePathFromDocsRoot {
   param([Parameter(Mandatory)][string]$FullPath)
-  return ([System.IO.Path]::GetRelativePath($script:DocsRoot, $FullPath) -replace '\\', '/')
+  return ((Get-UEToolSuiteRelativePath -BasePath $script:DocsRoot -TargetPath $FullPath) -replace '\\', '/')
 }
 
 function Resolve-DocsPathFromToken {
@@ -624,7 +645,7 @@ function Get-DocsEditorMovedMarkdownMap {
   $destinationFull = [System.IO.Path]::GetFullPath($DestinationPath)
   $files = @(Get-ChildItem -LiteralPath $sourceFull -Recurse -File -Filter *.md -ErrorAction SilentlyContinue)
   foreach ($file in $files) {
-    $relative = [System.IO.Path]::GetRelativePath($sourceFull, $file.FullName)
+    $relative = Get-UEToolSuiteRelativePath -BasePath $sourceFull -TargetPath $file.FullName
     $newPath = Join-Path $destinationFull $relative
     $map[(Get-DocsEditorPathKey -Path $file.FullName)] = [System.IO.Path]::GetFullPath($newPath)
   }
@@ -710,7 +731,7 @@ function Update-DocsMarkdownLinksForMove {
           return $match.Value
         }
 
-        $relative = [System.IO.Path]::GetRelativePath($currentDir, $newTargetFull)
+        $relative = Get-UEToolSuiteRelativePath -BasePath $currentDir -TargetPath $newTargetFull
         $newTarget = Format-DocsEditorRelativeMarkdownTarget -RelativePath $relative -Tail $splitTarget.Tail
         if ($newTarget -match '\s') {
           $routeTarget = Get-DocsEditorMarkdownRouteTarget -MarkdownPath $newTargetFull -Tail $splitTarget.Tail
@@ -1296,8 +1317,7 @@ function Add-DocsEditorFallbackTreeSiblings {
   }
 
   foreach ($childDir in @(Get-ChildItem -LiteralPath $ParentDir -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
-    $categoryPath = Join-Path $childDir.FullName "_category_.json"
-    if (-not (Test-Path -LiteralPath $categoryPath -PathType Leaf)) {
+    if (-not (Test-DocsEditorFallbackSectionExists -DirectoryPath $childDir.FullName)) {
       continue
     }
 
@@ -1315,6 +1335,23 @@ function Add-DocsEditorFallbackTreeSiblings {
       }) | Out-Null
     $fallbackPosition += 1.0
   }
+}
+
+function Test-DocsEditorFallbackSectionExists {
+  param([Parameter(Mandatory)][string]$DirectoryPath)
+
+  $categoryPath = Join-Path $DirectoryPath "_category_.json"
+  if (Test-Path -LiteralPath $categoryPath -PathType Leaf) {
+    return $true
+  }
+
+  $directMarkdown = @(Get-ChildItem -LiteralPath $DirectoryPath -File -Filter *.md -ErrorAction SilentlyContinue)
+  if ($directMarkdown.Count -gt 0) {
+    return $true
+  }
+
+  $nestedMarkdown = Get-ChildItem -LiteralPath $DirectoryPath -Recurse -File -Filter *.md -ErrorAction SilentlyContinue | Select-Object -First 1
+  return $null -ne $nestedMarkdown
 }
 
 function Get-DocsTreeChildren {
@@ -1343,6 +1380,27 @@ function Get-DocsTreeChildren {
         try {
           $categoryJson = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
           $displayName = [string]$categoryJson.label
+        }
+        catch {
+          $displayName = [System.IO.Path]::GetFileName($fullPath)
+        }
+      }
+      elseif (Test-Path -LiteralPath (Join-Path $fullPath "README.md") -PathType Leaf) {
+        try {
+          $readmeText = Get-Content -LiteralPath (Join-Path $fullPath "README.md") -Raw
+          $displayName = Invoke-DocsModuleInternal -ScriptBlock {
+            param($text, $fallbackPath)
+            $frontMatter = Get-FrontMatterBlock -Content $text
+            $title = Get-FrontMatterValue -FrontMatter $frontMatter -Key "title"
+            if ([string]::IsNullOrWhiteSpace($title)) {
+              $headingMatch = [regex]::Match($text, '(?m)^\#\s+(?<title>.+?)\s*$')
+              if ($headingMatch.Success) {
+                return $headingMatch.Groups['title'].Value.Trim()
+              }
+              return [System.IO.Path]::GetFileName($fallbackPath)
+            }
+            return $title
+          } -Arguments @($readmeText, $fullPath)
         }
         catch {
           $displayName = [System.IO.Path]::GetFileName($fullPath)
@@ -1818,6 +1876,122 @@ function Reorder-DocsNode {
   }
 }
 
+function Get-SiteThemeCatalogPayload {
+  return (Invoke-DocsModuleInternal -ScriptBlock {
+      param($resolvedRepoRoot)
+      $catalog = Read-DocsThemeCatalog -ResolvedRepoRoot $resolvedRepoRoot
+      return [ordered]@{
+        defaultTheme = [string]$catalog.DefaultTheme
+        themes = @($catalog.Themes)
+      }
+    } -Arguments @($script:RepoRoot))
+}
+
+function Get-SiteConfigPayload {
+  return (Invoke-DocsModuleInternal -ScriptBlock {
+      param($resolvedRepoRoot)
+      $ownership = Read-DocsWebsiteOwnershipMarker -ResolvedRepoRoot $resolvedRepoRoot
+      $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $resolvedRepoRoot
+      $themeId = [string]$overrides.Document.theme.themeId
+      if ([string]::IsNullOrWhiteSpace($themeId) -and $ownership -and $ownership.theme.themeId) {
+        $themeId = [string]$ownership.theme.themeId
+      }
+
+      return [ordered]@{
+        ownership = $ownership
+        overrides = $overrides.Document
+        overridesPath = $overrides.Path
+        knownOverridablePaths = @(Get-DocsWebsiteOverrideCandidatePaths)
+        theme = [ordered]@{
+          themeId = $themeId
+          logoPath = [string]$overrides.Document.theme.logoPath
+          faviconPath = [string]$overrides.Document.theme.faviconPath
+          socialCardPath = [string]$overrides.Document.theme.socialCardPath
+        }
+      }
+    } -Arguments @($script:RepoRoot))
+}
+
+function Apply-SiteThemeFromApiBody {
+  param([Parameter(Mandatory)]$Body)
+
+  $themeId = [string]$Body.themeId
+  $logoPath = [string]$Body.logoPath
+  $faviconPath = [string]$Body.faviconPath
+  $socialCardPath = [string]$Body.socialCardPath
+  return (Invoke-DocsModuleInternal -ScriptBlock {
+      param($resolvedRepoRoot, $themeIdArg, $logoPathArg, $faviconPathArg, $socialCardPathArg)
+      Invoke-DocsThemeApply `
+        -ResolvedRepoRoot $resolvedRepoRoot `
+        -ThemeId $themeIdArg `
+        -LogoPath $logoPathArg `
+        -FaviconPath $faviconPathArg `
+        -SocialCardPath $socialCardPathArg `
+        -AdoptExisting:$true
+      $config = Invoke-DocsSiteStatus -ResolvedRepoRoot $resolvedRepoRoot
+      return $config
+    } -Arguments @($script:RepoRoot, $themeId, $logoPath, $faviconPath, $socialCardPath))
+}
+
+function Apply-SiteBrandingFromApiBody {
+  param([Parameter(Mandatory)]$Body)
+
+  $config = Get-SiteConfigPayload
+  $themeId = [string]$config.theme.themeId
+  if ([string]::IsNullOrWhiteSpace($themeId)) {
+    $themeId = "neutral"
+  }
+
+  return (Invoke-DocsModuleInternal -ScriptBlock {
+      param($resolvedRepoRoot, $themeIdArg, $logoPathArg, $faviconPathArg, $socialCardPathArg)
+      Invoke-DocsThemeApply `
+        -ResolvedRepoRoot $resolvedRepoRoot `
+        -ThemeId $themeIdArg `
+        -LogoPath ([string]$logoPathArg) `
+        -FaviconPath ([string]$faviconPathArg) `
+        -SocialCardPath ([string]$socialCardPathArg) `
+        -AdoptExisting:$true
+      $status = Invoke-DocsSiteStatus -ResolvedRepoRoot $resolvedRepoRoot
+      return $status
+    } -Arguments @($script:RepoRoot, $themeId, [string]$Body.logoPath, [string]$Body.faviconPath, [string]$Body.socialCardPath))
+}
+
+function Apply-SiteOverridesFromApiBody {
+  param([Parameter(Mandatory)]$Body)
+
+  return (Invoke-DocsModuleInternal -ScriptBlock {
+      param($resolvedRepoRoot, $payload)
+      if ($null -ne $payload.entries) {
+        $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $resolvedRepoRoot
+        $entries = New-Object System.Collections.Generic.List[object]
+        foreach ($entry in @($payload.entries)) {
+          if ($null -eq $entry) { continue }
+          $relativePath = [string]$entry.path
+          $mode = ([string]$entry.mode).Trim().ToLowerInvariant()
+          if ([string]::IsNullOrWhiteSpace($relativePath) -or $mode -notin @("suite", "project")) {
+            continue
+          }
+          $entries.Add([ordered]@{
+            path = $relativePath.Replace("\", "/").TrimStart("/")
+            mode = $mode
+          }) | Out-Null
+        }
+        $overrides.Document.fileOverrides = @($entries.ToArray() | Sort-Object path)
+        Write-DocsWebsiteOverrides -ResolvedRepoRoot $resolvedRepoRoot -Document $overrides.Document
+      }
+      elseif (-not [string]::IsNullOrWhiteSpace([string]$payload.path) -and -not [string]::IsNullOrWhiteSpace([string]$payload.mode)) {
+        Invoke-DocsSiteOverrideSet -ResolvedRepoRoot $resolvedRepoRoot -RelativePath ([string]$payload.path) -Mode ([string]$payload.mode) | Out-Null
+      }
+      elseif (-not [string]::IsNullOrWhiteSpace([string]$payload.path)) {
+        Invoke-DocsSiteOverrideClear -ResolvedRepoRoot $resolvedRepoRoot -RelativePath ([string]$payload.path) | Out-Null
+      }
+
+      return [ordered]@{
+        overrides = (Read-DocsWebsiteOverrides -ResolvedRepoRoot $resolvedRepoRoot).Document
+      }
+    } -Arguments @($script:RepoRoot, $Body))
+}
+
 function Invoke-EditorApiRequest {
   param([Parameter(Mandatory)][System.Net.HttpListenerContext]$Context)
 
@@ -1856,6 +2030,22 @@ function Invoke-EditorApiRequest {
     }
     $content = Get-DocsContent -PathToken $token
     Write-JsonResponse -Context $Context -Payload ([ordered]@{ ok = $true; content = $content })
+    return
+  }
+
+  if ($path -eq "/api/site/config" -and $request.HttpMethod -eq "GET") {
+    Write-JsonResponse -Context $Context -Payload ([ordered]@{
+        ok = $true
+        config = (Get-SiteConfigPayload)
+      })
+    return
+  }
+
+  if ($path -eq "/api/site/theme-catalog" -and $request.HttpMethod -eq "GET") {
+    Write-JsonResponse -Context $Context -Payload ([ordered]@{
+        ok = $true
+        catalog = (Get-SiteThemeCatalogPayload)
+      })
     return
   }
 
@@ -1907,6 +2097,21 @@ function Invoke-EditorApiRequest {
     "/api/delete" {
       $siteOrigin = Get-DocsEditorSiteOriginFromRequest -Request $request
       $result = Remove-DocsNode -PathToken ([string]$body.path) -PreferredSiteOrigin $siteOrigin
+      Write-JsonResponse -Context $Context -Payload ([ordered]@{ ok = $true; result = $result })
+      return
+    }
+    "/api/site/theme" {
+      $result = Apply-SiteThemeFromApiBody -Body $body
+      Write-JsonResponse -Context $Context -Payload ([ordered]@{ ok = $true; result = $result })
+      return
+    }
+    "/api/site/branding" {
+      $result = Apply-SiteBrandingFromApiBody -Body $body
+      Write-JsonResponse -Context $Context -Payload ([ordered]@{ ok = $true; result = $result })
+      return
+    }
+    "/api/site/overrides" {
+      $result = Apply-SiteOverridesFromApiBody -Body $body
       Write-JsonResponse -Context $Context -Payload ([ordered]@{ ok = $true; result = $result })
       return
     }

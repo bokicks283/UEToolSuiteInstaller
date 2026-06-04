@@ -33,6 +33,14 @@ internal sealed class InstallerForm : Form
     private static readonly TimeSpan MaxInstallDuration = TimeSpan.FromMinutes(60);
     private const string DefaultProgressMessage = "Waiting to start...";
     private const string DefaultWebsiteThemeId = "neutral";
+    private static readonly string[] WebsiteOverrideCandidates =
+    {
+        "website/docusaurus.config.ts",
+        "website/src/css/custom.css",
+        "website/src/pages/index.tsx",
+        "website/src/pages/index.module.css",
+        "Docs/README.md",
+    };
     private const int MainPaneMinSize = 360;
     private const int LogPaneMinSize = 220;
 
@@ -53,7 +61,6 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox noBackupCheckBox = new();
     private readonly CheckBox skipDocsCheckBox = new();
     private readonly CheckBox skipWebsiteCheckBox = new();
-    private readonly CheckBox adoptExistingWebsiteCheckBox = new();
     private readonly CheckBox skipTestsCheckBox = new();
     private readonly CheckBox skipAiToolsCheckBox = new();
     private readonly CheckBox skipArtSourceToolsCheckBox = new();
@@ -66,9 +73,26 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox noBuildCheckBox = new();
     private readonly CheckBox noRegenCheckBox = new();
     private readonly ComboBox websiteThemeComboBox = new();
+    private readonly ComboBox websiteInstallModeComboBox = new();
+    private readonly Label websiteInstallModeDescriptionLabel = new();
+    private readonly TextBox websiteGlobalIconPathTextBox = new();
     private readonly TextBox websiteLogoPathTextBox = new();
+    private readonly TextBox websiteFaviconPathTextBox = new();
+    private readonly TextBox websiteSocialCardPathTextBox = new();
+    private readonly Button browseWebsiteGlobalIconButton = new();
+    private readonly Button clearWebsiteGlobalIconButton = new();
     private readonly Button browseWebsiteLogoButton = new();
     private readonly Button clearWebsiteLogoButton = new();
+    private readonly Button browseWebsiteFaviconButton = new();
+    private readonly Button clearWebsiteFaviconButton = new();
+    private readonly Button browseWebsiteSocialCardButton = new();
+    private readonly Button clearWebsiteSocialCardButton = new();
+    private readonly CheckBox usePerAssetBrandingOverridesCheckBox = new();
+    private readonly Panel websiteBrandingOverridesPanel = new();
+    private readonly CheckBox customizeWebsiteOverridesCheckBox = new();
+    private readonly Panel websiteOverridesPanel = new();
+    private readonly Label websiteOverrideHelpLabel = new();
+    private readonly DataGridView websiteOverridesGrid = new();
     private readonly Panel advancedOptionsPanel = new();
     private readonly ProgressBar installProgressBar = new();
     private readonly Label progressLabel = new();
@@ -85,6 +109,7 @@ internal sealed class InstallerForm : Form
     private string lastOutputLine = string.Empty;
     private bool logPaneHasBeenShown;
     private List<WebsiteThemeOption> websiteThemeOptions = new();
+    private List<WebsiteInstallModeOption> websiteInstallModeOptions = new();
 
     public InstallerForm()
     {
@@ -370,23 +395,23 @@ internal sealed class InstallerForm : Form
 
     private Control BuildDocsBrandingPanel()
     {
+        LoadWebsiteInstallModeOptions();
+
         var panel = new TableLayoutPanel
         {
-            ColumnCount = 4,
-            RowCount = 3,
+            ColumnCount = 1,
+            RowCount = 8,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = new Padding(0, 8, 0, 0),
-            Padding = new Padding(10, 10, 10, 8),
+            Padding = new Padding(12, 12, 12, 10),
             BackColor = Color.FromArgb(244, 246, 250),
         };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        for (var i = 0; i < 8; i++)
+        {
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
 
         var headerLabel = new Label
         {
@@ -397,7 +422,67 @@ internal sealed class InstallerForm : Form
             Margin = new Padding(0, 0, 0, 6),
         };
         panel.Controls.Add(headerLabel, 0, 0);
-        panel.SetColumnSpan(headerLabel, 4);
+
+        var summaryLabel = new Label
+        {
+            Text = "Use merge mode to keep project docs content while updating the managed website shell. Branding defaults to one global icon, with optional per-asset overrides only when needed.",
+            AutoSize = true,
+            MaximumSize = new Size(860, 0),
+            ForeColor = Color.FromArgb(72, 79, 96),
+            Margin = new Padding(0, 0, 0, 10),
+        };
+        panel.Controls.Add(summaryLabel, 0, 1);
+
+        var installModePanel = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            RowCount = 2,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 0, 0, 10),
+        };
+        installModePanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        installModePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        installModePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        installModePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var installModeLabel = new Label
+        {
+            Text = "Website install mode",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 6, 10, 0),
+        };
+        installModePanel.Controls.Add(installModeLabel, 0, 0);
+
+        websiteInstallModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        websiteInstallModeComboBox.Width = 320;
+        websiteInstallModeComboBox.Margin = new Padding(0, 2, 10, 0);
+        websiteInstallModeComboBox.Items.Clear();
+        websiteInstallModeComboBox.Items.AddRange(websiteInstallModeOptions.Cast<object>().ToArray());
+        websiteInstallModeComboBox.SelectedItem = websiteInstallModeOptions.FirstOrDefault(option => option.Id.Equals("MergeExisting", StringComparison.OrdinalIgnoreCase));
+        websiteInstallModeComboBox.SelectedIndexChanged += (_, _) => UpdateWebsiteInstallModeDescription();
+        installModePanel.Controls.Add(websiteInstallModeComboBox, 1, 0);
+
+        websiteInstallModeDescriptionLabel.AutoSize = true;
+        websiteInstallModeDescriptionLabel.MaximumSize = new Size(700, 0);
+        websiteInstallModeDescriptionLabel.ForeColor = Color.FromArgb(72, 79, 96);
+        websiteInstallModeDescriptionLabel.Margin = new Padding(0, 6, 0, 0);
+        installModePanel.Controls.Add(websiteInstallModeDescriptionLabel, 1, 1);
+        panel.Controls.Add(installModePanel, 0, 2);
+
+        var themePanel = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            RowCount = 1,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 0, 0, 10),
+        };
+        themePanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        themePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         var themeLabel = new Label
         {
@@ -406,34 +491,125 @@ internal sealed class InstallerForm : Form
             ForeColor = Color.FromArgb(26, 31, 44),
             Margin = new Padding(0, 6, 10, 0),
         };
-        panel.Controls.Add(themeLabel, 0, 1);
+        themePanel.Controls.Add(themeLabel, 0, 0);
 
         websiteThemeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         websiteThemeComboBox.Width = 360;
         websiteThemeComboBox.Margin = new Padding(0, 2, 10, 0);
-        panel.Controls.Add(websiteThemeComboBox, 1, 1);
-        panel.SetColumnSpan(websiteThemeComboBox, 3);
+        themePanel.Controls.Add(websiteThemeComboBox, 1, 0);
+        panel.Controls.Add(themePanel, 0, 3);
 
-        var logoLabel = new Label
+        var brandingPanel = new TableLayoutPanel
         {
-            Text = "Logo (.svg/.png)",
+            ColumnCount = 4,
+            RowCount = 4,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 0, 0, 10),
+        };
+        brandingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        brandingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        brandingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        brandingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        for (var i = 0; i < 4; i++)
+        {
+            brandingPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
+
+        var globalIconLabel = new Label
+        {
+            Text = "Global site icon (.svg/.png)",
             AutoSize = true,
             ForeColor = Color.FromArgb(26, 31, 44),
             Margin = new Padding(0, 8, 10, 0),
         };
-        panel.Controls.Add(logoLabel, 0, 2);
+        brandingPanel.Controls.Add(globalIconLabel, 0, 0);
+
+        websiteGlobalIconPathTextBox.ReadOnly = true;
+        websiteGlobalIconPathTextBox.PlaceholderText = "Optional icon used for logo, favicon, and social card by default...";
+        websiteGlobalIconPathTextBox.Margin = new Padding(0, 4, 10, 0);
+        websiteGlobalIconPathTextBox.Width = 420;
+        brandingPanel.Controls.Add(websiteGlobalIconPathTextBox, 1, 0);
+
+        browseWebsiteGlobalIconButton.Text = "Browse...";
+        browseWebsiteGlobalIconButton.AutoSize = true;
+        browseWebsiteGlobalIconButton.Margin = new Padding(0, 3, 6, 0);
+        browseWebsiteGlobalIconButton.Click += (_, _) => BrowseForWebsiteGlobalIcon();
+        brandingPanel.Controls.Add(browseWebsiteGlobalIconButton, 2, 0);
+
+        clearWebsiteGlobalIconButton.Text = "Clear";
+        clearWebsiteGlobalIconButton.AutoSize = true;
+        clearWebsiteGlobalIconButton.Margin = new Padding(0, 3, 0, 0);
+        clearWebsiteGlobalIconButton.Click += (_, _) =>
+        {
+            websiteGlobalIconPathTextBox.Text = string.Empty;
+            statusLabel.Text = "Ready";
+        };
+        brandingPanel.Controls.Add(clearWebsiteGlobalIconButton, 3, 0);
+
+        usePerAssetBrandingOverridesCheckBox.Text = "Use per-asset overrides";
+        usePerAssetBrandingOverridesCheckBox.AutoSize = true;
+        usePerAssetBrandingOverridesCheckBox.Margin = new Padding(0, 8, 0, 0);
+        usePerAssetBrandingOverridesCheckBox.CheckedChanged += (_, _) =>
+        {
+            websiteBrandingOverridesPanel.Visible = usePerAssetBrandingOverridesCheckBox.Checked;
+            ApplyOptionDependencies();
+        };
+        brandingPanel.Controls.Add(usePerAssetBrandingOverridesCheckBox, 1, 1);
+        brandingPanel.SetColumnSpan(usePerAssetBrandingOverridesCheckBox, 3);
+
+        websiteBrandingOverridesPanel.AutoSize = true;
+        websiteBrandingOverridesPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        websiteBrandingOverridesPanel.Dock = DockStyle.Fill;
+        websiteBrandingOverridesPanel.Margin = new Padding(0, 8, 0, 0);
+        websiteBrandingOverridesPanel.Padding = new Padding(12, 10, 12, 10);
+        websiteBrandingOverridesPanel.BackColor = Color.FromArgb(250, 251, 253);
+
+        var assetOverridesLayout = new TableLayoutPanel
+        {
+            ColumnCount = 4,
+            RowCount = 4,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        };
+        assetOverridesLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        assetOverridesLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        assetOverridesLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        assetOverridesLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        var assetOverrideNote = new Label
+        {
+            Text = "Only fill the assets that should differ from the global icon.",
+            AutoSize = true,
+            MaximumSize = new Size(700, 0),
+            ForeColor = Color.FromArgb(72, 79, 96),
+            Margin = new Padding(0, 0, 0, 8),
+        };
+        assetOverridesLayout.Controls.Add(assetOverrideNote, 0, 0);
+        assetOverridesLayout.SetColumnSpan(assetOverrideNote, 4);
+
+        var logoLabel = new Label
+        {
+            Text = "Logo override",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 8, 10, 0),
+        };
+        assetOverridesLayout.Controls.Add(logoLabel, 0, 1);
 
         websiteLogoPathTextBox.ReadOnly = true;
-        websiteLogoPathTextBox.PlaceholderText = "Optional custom project logo...";
+        websiteLogoPathTextBox.PlaceholderText = "Optional logo override...";
         websiteLogoPathTextBox.Margin = new Padding(0, 4, 10, 0);
         websiteLogoPathTextBox.Width = 420;
-        panel.Controls.Add(websiteLogoPathTextBox, 1, 2);
+        assetOverridesLayout.Controls.Add(websiteLogoPathTextBox, 1, 1);
 
         browseWebsiteLogoButton.Text = "Browse...";
         browseWebsiteLogoButton.AutoSize = true;
         browseWebsiteLogoButton.Margin = new Padding(0, 3, 6, 0);
         browseWebsiteLogoButton.Click += (_, _) => BrowseForWebsiteLogo();
-        panel.Controls.Add(browseWebsiteLogoButton, 2, 2);
+        assetOverridesLayout.Controls.Add(browseWebsiteLogoButton, 2, 1);
 
         clearWebsiteLogoButton.Text = "Clear";
         clearWebsiteLogoButton.AutoSize = true;
@@ -443,26 +619,233 @@ internal sealed class InstallerForm : Form
             websiteLogoPathTextBox.Text = string.Empty;
             statusLabel.Text = "Ready";
         };
-        panel.Controls.Add(clearWebsiteLogoButton, 3, 2);
+        assetOverridesLayout.Controls.Add(clearWebsiteLogoButton, 3, 1);
+
+        var faviconLabel = new Label
+        {
+            Text = "Favicon override",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 8, 10, 0),
+        };
+        assetOverridesLayout.Controls.Add(faviconLabel, 0, 2);
+
+        websiteFaviconPathTextBox.ReadOnly = true;
+        websiteFaviconPathTextBox.PlaceholderText = "Optional favicon override...";
+        websiteFaviconPathTextBox.Margin = new Padding(0, 4, 10, 0);
+        websiteFaviconPathTextBox.Width = 420;
+        assetOverridesLayout.Controls.Add(websiteFaviconPathTextBox, 1, 2);
+
+        browseWebsiteFaviconButton.Text = "Browse...";
+        browseWebsiteFaviconButton.AutoSize = true;
+        browseWebsiteFaviconButton.Margin = new Padding(0, 3, 6, 0);
+        browseWebsiteFaviconButton.Click += (_, _) => BrowseForWebsiteFavicon();
+        assetOverridesLayout.Controls.Add(browseWebsiteFaviconButton, 2, 2);
+
+        clearWebsiteFaviconButton.Text = "Clear";
+        clearWebsiteFaviconButton.AutoSize = true;
+        clearWebsiteFaviconButton.Margin = new Padding(0, 3, 0, 0);
+        clearWebsiteFaviconButton.Click += (_, _) =>
+        {
+            websiteFaviconPathTextBox.Text = string.Empty;
+            statusLabel.Text = "Ready";
+        };
+        assetOverridesLayout.Controls.Add(clearWebsiteFaviconButton, 3, 2);
+
+        var socialCardLabel = new Label
+        {
+            Text = "Social card override",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 8, 10, 0),
+        };
+        assetOverridesLayout.Controls.Add(socialCardLabel, 0, 3);
+
+        websiteSocialCardPathTextBox.ReadOnly = true;
+        websiteSocialCardPathTextBox.PlaceholderText = "Optional social/share card override...";
+        websiteSocialCardPathTextBox.Margin = new Padding(0, 4, 10, 0);
+        websiteSocialCardPathTextBox.Width = 420;
+        assetOverridesLayout.Controls.Add(websiteSocialCardPathTextBox, 1, 3);
+
+        browseWebsiteSocialCardButton.Text = "Browse...";
+        browseWebsiteSocialCardButton.AutoSize = true;
+        browseWebsiteSocialCardButton.Margin = new Padding(0, 3, 6, 0);
+        browseWebsiteSocialCardButton.Click += (_, _) => BrowseForWebsiteSocialCard();
+        assetOverridesLayout.Controls.Add(browseWebsiteSocialCardButton, 2, 3);
+
+        clearWebsiteSocialCardButton.Text = "Clear";
+        clearWebsiteSocialCardButton.AutoSize = true;
+        clearWebsiteSocialCardButton.Margin = new Padding(0, 3, 0, 0);
+        clearWebsiteSocialCardButton.Click += (_, _) =>
+        {
+            websiteSocialCardPathTextBox.Text = string.Empty;
+            statusLabel.Text = "Ready";
+        };
+        assetOverridesLayout.Controls.Add(clearWebsiteSocialCardButton, 3, 3);
+
+        websiteBrandingOverridesPanel.Controls.Add(assetOverridesLayout);
+        websiteBrandingOverridesPanel.Visible = false;
+        brandingPanel.Controls.Add(websiteBrandingOverridesPanel, 1, 2);
+        brandingPanel.SetColumnSpan(websiteBrandingOverridesPanel, 3);
+        panel.Controls.Add(brandingPanel, 0, 4);
+
+        customizeWebsiteOverridesCheckBox.Text = "Customize file ownership overrides";
+        customizeWebsiteOverridesCheckBox.AutoSize = true;
+        customizeWebsiteOverridesCheckBox.Margin = new Padding(0, 0, 0, 0);
+        customizeWebsiteOverridesCheckBox.CheckedChanged += (_, _) =>
+        {
+            websiteOverridesPanel.Visible = customizeWebsiteOverridesCheckBox.Checked;
+            ApplyOptionDependencies();
+        };
+        panel.Controls.Add(customizeWebsiteOverridesCheckBox, 0, 5);
+
+        websiteOverridesPanel.AutoSize = true;
+        websiteOverridesPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        websiteOverridesPanel.Dock = DockStyle.Fill;
+        websiteOverridesPanel.Margin = new Padding(0, 8, 0, 0);
+        websiteOverridesPanel.Padding = new Padding(12, 10, 12, 10);
+        websiteOverridesPanel.BackColor = Color.FromArgb(250, 251, 253);
+
+        var overridesLayout = new TableLayoutPanel
+        {
+            ColumnCount = 1,
+            RowCount = 3,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        };
+        overridesLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        var overrideLabel = new Label
+        {
+            Text = "Per-file ownership overrides",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(26, 31, 44),
+            Margin = new Padding(0, 0, 0, 4),
+        };
+        overridesLayout.Controls.Add(overrideLabel, 0, 0);
+
+        websiteOverrideHelpLabel.AutoSize = true;
+        websiteOverrideHelpLabel.MaximumSize = new Size(760, 0);
+        websiteOverrideHelpLabel.ForeColor = Color.FromArgb(72, 79, 96);
+        websiteOverrideHelpLabel.Margin = new Padding(0, 0, 0, 8);
+        websiteOverrideHelpLabel.Text = "Auto uses the suite default policy. That means the website shell stays suite-managed, while managed docs content is preserved unless you explicitly force Suite.";
+        overridesLayout.Controls.Add(websiteOverrideHelpLabel, 0, 1);
+
+        ConfigureWebsiteOverridesGrid();
+        overridesLayout.Controls.Add(websiteOverridesGrid, 0, 2);
+        websiteOverridesPanel.Controls.Add(overridesLayout);
+        websiteOverridesPanel.Visible = false;
+        panel.Controls.Add(websiteOverridesPanel, 0, 6);
+
+        UpdateWebsiteInstallModeDescription();
 
         return panel;
     }
 
+    private void LoadWebsiteInstallModeOptions()
+    {
+        if (websiteInstallModeOptions.Count > 0)
+        {
+            return;
+        }
+
+        websiteInstallModeOptions = new List<WebsiteInstallModeOption>
+        {
+            new("MergeExisting", "Merge existing website (Recommended)", "Updates the managed docs shell and features, keeps existing Docs content, and only overrides project-owned files when you explicitly ask for it."),
+            new("PreserveExisting", "Keep current website unchanged", "Leaves the existing website shell alone. Use this if the project website is fully custom and you do not want suite website updates applied."),
+            new("ReplaceExisting", "Replace website shell", "Replaces the current website shell with the suite version. Use this only when you want a hard reset of the site renderer and managed defaults.")
+        };
+    }
+
     private void BrowseForWebsiteLogo()
+    {
+        BrowseForAsset("Choose website logo asset", "Logo files (*.svg;*.png)|*.svg;*.png", websiteLogoPathTextBox);
+    }
+
+    private void BrowseForWebsiteGlobalIcon()
+    {
+        BrowseForAsset("Choose global site icon", "Icon image files (*.svg;*.png)|*.svg;*.png", websiteGlobalIconPathTextBox);
+    }
+
+    private void BrowseForWebsiteFavicon()
+    {
+        BrowseForAsset("Choose website favicon asset", "Favicon files (*.svg;*.png;*.ico)|*.svg;*.png;*.ico", websiteFaviconPathTextBox);
+    }
+
+    private void BrowseForWebsiteSocialCard()
+    {
+        BrowseForAsset("Choose website social card asset", "Image files (*.svg;*.png;*.jpg;*.jpeg;*.webp)|*.svg;*.png;*.jpg;*.jpeg;*.webp", websiteSocialCardPathTextBox);
+    }
+
+    private void BrowseForAsset(string title, string filter, TextBox targetTextBox)
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "Choose website logo asset",
-            Filter = "Logo files (*.svg;*.png)|*.svg;*.png",
+            Title = title,
+            Filter = filter,
             CheckFileExists = true,
             Multiselect = false,
         };
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            websiteLogoPathTextBox.Text = dialog.FileName;
+            targetTextBox.Text = dialog.FileName;
             statusLabel.Text = "Ready";
         }
+    }
+
+    private void ConfigureWebsiteOverridesGrid()
+    {
+        if (websiteOverridesGrid.Columns.Count > 0)
+        {
+            return;
+        }
+
+        websiteOverridesGrid.AllowUserToAddRows = false;
+        websiteOverridesGrid.AllowUserToDeleteRows = false;
+        websiteOverridesGrid.AllowUserToResizeRows = false;
+        websiteOverridesGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        websiteOverridesGrid.BackgroundColor = Color.White;
+        websiteOverridesGrid.BorderStyle = BorderStyle.FixedSingle;
+        websiteOverridesGrid.RowHeadersVisible = false;
+        websiteOverridesGrid.Height = 170;
+        websiteOverridesGrid.Margin = new Padding(0, 6, 0, 0);
+
+        var pathColumn = new DataGridViewTextBoxColumn
+        {
+            Name = "Path",
+            HeaderText = "Path",
+            ReadOnly = true,
+            FillWeight = 72,
+        };
+        var modeColumn = new DataGridViewComboBoxColumn
+        {
+            Name = "Mode",
+            HeaderText = "Mode",
+            FillWeight = 28,
+            DataSource = new[] { "Auto", "Suite", "Project" },
+        };
+
+        websiteOverridesGrid.Columns.Add(pathColumn);
+        websiteOverridesGrid.Columns.Add(modeColumn);
+
+        foreach (var path in WebsiteOverrideCandidates)
+        {
+            websiteOverridesGrid.Rows.Add(path, "Auto");
+        }
+    }
+
+    private void UpdateWebsiteInstallModeDescription()
+    {
+        if (websiteInstallModeComboBox.SelectedItem is WebsiteInstallModeOption option)
+        {
+            websiteInstallModeDescriptionLabel.Text = option.Description;
+            return;
+        }
+
+        websiteInstallModeDescriptionLabel.Text = string.Empty;
     }
 
     private void BuildAdvancedOptionsPanel()
@@ -499,14 +882,12 @@ internal sealed class InstallerForm : Form
         payloadColumn.Controls.Add(CreateSectionLabel("Payload scope"));
         ConfigureOptionCheckBox(skipDocsCheckBox, "Skip Docs payload", false);
         ConfigureOptionCheckBox(skipWebsiteCheckBox, "Skip website payload", false);
-        ConfigureOptionCheckBox(adoptExistingWebsiteCheckBox, "Adopt existing unmanaged website", false);
         ConfigureOptionCheckBox(skipTestsCheckBox, "Skip payload test scripts", false);
         ConfigureOptionCheckBox(skipAiToolsCheckBox, "Skip AI docs/tooling payload", false);
         ConfigureOptionCheckBox(skipArtSourceToolsCheckBox, "Skip ArtSource tooling payload", false);
         ConfigureOptionCheckBox(skipCodingStandardsToolsCheckBox, "Skip coding standards payload", false);
         payloadColumn.Controls.Add(skipDocsCheckBox);
         payloadColumn.Controls.Add(skipWebsiteCheckBox);
-        payloadColumn.Controls.Add(adoptExistingWebsiteCheckBox);
         payloadColumn.Controls.Add(skipTestsCheckBox);
         payloadColumn.Controls.Add(skipAiToolsCheckBox);
         payloadColumn.Controls.Add(skipArtSourceToolsCheckBox);
@@ -603,15 +984,25 @@ internal sealed class InstallerForm : Form
         }
 
         var websiteEnabled = !skipWebsiteCheckBox.Checked;
+        websiteInstallModeComboBox.Enabled = websiteEnabled;
         websiteThemeComboBox.Enabled = websiteEnabled;
+        websiteGlobalIconPathTextBox.Enabled = websiteEnabled;
         websiteLogoPathTextBox.Enabled = websiteEnabled;
+        websiteFaviconPathTextBox.Enabled = websiteEnabled;
+        websiteSocialCardPathTextBox.Enabled = websiteEnabled;
+        browseWebsiteGlobalIconButton.Enabled = websiteEnabled;
+        clearWebsiteGlobalIconButton.Enabled = websiteEnabled;
         browseWebsiteLogoButton.Enabled = websiteEnabled;
+        browseWebsiteFaviconButton.Enabled = websiteEnabled;
+        browseWebsiteSocialCardButton.Enabled = websiteEnabled;
         clearWebsiteLogoButton.Enabled = websiteEnabled;
-        adoptExistingWebsiteCheckBox.Enabled = websiteEnabled;
-        if (!websiteEnabled)
-        {
-            adoptExistingWebsiteCheckBox.Checked = false;
-        }
+        clearWebsiteFaviconButton.Enabled = websiteEnabled;
+        clearWebsiteSocialCardButton.Enabled = websiteEnabled;
+        usePerAssetBrandingOverridesCheckBox.Enabled = websiteEnabled;
+        websiteBrandingOverridesPanel.Enabled = websiteEnabled && usePerAssetBrandingOverridesCheckBox.Checked;
+        customizeWebsiteOverridesCheckBox.Enabled = websiteEnabled;
+        websiteOverridesPanel.Enabled = websiteEnabled && customizeWebsiteOverridesCheckBox.Checked;
+        websiteOverridesGrid.Enabled = websiteEnabled && customizeWebsiteOverridesCheckBox.Checked;
 
         var initEnabled = runInitCheckBox.Checked;
         initNonInteractiveCheckBox.Enabled = initEnabled;
@@ -644,7 +1035,84 @@ internal sealed class InstallerForm : Form
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             projectPathTextBox.Text = dialog.FileName;
+            var targetRoot = Path.GetDirectoryName(dialog.FileName);
+            if (!string.IsNullOrWhiteSpace(targetRoot))
+            {
+                TryLoadExistingWebsiteOverrides(targetRoot);
+            }
             statusLabel.Text = "Ready";
+        }
+    }
+
+    private void TryLoadExistingWebsiteOverrides(string targetRoot)
+    {
+        try
+        {
+            var overridesPath = Path.Combine(targetRoot, "website", ".ue-tools", "site-overrides.json");
+            if (!File.Exists(overridesPath))
+            {
+                return;
+            }
+
+            var parsed = JsonSerializer.Deserialize<WebsiteOverridesDocument>(File.ReadAllText(overridesPath, Encoding.UTF8), new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+            });
+
+            if (!string.IsNullOrWhiteSpace(parsed?.Theme?.ThemeId))
+            {
+                var selectedTheme = websiteThemeOptions.FirstOrDefault(option => option.Id.Equals(parsed.Theme.ThemeId, StringComparison.OrdinalIgnoreCase));
+                if (selectedTheme is not null)
+                {
+                    websiteThemeComboBox.SelectedItem = selectedTheme;
+                }
+            }
+
+            var storedLogoPath = parsed?.Theme?.LogoPath ?? string.Empty;
+            var storedFaviconPath = parsed?.Theme?.FaviconPath ?? string.Empty;
+            var storedSocialCardPath = parsed?.Theme?.SocialCardPath ?? string.Empty;
+            var hasSpecificOverrides =
+                !string.IsNullOrWhiteSpace(storedFaviconPath) ||
+                !string.IsNullOrWhiteSpace(storedSocialCardPath);
+
+            websiteGlobalIconPathTextBox.Text = !string.IsNullOrWhiteSpace(storedLogoPath)
+                ? storedLogoPath
+                : (!string.IsNullOrWhiteSpace(storedFaviconPath) ? storedFaviconPath : storedSocialCardPath);
+
+            usePerAssetBrandingOverridesCheckBox.Checked = hasSpecificOverrides;
+            websiteLogoPathTextBox.Text = hasSpecificOverrides ? storedLogoPath : string.Empty;
+            websiteFaviconPathTextBox.Text = hasSpecificOverrides ? storedFaviconPath : string.Empty;
+            websiteSocialCardPathTextBox.Text = hasSpecificOverrides ? storedSocialCardPath : string.Empty;
+
+            foreach (DataGridViewRow row in websiteOverridesGrid.Rows)
+            {
+                row.Cells[1].Value = "Auto";
+            }
+
+            var hasExplicitFileOverrides = false;
+            foreach (var entry in parsed?.FileOverrides ?? Enumerable.Empty<WebsiteFileOverrideEntry>())
+            {
+                if (entry is null || string.IsNullOrWhiteSpace(entry.Path) || string.IsNullOrWhiteSpace(entry.Mode))
+                {
+                    continue;
+                }
+
+                foreach (DataGridViewRow row in websiteOverridesGrid.Rows)
+                {
+                    if (string.Equals(row.Cells[0].Value?.ToString(), entry.Path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasExplicitFileOverrides = true;
+                        row.Cells[1].Value = string.Equals(entry.Mode, "project", StringComparison.OrdinalIgnoreCase) ? "Project" : "Suite";
+                        break;
+                    }
+                }
+            }
+
+            customizeWebsiteOverridesCheckBox.Checked = hasExplicitFileOverrides;
+        }
+        catch
+        {
+            // Keep installer UI usable even if the overrides file is malformed.
         }
     }
 
@@ -668,6 +1136,8 @@ internal sealed class InstallerForm : Form
             MessageBox.Show(this, "Could not resolve the selected project folder.", "Project Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
+        TryLoadExistingWebsiteOverrides(targetRoot);
 
         var installerRoot = FindInstallerRoot();
         if (installerRoot is null)
@@ -784,8 +1254,31 @@ internal sealed class InstallerForm : Form
         var runInit = runInitCheckBox.Checked;
         var skipDocsSetup = runInit && skipDocsSetupCheckBox.Checked;
         var skipUnrealSync = runInit && skipUnrealSyncCheckBox.Checked;
+        var selectedInstallMode = (websiteInstallModeComboBox.SelectedItem as WebsiteInstallModeOption)?.Id ?? "MergeExisting";
         var selectedTheme = (websiteThemeComboBox.SelectedItem as WebsiteThemeOption)?.Id ?? DefaultWebsiteThemeId;
-        var logoPath = string.IsNullOrWhiteSpace(websiteLogoPathTextBox.Text) ? null : websiteLogoPathTextBox.Text.Trim();
+        var globalIconPath = string.IsNullOrWhiteSpace(websiteGlobalIconPathTextBox.Text) ? null : websiteGlobalIconPathTextBox.Text.Trim();
+        var logoPath = usePerAssetBrandingOverridesCheckBox.Checked && !string.IsNullOrWhiteSpace(websiteLogoPathTextBox.Text) ? websiteLogoPathTextBox.Text.Trim() : null;
+        var faviconPath = usePerAssetBrandingOverridesCheckBox.Checked && !string.IsNullOrWhiteSpace(websiteFaviconPathTextBox.Text) ? websiteFaviconPathTextBox.Text.Trim() : null;
+        var socialCardPath = usePerAssetBrandingOverridesCheckBox.Checked && !string.IsNullOrWhiteSpace(websiteSocialCardPathTextBox.Text) ? websiteSocialCardPathTextBox.Text.Trim() : null;
+        var forceSuitePaths = new List<string>();
+        var forceProjectPaths = new List<string>();
+        foreach (DataGridViewRow row in websiteOverridesGrid.Rows)
+        {
+            if (row.Cells[0].Value is not string path || string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+
+            var mode = row.Cells[1].Value?.ToString()?.Trim();
+            if (string.Equals(mode, "Suite", StringComparison.OrdinalIgnoreCase))
+            {
+                forceSuitePaths.Add(path);
+            }
+            else if (string.Equals(mode, "Project", StringComparison.OrdinalIgnoreCase))
+            {
+                forceProjectPaths.Add(path);
+            }
+        }
 
         return new InstallOptions(
             RunInit: runInit,
@@ -802,14 +1295,19 @@ internal sealed class InstallerForm : Form
             NoRegen: runInit && !skipUnrealSync && noRegenCheckBox.Checked,
             SkipDocs: skipDocsCheckBox.Checked,
             SkipWebsite: skipWebsiteCheckBox.Checked,
-            AdoptExistingWebsite: !skipWebsiteCheckBox.Checked && adoptExistingWebsiteCheckBox.Checked,
             SkipTests: skipTestsCheckBox.Checked,
             SkipAITools: skipAiToolsCheckBox.Checked,
             SkipArtSourceTools: skipArtSourceToolsCheckBox.Checked,
             SkipCodingStandardsTools: skipCodingStandardsToolsCheckBox.Checked,
             NoBackup: noBackupCheckBox.Checked,
+            WebsiteInstallMode: selectedInstallMode,
             WebsiteTheme: selectedTheme,
-            WebsiteLogoPath: logoPath);
+            WebsiteGlobalIconPath: globalIconPath,
+            WebsiteLogoPath: logoPath,
+            WebsiteFaviconPath: faviconPath,
+            WebsiteSocialCardPath: socialCardPath,
+            WebsiteForceSuitePaths: forceSuitePaths,
+            WebsiteForceProjectPaths: forceProjectPaths);
     }
 
     private int RunInstallerProcess(string pwshPath, string installerRoot, string targetRoot, string projectPath, InstallOptions options, CancellationToken cancellationToken)
@@ -838,13 +1336,39 @@ internal sealed class InstallerForm : Form
         if (options.NoBackup) { args.Add("-NoBackup"); }
         if (!options.SkipWebsite)
         {
-            if (options.AdoptExistingWebsite) { args.Add("-AdoptExistingWebsite"); }
+            args.Add("-WebsiteInstallMode");
+            args.Add(string.IsNullOrWhiteSpace(options.WebsiteInstallMode) ? "MergeExisting" : options.WebsiteInstallMode!);
             args.Add("-WebsiteTheme");
             args.Add(string.IsNullOrWhiteSpace(options.WebsiteTheme) ? DefaultWebsiteThemeId : options.WebsiteTheme!);
+            if (!string.IsNullOrWhiteSpace(options.WebsiteGlobalIconPath))
+            {
+                args.Add("-WebsiteGlobalIconPath");
+                args.Add(options.WebsiteGlobalIconPath!);
+            }
             if (!string.IsNullOrWhiteSpace(options.WebsiteLogoPath))
             {
                 args.Add("-WebsiteLogoPath");
                 args.Add(options.WebsiteLogoPath!);
+            }
+            if (!string.IsNullOrWhiteSpace(options.WebsiteFaviconPath))
+            {
+                args.Add("-WebsiteFaviconPath");
+                args.Add(options.WebsiteFaviconPath!);
+            }
+            if (!string.IsNullOrWhiteSpace(options.WebsiteSocialCardPath))
+            {
+                args.Add("-WebsiteSocialCardPath");
+                args.Add(options.WebsiteSocialCardPath!);
+            }
+            foreach (var path in options.WebsiteForceSuitePaths)
+            {
+                args.Add("-WebsiteForceSuitePath");
+                args.Add(path);
+            }
+            foreach (var path in options.WebsiteForceProjectPaths)
+            {
+                args.Add("-WebsiteForceProjectPath");
+                args.Add(path);
             }
         }
 
@@ -1333,10 +1857,23 @@ internal sealed class InstallerForm : Form
         }
         else
         {
+            websiteInstallModeComboBox.Enabled = false;
             websiteThemeComboBox.Enabled = false;
+            websiteGlobalIconPathTextBox.Enabled = false;
             websiteLogoPathTextBox.Enabled = false;
+            websiteFaviconPathTextBox.Enabled = false;
+            websiteSocialCardPathTextBox.Enabled = false;
+            browseWebsiteGlobalIconButton.Enabled = false;
+            clearWebsiteGlobalIconButton.Enabled = false;
             browseWebsiteLogoButton.Enabled = false;
+            browseWebsiteFaviconButton.Enabled = false;
+            browseWebsiteSocialCardButton.Enabled = false;
             clearWebsiteLogoButton.Enabled = false;
+            clearWebsiteFaviconButton.Enabled = false;
+            clearWebsiteSocialCardButton.Enabled = false;
+            usePerAssetBrandingOverridesCheckBox.Enabled = false;
+            customizeWebsiteOverridesCheckBox.Enabled = false;
+            websiteOverridesGrid.Enabled = false;
             initNonInteractiveCheckBox.Enabled = false;
             skipLfsPullCheckBox.Enabled = false;
             skipUnrealSyncCheckBox.Enabled = false;
@@ -1441,13 +1978,22 @@ internal sealed class InstallerForm : Form
     private void ResetForNextInstall()
     {
         projectPathTextBox.Clear();
+        websiteGlobalIconPathTextBox.Clear();
         websiteLogoPathTextBox.Clear();
+        websiteFaviconPathTextBox.Clear();
+        websiteSocialCardPathTextBox.Clear();
+        usePerAssetBrandingOverridesCheckBox.Checked = false;
+        customizeWebsiteOverridesCheckBox.Checked = false;
         var defaultTheme = websiteThemeOptions.FirstOrDefault(option => option.Id.Equals(DefaultWebsiteThemeId, StringComparison.OrdinalIgnoreCase));
         if (defaultTheme is not null)
         {
             websiteThemeComboBox.SelectedItem = defaultTheme;
         }
-        adoptExistingWebsiteCheckBox.Checked = false;
+        websiteInstallModeComboBox.SelectedItem = websiteInstallModeOptions.FirstOrDefault(option => option.Id.Equals("MergeExisting", StringComparison.OrdinalIgnoreCase));
+        foreach (DataGridViewRow row in websiteOverridesGrid.Rows)
+        {
+            row.Cells[1].Value = "Auto";
+        }
         logTextBox.Clear();
         statusLabel.Text = "Ready";
         SetProgress(0, DefaultProgressMessage, allowDecrease: true);
@@ -1469,11 +2015,39 @@ internal sealed class WebsiteThemeCatalogItem
     public string? CssPath { get; set; }
 }
 
+internal sealed class WebsiteOverridesDocument
+{
+    public WebsiteOverridesTheme? Theme { get; set; }
+    public List<WebsiteFileOverrideEntry>? FileOverrides { get; set; }
+}
+
+internal sealed class WebsiteOverridesTheme
+{
+    public string? ThemeId { get; set; }
+    public string? LogoPath { get; set; }
+    public string? FaviconPath { get; set; }
+    public string? SocialCardPath { get; set; }
+}
+
+internal sealed class WebsiteFileOverrideEntry
+{
+    public string? Path { get; set; }
+    public string? Mode { get; set; }
+}
+
 internal sealed record WebsiteThemeOption(string Id, string Label, string Description)
 {
     public override string ToString()
     {
         return $"{Label} ({Id})";
+    }
+}
+
+internal sealed record WebsiteInstallModeOption(string Id, string Label, string Description)
+{
+    public override string ToString()
+    {
+        return Label;
     }
 }
 
@@ -1492,11 +2066,16 @@ internal sealed record InstallOptions(
     bool NoRegen,
     bool SkipDocs,
     bool SkipWebsite,
-    bool AdoptExistingWebsite,
     bool SkipTests,
     bool SkipAITools,
     bool SkipArtSourceTools,
     bool SkipCodingStandardsTools,
     bool NoBackup,
+    string WebsiteInstallMode,
     string WebsiteTheme,
-    string? WebsiteLogoPath);
+    string? WebsiteGlobalIconPath,
+    string? WebsiteLogoPath,
+    string? WebsiteFaviconPath,
+    string? WebsiteSocialCardPath,
+    List<string> WebsiteForceSuitePaths,
+    List<string> WebsiteForceProjectPaths);

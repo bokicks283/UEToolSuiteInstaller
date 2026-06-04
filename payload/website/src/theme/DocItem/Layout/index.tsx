@@ -31,6 +31,7 @@ import {icons} from 'lucide';
 
 import authoringStyles from './ueAuthoring.module.css';
 import {resolveSourceToken, useDocsAuthoringApi, type DocsContentPayload} from '../../authoring/api';
+import SiteAdminPanel from '../../authoring/SiteAdminPanel';
 import {
   EMOJI_MAP,
   SHORTCODE_INPUT_REGEX,
@@ -1450,6 +1451,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const pageIsEditable = sourceToken.toLowerCase().endsWith('.md');
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightTocCollapsed, setRightTocCollapsed] = useState(false);
+  const [siteAdminOpen, setSiteAdminOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [layoutViewportShift, setLayoutViewportShift] = useState(0);
   const [tocAutoVisible, setTocAutoVisible] = useState(true);
@@ -2795,6 +2797,18 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                       <ToolbarIcon name="panelRight" />
                       <span>TOC</span>
                     </button>
+                    {authoringAvailable ? (
+                      <button
+                        type="button"
+                        className={authoringStyles.layoutToggleButton}
+                        aria-label="Open site settings"
+                        title="Open site settings"
+                        onClick={() => setSiteAdminOpen(true)}
+                      >
+                        <ToolbarIcon name="sparkles" />
+                        <span>Site</span>
+                      </button>
+                    ) : null}
                   </div>
                   {pageIsEditable && authoringAvailable ? (
                     <div className={authoringStyles.editActions}>
@@ -3131,6 +3145,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
 
             <DocItemFooter />
           </article>
+          {authoringAvailable ? <SiteAdminPanel open={siteAdminOpen} onClose={() => setSiteAdminOpen(false)} requestJson={requestJson} /> : null}
           <DocItemPaginator />
         </div>
       </div>
