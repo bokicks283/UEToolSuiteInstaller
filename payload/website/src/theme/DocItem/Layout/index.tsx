@@ -1441,7 +1441,8 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const [renderIgnoredHeadingLabels, setRenderIgnoredHeadingLabels] = useState<Set<string>>(new Set());
   const docTOC = useDocTOC(renderIgnoredHeadingLabels);
   const {metadata} = useDoc();
-  const {requestJson, runtimeReady} = useDocsAuthoringApi();
+  const {requestJson, runtimeAvailable, runtimeReady} = useDocsAuthoringApi();
+  const authoringAvailable = runtimeReady && runtimeAvailable;
   const windowSize = useWindowSize();
   const metadataTitle = useMemo(() => (typeof metadata.title === 'string' ? metadata.title.trim() : ''), [metadata.title]);
 
@@ -1541,7 +1542,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   useEffect(() => {
     setRenderIgnoredHeadingLabels(new Set());
     setRenderSourceBody('');
-    if (!pageIsEditable || !runtimeReady) {
+    if (!pageIsEditable || !authoringAvailable) {
       return undefined;
     }
 
@@ -1561,7 +1562,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     return () => {
       cancelled = true;
     };
-  }, [pageIsEditable, requestJson, runtimeReady, sourceToken]);
+  }, [authoringAvailable, pageIsEditable, requestJson, sourceToken]);
 
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1829,9 +1830,12 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   }, [editor, pageIsEditable, requestJson, sourceToken]);
 
   const enterEditMode = useCallback(async () => {
+    if (!authoringAvailable) {
+      return;
+    }
     setEditMode(true);
     await loadCurrentPage();
-  }, [loadCurrentPage]);
+  }, [authoringAvailable, loadCurrentPage]);
 
   const discardChanges = useCallback(() => {
     if (!loadedContent) {
@@ -2378,7 +2382,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   }, [pickerQuery, pickerTab]);
 
   useEffect(() => {
-    if (!runtimeReady || !pageIsEditable || editMode || autoEditApplied) {
+    if (!authoringAvailable || !pageIsEditable || editMode || autoEditApplied) {
       return;
     }
 
@@ -2393,11 +2397,11 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
     window.history.replaceState({}, '', nextUrl);
-  }, [autoEditApplied, editMode, enterEditMode, pageIsEditable, runtimeReady]);
+  }, [authoringAvailable, autoEditApplied, editMode, enterEditMode, pageIsEditable]);
 
   const hasDesktopToc = Boolean(docTOC.desktop);
-  const compactEditorLayout = viewportWidth > 0 ? viewportWidth <= 1280 : windowSize !== 'desktop' && windowSize !== 'ssr';
-  const compactTocLayout = viewportWidth > 0 ? viewportWidth < 2200 : windowSize !== 'desktop' && windowSize !== 'ssr';
+  const compactEditorLayout = viewportWidth > 0 ? viewportWidth <= 996 : windowSize !== 'desktop' && windowSize !== 'ssr';
+  const compactTocLayout = viewportWidth > 0 ? viewportWidth <= 996 : windowSize !== 'desktop' && windowSize !== 'ssr';
   const showInlineRightToc = Boolean(hasDesktopToc && !rightTocCollapsed && !compactTocLayout);
   const showOverlayRightToc = Boolean(hasDesktopToc && !rightTocCollapsed && compactTocLayout);
   const showVisibleToc = showInlineRightToc || showOverlayRightToc;
@@ -2792,7 +2796,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                       <span>TOC</span>
                     </button>
                   </div>
-                  {pageIsEditable && runtimeReady ? (
+                  {pageIsEditable && authoringAvailable ? (
                     <div className={authoringStyles.editActions}>
                       <button type="button" className={authoringStyles.primaryButton} onClick={() => void enterEditMode()}>
                         Edit
@@ -2803,7 +2807,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
               ) : null}
             </div>
             <DocVersionBadge />
-            {pageIsEditable && runtimeReady && editMode && sourceModeRequired ? (
+            {pageIsEditable && authoringAvailable && editMode && sourceModeRequired ? (
               <div className={authoringStyles.editActions}>
                 <div className={authoringStyles.editModeToolbar}>
                   <IconButton icon="save" label="Save changes" onClick={() => void saveChanges()} disabled={!isDirty || controlsDisabled} />

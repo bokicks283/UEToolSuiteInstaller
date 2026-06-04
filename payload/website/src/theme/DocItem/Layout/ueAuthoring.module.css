@@ -274,6 +274,91 @@
   background: color-mix(in srgb, var(--ifm-color-primary) 14%, transparent);
 }
 
+@media (min-width: 997px) and (max-width: 1439px) {
+  .docLayoutRow,
+  .docLayoutNoToc {
+    --doc-toc-width: 12rem;
+    --doc-toc-gap: 0.7rem;
+    --doc-content-gutter: 0.9rem;
+    --doc-edge-gap: 0.9rem;
+  }
+
+  .docContentColumn {
+    max-width: 55rem;
+  }
+
+  .docLayoutNoToc .docContentColumn {
+    max-width: 60rem;
+  }
+
+  .docHeaderRow {
+    gap: 0.65rem;
+  }
+
+  .viewModeActions {
+    gap: 0.25rem;
+  }
+
+  .layoutControls {
+    gap: 0.25rem;
+  }
+
+  .layoutToggleButton,
+  .primaryButton,
+  .secondaryButton {
+    min-height: 2rem;
+    padding: 0 0.52rem;
+    font-size: 0.75rem;
+  }
+
+  .editModeToolbar {
+    gap: 0.25rem;
+  }
+
+  .docTocColumn :global(.table-of-contents) {
+    padding: 0 0.28rem 1rem 0.58rem;
+    font-size: 0.92rem;
+  }
+
+  .docTocColumn :global(.table-of-contents__link) {
+    font-size: 0.91rem;
+  }
+
+  .editorShell {
+    grid-template-columns: minmax(5.2rem, 5.6rem) minmax(0, 1fr);
+    gap: 0.55rem;
+  }
+
+  .editorToolbarRail {
+    top: calc(var(--ifm-navbar-height) + 0.65rem);
+  }
+
+  .editorToolbar {
+    gap: 0.3rem;
+    padding: 0.32rem;
+  }
+
+  .toolbarGroup {
+    gap: 0.12rem;
+    padding: 0.12rem;
+  }
+
+  .toolbarButton {
+    width: 1.48rem;
+    height: 1.48rem;
+  }
+
+  .toolbarIcon {
+    width: 0.78rem;
+    height: 0.78rem;
+  }
+
+  .toolbarText {
+    min-width: 1.18rem;
+    font-size: 0.62rem;
+  }
+}
+
 @media (min-width: 997px) {
 }
 
@@ -301,7 +386,7 @@
   }
 }
 
-@media (max-width: 2200px) {
+@media (min-width: 997px) and (max-width: 1439px) {
   .docHeaderRow,
   .viewModeActions {
     flex-wrap: wrap;
@@ -492,7 +577,7 @@
   background: color-mix(in srgb, var(--ifm-color-primary) 10%, var(--ifm-background-color));
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 996px) {
   .docLayoutRow,
   .docLayoutNoToc {
     --doc-content-gutter: clamp(0.85rem, 2.4vw, 1.5rem);
@@ -526,7 +611,7 @@
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 996px) {
   .editorToolbar {
     grid-template-columns: 1fr;
   }

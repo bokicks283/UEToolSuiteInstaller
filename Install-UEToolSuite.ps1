@@ -196,7 +196,8 @@ function Copy-ToBackup {
     [Parameter(Mandatory)][string]$TargetRoot,
     [Parameter(Mandatory)][string]$RelativePath,
     [Parameter(Mandatory)][string]$ExistingPath,
-    [Parameter(Mandatory)][string]$BackupRoot
+    [Parameter(Mandatory)][string]$BackupRoot,
+    [string[]]$ExcludeDirectoryPrefixes = @()
   )
 
   if ($NoBackup) { return }
@@ -207,7 +208,43 @@ function Copy-ToBackup {
     New-Item -ItemType Directory -Force -Path $backupParent | Out-Null
   }
 
-  Copy-Item -LiteralPath $ExistingPath -Destination $backupPath -Recurse -Force
+  $sourceIsDirectory = Test-Path -LiteralPath $ExistingPath -PathType Container
+  $normalizedExcludes = @($ExcludeDirectoryPrefixes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Replace("/", "\").TrimStart("\") })
+  if (-not $sourceIsDirectory -or $normalizedExcludes.Count -eq 0) {
+    Copy-Item -LiteralPath $ExistingPath -Destination $backupPath -Recurse -Force
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $backupPath -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $backupPath | Out-Null
+  }
+
+  $sourceRoot = [System.IO.Path]::GetFullPath($ExistingPath)
+  Get-ChildItem -LiteralPath $ExistingPath -Recurse -Force | ForEach-Object {
+    $relativeChildPath = [System.IO.Path]::GetRelativePath($sourceRoot, $_.FullName)
+    if ($relativeChildPath -eq ".") {
+      return
+    }
+
+    $normalizedRelativeChildPath = $relativeChildPath.Replace("/", "\").TrimStart("\")
+    foreach ($prefix in $normalizedExcludes) {
+      if ($normalizedRelativeChildPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+      }
+    }
+
+    $destinationPath = Join-Path $backupPath $relativeChildPath
+    if ($_.PSIsContainer) {
+      New-Item -ItemType Directory -Force -Path $destinationPath | Out-Null
+      return
+    }
+
+    $destinationParent = Split-Path -Path $destinationPath -Parent
+    if ($destinationParent) {
+      New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
+    }
+    Copy-Item -LiteralPath $_.FullName -Destination $destinationPath -Force
+  }
 }
 
 function Write-Utf8NoBomFile {
@@ -1414,7 +1451,17 @@ if (-not $SkipWebsite -and $websiteInstallMode -ne "preserve_existing") {
 if ($websiteInstallMode -eq "adopt_existing") {
   $existingWebsitePath = Join-Path $resolvedTargetRoot "website"
   if (Test-Path -LiteralPath $existingWebsitePath) {
-    Copy-ToBackup -TargetRoot $resolvedTargetRoot -RelativePath "website-adopt-snapshot" -ExistingPath $existingWebsitePath -BackupRoot $backupRoot
+    Copy-ToBackup `
+      -TargetRoot $resolvedTargetRoot `
+      -RelativePath "website-adopt-snapshot" `
+      -ExistingPath $existingWebsitePath `
+      -BackupRoot $backupRoot `
+      -ExcludeDirectoryPrefixes @(
+        "node_modules\",
+        "build\",
+        ".docusaurus\",
+        ".cache\"
+      )
     Info "Backed up existing website before adoption: $existingWebsitePath"
   }
 }

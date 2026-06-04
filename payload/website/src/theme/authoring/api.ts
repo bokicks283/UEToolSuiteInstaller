@@ -144,19 +144,20 @@ async function probeApiBase(apiBase: string): Promise<boolean> {
   }
 }
 
-async function resolveReachableApiBase(preferredApiBase: string): Promise<string> {
+async function resolveReachableApiBase(preferredApiBase: string): Promise<{apiBaseUrl: string; runtimeAvailable: boolean}> {
   const candidates = buildApiCandidates(preferredApiBase);
   for (const candidate of candidates) {
     if (await probeApiBase(candidate)) {
-      return candidate;
+      return {apiBaseUrl: candidate, runtimeAvailable: true};
     }
   }
-  return candidates[0];
+  return {apiBaseUrl: candidates[0], runtimeAvailable: false};
 }
 
 export function useDocsAuthoringApi() {
   const [apiBaseUrl, setApiBaseUrl] = useState<string>(DEFAULT_EDITOR_API_URL);
   const [runtimeReady, setRuntimeReady] = useState<boolean>(false);
+  const [runtimeAvailable, setRuntimeAvailable] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,9 +180,10 @@ export function useDocsAuthoringApi() {
       } catch {
         // Keep default loopback API URL.
       } finally {
+        const resolvedApi = await resolveReachableApiBase(preferredApiBase);
         if (!cancelled) {
-          const reachableApiBase = await resolveReachableApiBase(preferredApiBase);
-          setApiBaseUrl(reachableApiBase);
+          setApiBaseUrl(resolvedApi.apiBaseUrl);
+          setRuntimeAvailable(resolvedApi.runtimeAvailable);
           setRuntimeReady(true);
         }
       }
@@ -213,6 +215,7 @@ export function useDocsAuthoringApi() {
   return {
     apiBaseUrl,
     docsRuntimeBaseUrl,
+    runtimeAvailable,
     runtimeReady,
     requestJson,
   };

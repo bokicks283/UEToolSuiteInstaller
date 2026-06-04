@@ -167,7 +167,7 @@ function ActionButton({
 }
 
 export default function DocSidebarWrapper(props: Props): React.ReactElement {
-  const {runtimeReady, requestJson} = useDocsAuthoringApi();
+  const {runtimeAvailable, runtimeReady, requestJson} = useDocsAuthoringApi();
   const [tree, setTree] = useState<DocsTreePayload>({root: 'Docs', children: []});
   const [busy, setBusy] = useState(false);
   const [errorText, setErrorText] = useState('');
@@ -214,7 +214,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
   );
 
   const loadTree = useCallback(async () => {
-    if (!runtimeReady) {
+    if (!runtimeReady || !runtimeAvailable) {
       return;
     }
     try {
@@ -225,7 +225,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : 'Failed to load docs structure.');
     }
-  }, [requestJson, runtimeReady]);
+  }, [requestJson, runtimeAvailable, runtimeReady]);
 
   useEffect(() => {
     void loadTree();
@@ -592,7 +592,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
     [beginCreate, busy, currentRoute, deleteTarget, dragSource, dropTargetMode, dropTargetPath, expandedSections, hoveredPath, moveRelativeToNode, resolveNodeRoute],
   );
 
-  if (!runtimeReady) {
+  if (!runtimeReady || !runtimeAvailable) {
     return <DocSidebar {...props} />;
   }
 
