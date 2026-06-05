@@ -71,6 +71,22 @@
   background-color: color-mix(in srgb, var(--ifm-color-primary) 10%, transparent);
 }
 
+@media (min-width: 997px) and (max-width: 1200px) {
+  .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__link),
+  .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__list-item-collapsible > .menu__link) {
+    font-size: 1rem;
+    line-height: 1.28;
+    padding-right: 7.1rem;
+  }
+
+  .sidebarAuthoring :global(.menu__list-item-collapsible > .menu__caret) {
+    width: 1rem;
+    height: 1rem;
+    min-width: 1rem;
+    margin-right: 0.36rem;
+  }
+}
+
 .sidebarAuthoring :global(.menu__list-item[data-ue-drop-target='true'] > .menu__link),
 .sidebarAuthoring :global(.menu__list-item[data-ue-drop-target='true'] > .menu__list-item-collapsible > .menu__link) {
   outline: 2px solid var(--ifm-color-primary);
@@ -227,6 +243,18 @@
   font-size: 0.84rem;
   background: var(--ifm-background-color);
   color: var(--ifm-font-color-base);
+}
+
+.dialogLabel {
+  display: block;
+  margin-top: 0.7rem;
+}
+
+.dialogLabel span {
+  display: block;
+  margin-bottom: 0.28rem;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .dialogInput:focus {

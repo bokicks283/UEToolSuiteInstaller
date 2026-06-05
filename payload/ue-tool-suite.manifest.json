@@ -24,15 +24,13 @@
       "Scripts/Tests"
     ],
     "docs": [
+      "Docs/_domains.json",
       "Docs/README.md",
-      "Docs/Setup.md",
-      "Docs/Testing.md",
-      "Docs/AI",
-      "Docs/DocsSite",
-      "Docs/Pipeline"
+      "Docs/WorkflowStandards",
+      "Docs/ProjectDocs"
     ],
     "codingStandards": [
-      "Docs/CodingStandards"
+      "Docs/WorkflowStandards/CodingStandards"
     ],
     "docsTools": [
       "Scripts/Docs"

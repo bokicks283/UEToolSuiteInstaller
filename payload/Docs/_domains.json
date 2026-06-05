@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "domains": [
+    {
+      "key": "workflow-standards",
+      "dirName": "WorkflowStandards",
+      "sidebarId": "workflow-standards-sidebar",
+      "label": "Workflow & Standards",
+      "position": 10,
+      "landingDoc": "WorkflowStandards/README",
+      "description": "Best practices, setup guidance, and technical standards for the project.",
+      "ownedRoots": ["WorkflowStandards"],
+      "ownedDocs": []
+    },
+    {
+      "key": "project-docs",
+      "dirName": "ProjectDocs",
+      "sidebarId": "project-docs-sidebar",
+      "label": "Project Docs",
+      "position": 20,
+      "landingDoc": "ProjectDocs/README",
+      "description": "Project-specific design, gameplay, and implementation documentation.",
+      "ownedRoots": ["ProjectDocs"],
+      "ownedDocs": [],
+      "catchAll": true
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "payloadVersion": "1.0.0",
-  "generatedUtc": "2026-06-04T18:19:55Z",
+  "generatedUtc": "2026-06-05T00:21:14Z",
   "files": [
     {
       "relativePath": "website/.gitignore",
@@ -9,9 +9,19 @@
       "sha256": "7c2bf6ba263ba149a2885847a9f7186e0d7af58faae3e01f2e69a7465f7cfecc"
     },
     {
+      "relativePath": "website/.ue-tools/site-overrides.json",
+      "category": "shell",
+      "sha256": "6ec89cba4023fa60311c2b611d3030cb7ebb8645bc87302621b2da7c8599166d"
+    },
+    {
       "relativePath": "website/docusaurus.config.ts",
       "category": "overridable",
-      "sha256": "c60e19181dbbeccc16edc3ed6187147656be19d2b0a59cfd72d48cd9a5bfc1ad"
+      "sha256": "cb49ff6aafb6cbe7bc968c55049c6a23ba71c6ff6755fed33dd024d9dbcef3a1"
+    },
+    {
+      "relativePath": "website/domainCatalog.ts",
+      "category": "shell",
+      "sha256": "35ac501ff2d603adf1776b376ea61fe0d7ff0c9c58809f0c9a403360fed689c2"
     },
     {
       "relativePath": "website/package-lock.json",
@@ -31,7 +41,7 @@
     {
       "relativePath": "website/sidebars.ts",
       "category": "shell",
-      "sha256": "9df251b8d06bcdbf68c913bbd4f0d67267610d71f705200746a11d5bf62a2296"
+      "sha256": "4f0155395dc3b38b943b8cc32067ad8405325796f3fe7f13ee62412c22c33df9"
     },
     {
       "relativePath": "website/src/clientModules/lucideShortcodes.ts",
@@ -41,7 +51,7 @@
     {
       "relativePath": "website/src/css/custom.css",
       "category": "overridable",
-      "sha256": "94a2cadfcb188c15ddc6fcaf0cd221a2061da37e6697f20068db3a487e816d56"
+      "sha256": "c5df7e230ceb27ac10cbdfe5d79bfb4b14a1a69ac1ee3eb3d33431944e80c600"
     },
     {
       "relativePath": "website/src/pages/index.module.css",
@@ -51,12 +61,12 @@
     {
       "relativePath": "website/src/pages/index.tsx",
       "category": "overridable",
-      "sha256": "06c2b2f80a30ed0370923f6da0e2de755f0c35b1a1800422e2193bd5931b7df7"
+      "sha256": "8e54d4aed646101983e4005d261affd5807f74da8823b367111aeacd4ff2deae"
     },
     {
       "relativePath": "website/src/theme/authoring/api.ts",
       "category": "shell",
-      "sha256": "35e7cc3952bc218a6d4778623625e89cbd853fcb02e61a29a7783bb24b57016a"
+      "sha256": "eba0c8e539b2f719e2a09fadf1cb7004cc016076a21b6fb2cb3027af42559cbc"
     },
     {
       "relativePath": "website/src/theme/authoring/shortcodes.ts",
@@ -66,27 +76,27 @@
     {
       "relativePath": "website/src/theme/authoring/SiteAdminPanel.tsx",
       "category": "shell",
-      "sha256": "30360251b140c8010d5e247df8c14fe50115d52366f6984860cc1514f6cda636"
+      "sha256": "8413d92dfcf442ab7c394504051fa484c97c8f8b1223208374de329efff67ca9"
     },
     {
       "relativePath": "website/src/theme/DocItem/Layout/index.tsx",
       "category": "shell",
-      "sha256": "bee6968efd49c9336a799d255d3cbd971fdeb88368db0ddd09b866398e7953f9"
+      "sha256": "c0c03e14ea910585db157a292ff92c6403a06e2db67f35cfa0b40f56d4e3099d"
     },
     {
       "relativePath": "website/src/theme/DocItem/Layout/ueAuthoring.module.css",
       "category": "shell",
-      "sha256": "fc118412679acdb5991efd87d77e6cc16a30265d61542c4a324d59334dfbdd8e"
+      "sha256": "f93d293ce539cb6550ec15e205c158838dfa4ccc30c6b516cd0aa9fe7ce00ae9"
     },
     {
       "relativePath": "website/src/theme/DocSidebar/index.module.css",
       "category": "shell",
-      "sha256": "a082f9f9003ec34ce27124c86938ae89c92d2410b101d4dac2601601f4bb0886"
+      "sha256": "c47957018b901007cb48d647431c5b2dfbad4fe558c5b4dc431e5ce989cedd1a"
     },
     {
       "relativePath": "website/src/theme/DocSidebar/index.tsx",
       "category": "shell",
-      "sha256": "72e9ebd24bf27e7e89455453108272298363864b46f262cbdc17a922bcc8e229"
+      "sha256": "b65e26711583afead5a39c5fb69a98476ab23b04f574af09701910b209b1dc25"
     },
     {
       "relativePath": "website/static/.nojekyll",

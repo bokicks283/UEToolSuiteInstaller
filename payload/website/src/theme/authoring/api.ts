@@ -12,7 +12,29 @@ export type DocsTreeNode = {
 
 export type DocsTreePayload = {
   root: string;
+  domainPath?: string;
+  sidebarId?: string;
   children: DocsTreeNode[];
+};
+
+export type DocsDomain = {
+  key?: string;
+  path: string;
+  label: string;
+  sidebarId: string;
+  readmePath?: string;
+  description?: string;
+  ownedRoots?: string[];
+  ownedDocs?: string[];
+  catchAll?: boolean;
+};
+
+export type DocsDomainsPayload = {
+  domains: DocsDomain[];
+  generalDomain?: {
+    label: string;
+    sidebarId: string;
+  } | null;
 };
 
 export type DocsContentPayload = {
@@ -114,6 +136,19 @@ export function getDocsRouteFromToken(token: string): string {
     .join('/');
 
   return slugPath ? `/docs/${slugPath}` : '/docs/';
+}
+
+export function getSidebarIdFromDomainPath(domainPath: string): string {
+  const normalized = toPosixPath((domainPath || '').trim()).replace(/^\/+|\/+$/g, '');
+  if (!normalized) {
+    return 'general-sidebar';
+  }
+  const slug = normalized
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  return `${slug}-sidebar`;
 }
 
 function buildApiCandidates(preferredApiBase: string): string[] {

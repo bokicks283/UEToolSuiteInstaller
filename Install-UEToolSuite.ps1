@@ -1735,6 +1735,7 @@ function Invoke-ManagedDocsSmartUpdate {
   $index = Read-DocsManagedFileIndex -PayloadRoot $PayloadRoot -PayloadManifest $PayloadManifest
   $selectedFiles = @($index.Files | Where-Object {
       $_.category.Equals("docs", [System.StringComparison]::OrdinalIgnoreCase) -or
+      $_.category.Equals("docsShell", [System.StringComparison]::OrdinalIgnoreCase) -or
       ($IncludeCodingStandards -and $_.category.Equals("codingStandards", [System.StringComparison]::OrdinalIgnoreCase))
     })
   if ($selectedFiles.Count -eq 0) {
@@ -1755,6 +1756,14 @@ function Invoke-ManagedDocsSmartUpdate {
     MissingPreserved = New-Object System.Collections.Generic.List[object]
   }
   $reportRoot = Join-Path $TargetRoot ".ue-tools-installer-updates\$InstallStamp"
+  $docsRoot = Join-Path $TargetRoot "Docs"
+  $targetHasExistingDocsTree = $false
+  if (Test-Path -LiteralPath $docsRoot -PathType Container) {
+    $existingDocsArtifacts = @(Get-ChildItem -LiteralPath $docsRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+        $_.Extension -in @(".md", ".mdx", ".json") -or $_.Name.Equals("_category_.json", [System.StringComparison]::OrdinalIgnoreCase)
+      })
+    $targetHasExistingDocsTree = $existingDocsArtifacts.Count -gt 0
+  }
 
   foreach ($file in $selectedFiles) {
     $relativePath = ConvertTo-RelativeForwardSlashPath -RelativePath ([string]$file.relativePath)
@@ -1771,6 +1780,7 @@ function Invoke-ManagedDocsSmartUpdate {
     $payloadHash = ([string]$file.sha256).ToLowerInvariant()
     $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     $category = [string]$file.category
+    $isDocsShell = $category.Equals("docsShell", [System.StringComparison]::OrdinalIgnoreCase)
     $ledgerEntry = $entriesByPath[$relativePath]
     $overrideMode = if ($OverrideMap.ContainsKey($relativePath)) { [string]$OverrideMap[$relativePath] } else { "" }
 
@@ -1867,6 +1877,16 @@ function Invoke-ManagedDocsSmartUpdate {
       $report.MissingPreserved.Add([pscustomobject]@{
         relativePath = $relativePath
         reason = "missing-from-target"
+        candidateRelativePath = $candidateRelative
+      }) | Out-Null
+      continue
+    }
+
+    if ($targetHasExistingDocsTree -and -not $isDocsShell -and $overrideMode -ne "suite") {
+      $candidateRelative = Copy-DocsUpdateCandidate -ReportRoot $reportRoot -RelativePath $relativePath -SourcePath $sourcePath -TargetRoot $TargetRoot
+      $report.MissingPreserved.Add([pscustomobject]@{
+        relativePath = $relativePath
+        reason = "existing-project-docs-tree"
         candidateRelativePath = $candidateRelative
       }) | Out-Null
       continue

@@ -26,5 +26,5 @@ Write-Host "[CodingStandards] This replaces the previous local snapshot in place
 Write-Host "[CodingStandards] Next:"
 Write-Host "  1) Fill SOURCE.md"
 Write-Host "  2) Run Parse-UnrealCppStandard.ps1"
-Write-Host "  3) Review Docs/CodingStandards/UnrealCppStandard.md"
+Write-Host "  3) Review Docs/WorkflowStandards/CodingStandards/UnrealCppStandard.md"
 Write-Host "  4) Commit the refreshed current snapshot and docs page in docs-only scope"

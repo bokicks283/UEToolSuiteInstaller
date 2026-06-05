@@ -5,7 +5,7 @@ import type {PropSidebarItem} from '@docusaurus/plugin-content-docs';
 import {createPortal} from 'react-dom';
 
 import styles from './index.module.css';
-import {getDocsRouteFromToken, useDocsAuthoringApi, type DocsNodeType, type DocsTreeNode, type DocsTreePayload} from '../authoring/api';
+import {getDocsRouteFromToken, getSectionPathFromToken, useDocsAuthoringApi, type DocsDomain, type DocsDomainsPayload, type DocsNodeType, type DocsTreeNode, type DocsTreePayload} from '../authoring/api';
 
 type Props = ComponentProps<typeof DocSidebar>;
 
@@ -39,6 +39,10 @@ type SidebarRouteMaps = {
   byDocId: Record<string, string>;
   byLabel: Record<string, string>;
 };
+
+type SidebarTreeScope =
+  | {general: true; rootPath: ''; sidebarId: 'general-sidebar'}
+  | {general: false; rootPath: string; sidebarId: string};
 
 function normalizeRoute(value: string): string {
   return value.replace(/\/+$/g, '').toLowerCase() || '/docs';
@@ -81,12 +85,128 @@ function buildSidebarRouteMaps(items: readonly PropSidebarItem[]): SidebarRouteM
           byLabel[item.label.toLowerCase()] = item.href;
         }
         visit(item.items);
+        continue;
       }
     }
   };
 
   visit(items);
   return {byDocId, byLabel};
+}
+
+function collectSidebarDocIds(items: readonly PropSidebarItem[]): string[] {
+  const docIds: string[] = [];
+  const visit = (nodes: readonly PropSidebarItem[]) => {
+    for (const item of nodes) {
+      if (item.type === 'link') {
+        if (item.docId) {
+          docIds.push(normalizeDocId(item.docId));
+        }
+        continue;
+      }
+      if (item.type === 'category') {
+        visit(item.items);
+        continue;
+      }
+    }
+  };
+  visit(items);
+  return docIds;
+}
+
+function inferSidebarTreeScope(items: readonly PropSidebarItem[], domains: readonly DocsDomain[]): SidebarTreeScope | null {
+  const docIds = collectSidebarDocIds(items);
+  if (docIds.length === 0) {
+    return null;
+  }
+
+  let bestMatch: {domain: DocsDomain; score: number} | null = null;
+  for (const domain of domains) {
+    const ownedRoots = domain.ownedRoots ?? [];
+    const ownedDocs = domain.ownedDocs ?? [];
+    let score = 0;
+
+    for (const docId of docIds) {
+      if (ownedDocs.includes(docId)) {
+        score += 3;
+      }
+      if (ownedRoots.some((root) => docId === root || docId.startsWith(`${root}/`))) {
+        score += 2;
+      }
+    }
+
+    if (score > 0 && (!bestMatch || score > bestMatch.score)) {
+      bestMatch = {domain, score};
+    }
+  }
+
+  if (bestMatch) {
+    return {
+      general: false,
+      rootPath: bestMatch.domain.path,
+      sidebarId: bestMatch.domain.sidebarId,
+    };
+  }
+
+  if (docIds.every((docId) => docId.split('/').filter(Boolean).length <= 1)) {
+    return {general: true, rootPath: '', sidebarId: 'general-sidebar'};
+  }
+
+  const firstDocId = docIds.find(Boolean);
+  if (!firstDocId) {
+    return null;
+  }
+  return {
+    general: false,
+    rootPath: firstDocId.split('/').filter(Boolean)[0] ?? '',
+    sidebarId: `${(firstDocId.split('/').filter(Boolean)[0] ?? '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .replace(/[^A-Za-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase()}-sidebar`,
+  };
+}
+
+function buildSidebarSeedTree(items: readonly PropSidebarItem[]): DocsTreePayload {
+  let fallbackCounter = 0;
+
+  const buildNodes = (nodes: readonly PropSidebarItem[], parentToken: string): DocsTreeNode[] =>
+    nodes.map((item, index) => {
+      if (item.type === 'link') {
+        const path = item.docId ? normalizeDocId(item.docId) : `${parentToken}/link-${fallbackCounter++}`;
+        return {
+          type: 'page',
+          path,
+          name: item.label,
+          position: index + 1,
+        };
+      }
+
+      if (item.type === 'html') {
+        return {
+          type: 'page',
+          path: `${parentToken}/html-${fallbackCounter++}`,
+          name: 'Info',
+          position: index + 1,
+        };
+      }
+
+      const children = buildNodes(item.items, `${parentToken}/${normalizeToken(item.label) || `category-${fallbackCounter++}`}`);
+      const firstChildPath = children[0]?.path ?? `${parentToken}/category-${fallbackCounter++}`;
+      const path = getSectionPathFromToken(firstChildPath) || `${parentToken}/${normalizeToken(item.label) || `category-${fallbackCounter++}`}`;
+      return {
+        type: 'section',
+        path,
+        name: item.label,
+        position: index + 1,
+        children,
+      };
+    });
+
+  return {
+    root: 'Docs',
+    children: buildNodes(items, ''),
+  };
 }
 
 function SidebarIcon({name}: {name: 'plus' | 'folderPlus' | 'filePlus' | 'trash' | 'check' | 'x'}): React.ReactElement {
@@ -167,8 +287,15 @@ function ActionButton({
 }
 
 export default function DocSidebarWrapper(props: Props): React.ReactElement {
+  const sidebarItems = useMemo(() => ((props.sidebar ?? []) as readonly PropSidebarItem[]), [props.sidebar]);
+  const [stableSidebarItems, setStableSidebarItems] = useState<readonly PropSidebarItem[]>(sidebarItems);
+  const effectiveSidebarItems = sidebarItems.length > 0 ? sidebarItems : stableSidebarItems;
   const {runtimeAvailable, runtimeReady, requestJson} = useDocsAuthoringApi();
-  const [tree, setTree] = useState<DocsTreePayload>({root: 'Docs', children: []});
+  const [domains, setDomains] = useState<DocsDomain[]>([]);
+  const inferredScope = useMemo(() => inferSidebarTreeScope(effectiveSidebarItems, domains), [domains, effectiveSidebarItems]);
+  const seedTree = useMemo(() => buildSidebarSeedTree(effectiveSidebarItems), [effectiveSidebarItems]);
+  const [tree, setTree] = useState<DocsTreePayload>(seedTree);
+  const [treeHydrated, setTreeHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [statusText, setStatusText] = useState('');
@@ -180,10 +307,43 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
   const [createName, setCreateName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<TreeTarget | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  const [currentRoute, setCurrentRoute] = useState(() => (typeof window === 'undefined' ? '/docs/' : window.location.pathname));
+  const [currentRoute, setCurrentRoute] = useState(() => props.path || (typeof window === 'undefined' ? '/docs/' : window.location.pathname));
   const shellRef = useRef<HTMLDivElement>(null);
-  const sidebarRouteMaps = useMemo(() => buildSidebarRouteMaps((props.sidebar ?? []) as readonly PropSidebarItem[]), [props.sidebar]);
+  const sidebarRouteMaps = useMemo(() => buildSidebarRouteMaps(sidebarItems), [sidebarItems]);
   const dialogRoot = typeof document === 'undefined' ? null : document.body;
+  const [createLinkType, setCreateLinkType] = useState<'doc' | 'generated-index' | 'none'>('doc');
+  const [generatedIndexTitle, setGeneratedIndexTitle] = useState('');
+  const [generatedIndexSlug, setGeneratedIndexSlug] = useState('');
+  const [generatedIndexDescription, setGeneratedIndexDescription] = useState('');
+
+  useEffect(() => {
+    if (sidebarItems.length > 0) {
+      setStableSidebarItems(sidebarItems);
+    }
+  }, [sidebarItems]);
+
+  useEffect(() => {
+    if (!runtimeAvailable) {
+      return;
+    }
+
+    let cancelled = false;
+    void requestJson<{ok: true; domains: DocsDomainsPayload}>('/api/domains')
+      .then((payload) => {
+        if (!cancelled) {
+          setDomains(payload.domains.domains ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDomains([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [requestJson, runtimeAvailable]);
 
   const resolveNodeRoute = useCallback(
     (node: DocsTreeNode): string => {
@@ -213,23 +373,28 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
     [sidebarRouteMaps],
   );
 
-  const loadTree = useCallback(async () => {
-    if (!runtimeReady || !runtimeAvailable) {
+  const refreshTreeFromApi = useCallback(async () => {
+    if (!runtimeReady || !runtimeAvailable || !inferredScope) {
       return;
     }
     try {
-      const payload = await requestJson<{ok: true; tree: DocsTreePayload}>('/api/tree');
+      const query = inferredScope.general ? '/api/tree?general=1' : `/api/tree?sidebarId=${encodeURIComponent(inferredScope.sidebarId)}`;
+      const payload = await requestJson<{ok: true; tree: DocsTreePayload}>(query);
       setTree(payload.tree);
+      setTreeHydrated(true);
       setErrorText('');
       setStatusText('');
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : 'Failed to load docs structure.');
     }
-  }, [requestJson, runtimeAvailable, runtimeReady]);
+  }, [inferredScope, requestJson, runtimeAvailable, runtimeReady]);
 
   useEffect(() => {
-    void loadTree();
-  }, [loadTree]);
+    if (effectiveSidebarItems.length > 0) {
+      setTree(seedTree);
+      setTreeHydrated(true);
+    }
+  }, [effectiveSidebarItems.length, seedTree]);
 
   useEffect(() => {
     const handleRouteChange = () => {
@@ -242,6 +407,12 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
       window.removeEventListener('hashchange', handleRouteChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (props.path) {
+      setCurrentRoute(props.path);
+    }
+  }, [props.path]);
 
   useEffect(() => {
     if (!tree.children.length) {
@@ -299,7 +470,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
             insertIndex,
           }),
         });
-        await loadTree();
+        await refreshTreeFromApi();
         setStatusText('Sidebar order updated.');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Move failed.';
@@ -309,14 +480,14 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
         } else {
           setStatusText('');
         }
-        await loadTree();
+        await refreshTreeFromApi();
       } finally {
         setBusy(false);
         setDropTargetPath('');
         setDragSource(null);
       }
     },
-    [loadTree, requestJson],
+    [refreshTreeFromApi, requestJson],
   );
 
   const getDropIntent = useCallback((node: DocsTreeNode, parentPath: string, siblingIndex: number, mode: DropMode): DropIntent => {
@@ -351,6 +522,10 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
   const beginCreate = useCallback((target: TreeTarget) => {
     setCreateName('');
     setCreateContext({mode: null, target});
+    setCreateLinkType('doc');
+    setGeneratedIndexTitle('');
+    setGeneratedIndexSlug('');
+    setGeneratedIndexDescription('');
     setErrorText('');
     setStatusText('');
   }, []);
@@ -380,6 +555,10 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
                 parentPath: target.parentPath,
                 sectionName: trimmedName,
                 title: trimmedName,
+                linkType: createLinkType,
+                generatedIndexTitle: createLinkType === 'generated-index' ? generatedIndexTitle.trim() || trimmedName : '',
+                generatedIndexSlug: createLinkType === 'generated-index' ? generatedIndexSlug.trim() : '',
+                generatedIndexDescription: createLinkType === 'generated-index' ? generatedIndexDescription.trim() : '',
               }),
       });
 
@@ -393,7 +572,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
         }),
       });
 
-      await loadTree();
+      await refreshTreeFromApi();
       setCreateContext(null);
       setCreateName('');
       setStatusText(`Created ${mode}: ${createPayload.result.path}`);
@@ -406,7 +585,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
     } finally {
       setBusy(false);
     }
-  }, [createContext, createName, loadTree, requestJson]);
+  }, [createContext, createLinkType, createName, generatedIndexDescription, generatedIndexSlug, generatedIndexTitle, refreshTreeFromApi, requestJson]);
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) {
@@ -430,7 +609,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
       });
 
       setDeleteTarget(null);
-      await loadTree();
+      await refreshTreeFromApi();
       setStatusText(`Deleted ${deleteTarget.name}`);
       if (shouldRedirect) {
         window.location.assign('/docs/');
@@ -441,7 +620,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
     } finally {
       setBusy(false);
     }
-  }, [currentRoute, deleteTarget, loadTree, requestJson, resolveNodeRoute]);
+  }, [currentRoute, deleteTarget, refreshTreeFromApi, requestJson, resolveNodeRoute]);
 
   const renderNode = useCallback(
     (node: DocsTreeNode, parentPath: string, siblingIndex: number): React.ReactElement => {
@@ -456,7 +635,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
         name: node.name,
         node,
       };
-      const showActions = hoveredPath === node.path;
+      const showActions = treeHydrated && hoveredPath === node.path;
       const isDropTarget = dropTargetPath === node.path;
       const rowActions = (
         <div
@@ -592,7 +771,7 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
     [beginCreate, busy, currentRoute, deleteTarget, dragSource, dropTargetMode, dropTargetPath, expandedSections, hoveredPath, moveRelativeToNode, resolveNodeRoute],
   );
 
-  if (!runtimeReady || !runtimeAvailable) {
+  if (!runtimeReady || !runtimeAvailable || !inferredScope) {
     return <DocSidebar {...props} />;
   }
 
@@ -639,6 +818,52 @@ export default function DocSidebarWrapper(props: Props): React.ReactElement {
                     disabled={busy}
                     autoFocus
                   />
+                ) : null}
+                {createContext.mode === 'section' ? (
+                  <>
+                    <label className={styles.dialogLabel}>
+                      <span>Section type</span>
+                      <select className={styles.dialogInput} value={createLinkType} onChange={(event) => setCreateLinkType(event.target.value as 'doc' | 'generated-index' | 'none')} disabled={busy}>
+                        <option value="doc">Linked README page</option>
+                        <option value="generated-index">Generated index landing page</option>
+                        <option value="none">Container only</option>
+                      </select>
+                    </label>
+                    {createLinkType === 'generated-index' ? (
+                      <>
+                        <label className={styles.dialogLabel}>
+                          <span>Generated index title</span>
+                          <input
+                            className={styles.dialogInput}
+                            value={generatedIndexTitle}
+                            onChange={(event) => setGeneratedIndexTitle(event.target.value)}
+                            placeholder="Leave blank to use the section name"
+                            disabled={busy}
+                          />
+                        </label>
+                        <label className={styles.dialogLabel}>
+                          <span>Generated index slug</span>
+                          <input
+                            className={styles.dialogInput}
+                            value={generatedIndexSlug}
+                            onChange={(event) => setGeneratedIndexSlug(event.target.value)}
+                            placeholder="/my-section"
+                            disabled={busy}
+                          />
+                        </label>
+                        <label className={styles.dialogLabel}>
+                          <span>Generated index description</span>
+                          <input
+                            className={styles.dialogInput}
+                            value={generatedIndexDescription}
+                            onChange={(event) => setGeneratedIndexDescription(event.target.value)}
+                            placeholder="Optional domain or section summary"
+                            disabled={busy}
+                          />
+                        </label>
+                      </>
+                    ) : null}
+                  </>
                 ) : null}
                 <div className={styles.dialogActions}>
                   <ActionButton icon="check" label="Create" disabled={busy || !createContext.mode || !createName.trim()} onClick={() => void submitCreate()} />

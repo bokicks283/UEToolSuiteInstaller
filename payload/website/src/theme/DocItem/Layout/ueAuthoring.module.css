@@ -8,7 +8,8 @@
   position: relative;
   width: 100%;
   max-width: none;
-  overflow: visible;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 :global(main[class*='docMainContainer'] > .container.padding-top--md.padding-bottom--lg) {
@@ -16,12 +17,14 @@
   max-width: none;
   margin-left: auto;
   margin-right: auto;
+  overflow-x: clip;
 }
 
 :global(main[class*='docMainContainer']) {
   max-width: none !important;
   width: 100% !important;
   flex-basis: 100% !important;
+  overflow-x: clip;
 }
 
 .docContentShell {
@@ -30,14 +33,17 @@
 
 .docContentColumn {
   min-width: 0;
-  width: calc(100% - var(--doc-content-gutter) - (var(--doc-toc-width) + var(--doc-toc-gap)));
+  width: calc(100% - var(--doc-content-gutter));
   max-width: none;
   margin-left: var(--doc-content-gutter);
-  margin-right: calc(var(--doc-toc-width) + var(--doc-toc-gap));
+  margin-right: 0;
+  padding-right: calc(var(--doc-toc-width) + var(--doc-toc-gap));
+  box-sizing: border-box;
   transform: none;
   transition:
     margin-left 260ms ease,
     margin-right 260ms ease,
+    padding-right 260ms ease,
     width 260ms ease,
     max-width 260ms ease;
 }
@@ -45,6 +51,7 @@
 .docLayoutNoToc .docContentColumn {
   width: calc(100% - (var(--doc-edge-gap) * 2));
   margin-right: var(--doc-edge-gap);
+  padding-right: 0;
 }
 
 :global(html[data-ue-docs-left-sidebar-collapsed='false']) .docLayoutNoToc .docContentColumn {
@@ -359,6 +366,7 @@
   }
 }
 
+
 @media (min-width: 997px) {
 }
 
@@ -387,6 +395,9 @@
 }
 
 @media (min-width: 997px) and (max-width: 1439px) {
+}
+
+@media (min-width: 997px) and (max-width: 1199px) {
   .docHeaderRow,
   .viewModeActions {
     flex-wrap: wrap;

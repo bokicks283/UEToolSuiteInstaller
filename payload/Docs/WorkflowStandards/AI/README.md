@@ -21,7 +21,7 @@ Use this section to give AI stable repo context without relying on old chat thre
 ## Structure
 
 - `AGENTS.md`: short repo-wide instructions for AI
-- `Docs/AI/`: shared, committed AI-facing docs
+- `Docs/WorkflowStandards/AI/`: shared, committed AI-facing docs
 - `.ai-local/`: local-only repo context for the current user
 - `C:\Users\<user>\.ai\`: global AI defaults across many repos
 
@@ -30,7 +30,7 @@ Use this section to give AI stable repo context without relying on old chat thre
 1. Start a new AI chat in the repo root.
 2. Generate a startup prompt with `ue-tools ai prompt` or `ue-tools ai prompt`.
 3. Let `AGENTS.md` drive the startup read order across the repo docs.
-4. Add a project-specific `Docs/AI/Project-Context.md` when you want an explicit shared brief in the prompt.
+4. Add a project-specific `Docs/WorkflowStandards/AI/Project-Context.md` when you want an explicit shared brief in the prompt.
 5. If you want local-only guidance included, also point AI at `.ai-local/Private-Context.md`.
 6. Keep durable decisions in `Docs/`, not in chat history.
 
@@ -56,7 +56,7 @@ Use this stack for the most reliable behavior:
 
 ```text
 Read AGENTS.md and the repo docs it points to.
-Then read Docs/Testing.md and any project-specific context docs.
+Then read Docs/WorkflowStandards/Testing.md and any project-specific context docs.
 Also use .ai-local/Private-Context.md for my local preferences.
 Then help me update the Unreal tooling docs.
 ```

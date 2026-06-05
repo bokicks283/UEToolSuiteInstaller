@@ -11,7 +11,7 @@ Use the following split.
 
 - `AGENTS.md`
   Use for short repo instructions and pointers.
-- `Docs/AI/`
+- `Docs/WorkflowStandards/AI/`
   Use for AI-facing project context, examples, and workflow guidance.
 - The rest of `Docs/`
   Use for the actual project rules, setup, testing, architecture, and process docs.
@@ -28,7 +28,7 @@ Use the following split.
 | Location | Shared? | Good for | Avoid |
 | --- | --- | --- | --- |
 | `AGENTS.md` | Yes | Short instructions and doc pointers | Long design docs |
-| `Docs/AI/` | Yes | Stable AI-facing repo context | Temporary personal notes |
+| `Docs/WorkflowStandards/AI/` | Yes | Stable AI-facing repo context | Temporary personal notes |
 | `.ai-local/` | No | Personal repo notes and private prompt snippets | Secrets or huge scratchpads |
 | `C:\Users\<user>\.ai\` | No | Global defaults, skills, and rules | Repo-specific team docs |
 
@@ -37,7 +37,7 @@ Use the following split.
 ```md
 ## Unreal Tooling
 - Use Scripts/Tests/Run-AllTests.ps1 as the default test runner.
-- Read Docs/Testing.md before running branch-mutating tests.
+- Read Docs/WorkflowStandards/Testing.md before running branch-mutating tests.
 ```
 
 ## Example Private Note

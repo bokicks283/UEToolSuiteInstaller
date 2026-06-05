@@ -11,7 +11,6 @@ type SuiteBrandingFields = {
   suiteProjectName?: string;
   suiteDocsTitle?: string;
   suiteTagline?: string;
-  suiteThemeId?: string;
 };
 
 type NavbarLogoConfig = {
@@ -19,62 +18,32 @@ type NavbarLogoConfig = {
   alt?: string;
 };
 
-const primaryActions = [
+const domainCards = [
   {
-    title: 'Setup',
-    body: 'Bootstrap the repo, verify suite prerequisites, and align local tooling in one pass.',
-    to: '/docs/setup',
+    title: 'Workflow & Standards',
+    body: 'Shared setup, workflow, testing, coding standards, and docs guidance.',
+    to: '/docs/workflow-standards',
+    badge: 'Shared',
   },
   {
-    title: 'Workflow',
-    body: 'Use the documented branch, hook, and validation flows without adding unnecessary process overhead.',
-    to: '/docs/workflow',
-  },
-  {
-    title: 'Testing',
-    body: 'Run suite tests and branch-mutating validations with clear expectations and recovery guidance.',
-    to: '/docs/testing',
+    title: 'Project Docs',
+    body: 'Game-specific specs, design notes, implementation details, and team runbooks.',
+    to: '/docs/project-docs',
+    badge: 'Project',
   },
 ];
 
-const sectionCards = [
+const quickLinks = [
   {
-    title: 'Workflow',
-    body: 'Branch discipline, binary safety, repo hygiene, and daily development flow.',
-    to: '/docs/workflow',
-    badge: 'Process',
+    title: 'Open Docs Home',
+    body: 'Go straight to the doc surface with the active sidebar, TOC, and edit controls.',
+    to: '/docs/',
   },
   {
-    title: 'Testing',
-    body: 'What the automation covers, what must stay green, and how to validate safely.',
-    to: '/docs/testing',
-    badge: 'Validation',
+    title: 'Site Settings',
+    body: 'Open theme, branding, domain, and managed override controls from the docs surface.',
+    to: '/docs/?siteAdmin=1',
   },
-  {
-    title: 'Coding Standards',
-    body: 'The current Unreal C++ guidance and the local snapshot workflow that backs it.',
-    to: '/docs/coding-standards',
-    badge: 'Code',
-  },
-];
-
-const readOrder = [
-  {label: 'Setup', to: '/docs/setup'},
-  {label: 'Workflow', to: '/docs/workflow'},
-  {label: 'Testing', to: '/docs/testing'},
-  {label: 'Coding Standards', to: '/docs/coding-standards'},
-];
-
-const principles = [
-  'Keep tooling predictable across fresh installs and updater runs.',
-  'Keep docs in-repo so workflow and code review stay aligned.',
-  'Automate what can regress, and keep manual checks focused on true edge cases.',
-];
-
-const metrics = [
-  {value: 'UE 5', label: 'Engine target'},
-  {value: '14', label: 'Theme presets'},
-  {value: '1', label: 'Unified installer'},
 ];
 
 export default function Home(): ReactNode {
@@ -85,7 +54,6 @@ export default function Home(): ReactNode {
   const siteTagline =
     customFields.suiteTagline?.trim() ||
     'Repo tooling, Unreal workflow, and living project documentation.';
-  const activeTheme = customFields.suiteThemeId?.trim() || 'neutral';
 
   const navbarLogo = (((siteConfig.themeConfig as {navbar?: {logo?: NavbarLogoConfig}} | undefined)?.navbar)?.logo);
   const logoSrc = useBaseUrl(navbarLogo?.src ?? '/img/logo.svg');
@@ -102,57 +70,42 @@ export default function Home(): ReactNode {
               <p className={styles.eyebrow}>Project documentation hub</p>
             </div>
             <Heading as="h1" className={styles.title}>
-              {projectName}
+              {docsTitle}
             </Heading>
-            <p className={styles.subtitle}>
-              {siteTagline}
-            </p>
+            <p className={styles.subtitle}>{siteTagline}</p>
             <div className={styles.actions}>
               <Link className="button button--primary button--lg" to="/docs/">
-                Open Overview
+                Open Docs
               </Link>
-              <Link className={styles.ghostButton} to="/docs/workflow">
-                Read Workflow
+              <Link className={styles.ghostButton} to="/docs/?siteAdmin=1">
+                Site Settings
               </Link>
-            </div>
-            <div className={styles.metrics}>
-              {metrics.map((item) => (
-                <div key={item.label} className={styles.metric}>
-                  <strong>{item.value}</strong>
-                  <span>{item.label}</span>
-                </div>
-              ))}
             </div>
           </div>
           <aside className={styles.heroPanel}>
-            <p className={styles.panelEyebrow}>Recommended read order</p>
-            <Heading as="h2">Get setup and workflow aligned first.</Heading>
-            <ol className={styles.readOrder}>
-              {readOrder.map((item) => (
-                <li key={item.label}>
-                  <Link to={item.to}>{item.label}</Link>
-                </li>
-              ))}
-            </ol>
-            <p className={styles.themeNote}>Active theme preset: {activeTheme}</p>
+            <p className={styles.panelEyebrow}>How the suite is structured</p>
+            <Heading as="h2">Two default domains. One managed shell.</Heading>
+            <p>
+              Shared standards stay separate from project docs, while Docusaurus categories and autogenerated sidebars
+              keep the navigation coherent.
+            </p>
           </aside>
         </div>
       </header>
       <main>
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <p className={styles.sectionLabel}>Daily execution</p>
-            <Heading as="h2">Use docs as an operational reference.</Heading>
-            <p>
-              Keep the next important decision obvious instead of documenting everything.
-            </p>
+            <p className={styles.sectionLabel}>Domains</p>
+            <Heading as="h2">Start from the right container.</Heading>
+            <p>Each domain gets its own landing page and its own pages sidebar.</p>
           </div>
-          <div className={styles.grid}>
-            {primaryActions.map((item) => (
-              <Link key={item.title} className={styles.primaryCard} to={item.to}>
+          <div className={styles.cardGrid}>
+            {domainCards.map((item) => (
+              <Link key={item.title} className={styles.card} to={item.to}>
+                <span className={styles.cardBadge}>{item.badge}</span>
                 <Heading as="h3">{item.title}</Heading>
                 <p>{item.body}</p>
-                <span>Open</span>
+                <span className={styles.cardLink}>Open domain</span>
               </Link>
             ))}
           </div>
@@ -160,52 +113,17 @@ export default function Home(): ReactNode {
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <p className={styles.sectionLabel}>Core sections</p>
-            <Heading as="h2">Keep the important pages close.</Heading>
+            <p className={styles.sectionLabel}>Administration</p>
+            <Heading as="h2">Manage the site without rerunning the installer.</Heading>
           </div>
-          <div className={styles.cardGrid}>
-            {sectionCards.map((item) => (
-              <Link key={item.title} className={styles.card} to={item.to}>
-                <span className={styles.cardBadge}>{item.badge}</span>
+          <div className={styles.grid}>
+            {quickLinks.map((item) => (
+              <Link key={item.title} className={styles.primaryCard} to={item.to}>
                 <Heading as="h3">{item.title}</Heading>
                 <p>{item.body}</p>
-                <span className={styles.cardLink}>Open section</span>
+                <span>Open</span>
               </Link>
             ))}
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.principles}>
-            <div className={styles.principlesCopy}>
-              <p className={styles.sectionLabel}>Operating principles</p>
-              <Heading as="h2">Keep docs clear, current, and actionable.</Heading>
-            </div>
-            <div className={styles.principlesList}>
-              {principles.map((item) => (
-                <div key={item} className={styles.principle}>
-                  <span className={styles.principleMark} />
-                  <p>{item}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.closingPanel}>
-            <Heading as="h2">Documentation should support delivery.</Heading>
-            <p>
-              Keep the workflow readable, setup trustworthy, and validation repeatable across installs.
-            </p>
-            <div className={styles.actions}>
-              <Link className="button button--primary button--lg" to="/docs/workflow">
-                Workflow
-              </Link>
-              <Link className={styles.ghostButton} to="/docs/testing">
-                Validation
-              </Link>
-            </div>
           </div>
         </section>
       </main>

@@ -1468,6 +1468,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const tocActiveSyncFrameRef = useRef<number | null>(null);
   const tocActiveSyncLastKeyRef = useRef<string | null>(null);
   const tocHoveredRef = useRef(false);
+  const narrowDesktopSingleRail = viewportWidth > 996 && viewportWidth <= 1100;
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1479,6 +1480,23 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     setViewportWidth(nextViewportWidth);
     setRightTocCollapsed(storedRightToc === null ? nextViewportWidth < 2200 : storedRightToc === 'true');
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !authoringAvailable) {
+      return;
+    }
+
+    const currentUrl = new URL(window.location.href);
+    const shouldOpenSiteAdmin = currentUrl.searchParams.get('siteAdmin') === '1';
+    if (!shouldOpenSiteAdmin) {
+      return;
+    }
+
+    setSiteAdminOpen(true);
+    currentUrl.searchParams.delete('siteAdmin');
+    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, [authoringAvailable]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1514,6 +1532,15 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     }
     window.localStorage.setItem(RIGHT_TOC_COLLAPSED_KEY, rightTocCollapsed ? 'true' : 'false');
   }, [rightTocCollapsed]);
+
+  useEffect(() => {
+    if (!narrowDesktopSingleRail) {
+      return;
+    }
+    if (!leftSidebarCollapsed && !rightTocCollapsed) {
+      setRightTocCollapsed(true);
+    }
+  }, [leftSidebarCollapsed, narrowDesktopSingleRail, rightTocCollapsed]);
 
   useEffect(() => {
     const shell = layoutShellRef.current;
@@ -2404,7 +2431,12 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const hasDesktopToc = Boolean(docTOC.desktop);
   const compactEditorLayout = viewportWidth > 0 ? viewportWidth <= 996 : windowSize !== 'desktop' && windowSize !== 'ssr';
   const compactTocLayout = viewportWidth > 0 ? viewportWidth <= 996 : windowSize !== 'desktop' && windowSize !== 'ssr';
-  const showInlineRightToc = Boolean(hasDesktopToc && !rightTocCollapsed && !compactTocLayout);
+  const showInlineRightToc = Boolean(
+    hasDesktopToc &&
+      !rightTocCollapsed &&
+      !compactTocLayout &&
+      (!narrowDesktopSingleRail || leftSidebarCollapsed),
+  );
   const showOverlayRightToc = Boolean(hasDesktopToc && !rightTocCollapsed && compactTocLayout);
   const showVisibleToc = showInlineRightToc || showOverlayRightToc;
   const showMetadataTitlePreview = editMode && !!metadataTitle && !hasLevelOneHeading(sourceDraft || originalSource);
@@ -2428,6 +2460,20 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     setTocAutoHideVersion((value) => value + 1);
     revealGlobalScrollbars();
   }, [revealGlobalScrollbars]);
+
+  const toggleLeftSidebar = useCallback(() => {
+    if (narrowDesktopSingleRail && leftSidebarCollapsed && !rightTocCollapsed) {
+      setRightTocCollapsed(true);
+    }
+    setLeftSidebarCollapsed((value) => !value);
+  }, [leftSidebarCollapsed, narrowDesktopSingleRail, rightTocCollapsed]);
+
+  const toggleRightToc = useCallback(() => {
+    if (narrowDesktopSingleRail && rightTocCollapsed && !leftSidebarCollapsed) {
+      setLeftSidebarCollapsed(true);
+    }
+    setRightTocCollapsed((value) => !value);
+  }, [leftSidebarCollapsed, narrowDesktopSingleRail, rightTocCollapsed]);
 
   const getTocScrollElement = useCallback((): HTMLDivElement | null => {
     const container = tocColumnRef.current;
@@ -2782,7 +2828,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                       className={clsx(authoringStyles.layoutToggleButton, leftSidebarCollapsed && authoringStyles.layoutToggleButtonActive)}
                       aria-label={leftSidebarCollapsed ? 'Show pages sidebar' : 'Hide pages sidebar'}
                       title={leftSidebarCollapsed ? 'Show pages sidebar' : 'Hide pages sidebar'}
-                      onClick={() => setLeftSidebarCollapsed((value) => !value)}
+                      onClick={toggleLeftSidebar}
                     >
                       <ToolbarIcon name="panelLeft" />
                       <span>Pages</span>
@@ -2792,7 +2838,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                       className={clsx(authoringStyles.layoutToggleButton, rightTocCollapsed && authoringStyles.layoutToggleButtonActive)}
                       aria-label={rightTocCollapsed ? 'Show table of contents sidebar' : 'Hide table of contents sidebar'}
                       title={rightTocCollapsed ? 'Show table of contents sidebar' : 'Hide table of contents sidebar'}
-                      onClick={() => setRightTocCollapsed((value) => !value)}
+                      onClick={toggleRightToc}
                     >
                       <ToolbarIcon name="panelRight" />
                       <span>TOC</span>

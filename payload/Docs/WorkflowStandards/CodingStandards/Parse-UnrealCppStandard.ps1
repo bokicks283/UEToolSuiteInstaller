@@ -204,7 +204,7 @@ function Get-SourceMetadataValue {
 $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 
-$codingRoot = Join-Path $repoRoot "Docs/CodingStandards"
+$codingRoot = Join-Path $repoRoot "Docs/WorkflowStandards/CodingStandards"
 $defaultCurrentPath = Join-Path $codingRoot "Current"
 
 if (-not $CurrentPath) {

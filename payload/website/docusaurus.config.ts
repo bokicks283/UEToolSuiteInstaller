@@ -1,6 +1,36 @@
 import { themes as prismThemes } from 'prism-react-renderer';
 import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import {getDocsDomainCatalog} from './domainCatalog';
+
+const docsDomainCatalog = getDocsDomainCatalog();
+const navbarDomainItems = [
+  ...(docsDomainCatalog.generalDocs
+    ? [
+        {
+          type: 'docSidebar' as const,
+          sidebarId: docsDomainCatalog.generalDocs.sidebarId,
+          position: 'left' as const,
+          label: docsDomainCatalog.generalDocs.label,
+        },
+      ]
+    : []),
+  ...docsDomainCatalog.domains.map((domain) =>
+    domain.docId
+      ? {
+          type: 'doc' as const,
+          docId: domain.docId,
+          position: 'left' as const,
+          label: domain.label,
+        }
+      : {
+          type: 'docSidebar' as const,
+          sidebarId: domain.sidebarId,
+          position: 'left' as const,
+          label: domain.label,
+        },
+  ),
+];
 
 const config: Config = {
   title: 'UE Project Docs',
@@ -76,61 +106,26 @@ const config: Config = {
         alt: 'UE Project Docs',
         src: 'img/themes/neutral/logo.svg',
       },
-      items: [
-        {
-          to: '/docs/',
-          position: 'left',
-          label: 'Overview',
-        },
-        {
-          type: 'doc',
-          docId: 'Pipeline/README',
-          position: 'left',
-          label: 'Workflow',
-        },
-        {
-          type: 'doc',
-          docId: 'Setup',
-          position: 'left',
-          label: 'Setup',
-        },
-      ],
+      items: navbarDomainItems,
     },
     footer: {
       style: 'dark',
       links: [
         {
-          title: 'Start',
+          title: 'Docs',
           items: [
             {
-              label: 'Overview',
+              label: 'Home',
               to: '/docs/',
             },
-            {
-              label: 'Setup',
-              to: '/docs/setup',
-            },
           ],
         },
         {
-          title: 'Build',
+          title: 'Domains',
           items: [
             {
-              label: 'Workflow',
-              to: '/docs/workflow',
-            },
-            {
-              label: 'Testing',
-              to: '/docs/testing',
-            },
-          ],
-        },
-        {
-          title: 'Reference',
-          items: [
-            {
-              label: 'Coding Standards',
-              to: '/docs/coding-standards',
+              label: 'Docs Home',
+              to: '/docs/',
             },
           ],
         },

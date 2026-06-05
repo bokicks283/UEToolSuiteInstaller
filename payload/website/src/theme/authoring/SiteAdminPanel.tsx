@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 
 import styles from '../DocItem/Layout/ueAuthoring.module.css';
+import {getSidebarIdFromDomainPath, type DocsDomainsPayload} from './api';
 
 type RequestJsonFn = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -48,6 +49,14 @@ export default function SiteAdminPanel({open, onClose, requestJson}: Props): Rea
   const [faviconPath, setFaviconPath] = useState('');
   const [socialCardPath, setSocialCardPath] = useState('');
   const [overrideMap, setOverrideMap] = useState<Record<string, '' | 'suite' | 'project'>>({});
+  const [domains, setDomains] = useState<DocsDomainsPayload['domains']>([]);
+  const [domainName, setDomainName] = useState('');
+  const [domainTitle, setDomainTitle] = useState('');
+  const [domainDescription, setDomainDescription] = useState('');
+  const nextSidebarId = useMemo(() => {
+    const trimmedDomainName = domainName.trim();
+    return trimmedDomainName ? getSidebarIdFromDomainPath(trimmedDomainName) : '';
+  }, [domainName]);
 
   useEffect(() => {
     if (!open) {
@@ -63,6 +72,7 @@ export default function SiteAdminPanel({open, onClose, requestJson}: Props): Rea
           requestJson<ThemeCatalogResponse>('/api/site/theme-catalog'),
           requestJson<SiteConfigResponse>('/api/site/config'),
         ]);
+        const domainsPayload = await requestJson<{ok: true; domains: DocsDomainsPayload}>('/api/domains');
         if (cancelled) {
           return;
         }
@@ -82,6 +92,7 @@ export default function SiteAdminPanel({open, onClose, requestJson}: Props): Rea
           nextMap[entry.path] = entry.mode;
         }
         setOverrideMap(nextMap);
+        setDomains(domainsPayload.domains.domains ?? []);
       } catch (error) {
         if (!cancelled) {
           setErrorText(error instanceof Error ? error.message : 'Failed to load site settings.');
@@ -169,6 +180,31 @@ export default function SiteAdminPanel({open, onClose, requestJson}: Props): Rea
     }
   }
 
+  async function createDomain(): Promise<void> {
+    const trimmedDomainName = domainName.trim();
+    if (!trimmedDomainName) {
+      return;
+    }
+    setSaving(true);
+    setErrorText('');
+    try {
+      await requestJson<SiteMutationResponse>('/api/create/domain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          domainName: trimmedDomainName,
+          title: domainTitle.trim(),
+          description: domainDescription.trim(),
+        }),
+      });
+      window.location.reload();
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : 'Failed to create domain.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!open) {
     return null;
   }
@@ -235,6 +271,54 @@ export default function SiteAdminPanel({open, onClose, requestJson}: Props): Rea
 
         <div className={styles.siteAdminSection}>
           <div className={styles.siteAdminOverridesHeader}>
+            <strong>Domains</strong>
+            <span>Top-level docs containers that each get their own sidebar.</span>
+          </div>
+          <div className={styles.siteAdminOverrideTable}>
+            {domains.map((domain) => (
+              <div key={domain.path} className={styles.siteAdminOverrideRow}>
+                <span>
+                  <strong>{domain.label}</strong>
+                  <br />
+                  <small>{domain.path} · {domain.sidebarId}</small>
+                </span>
+              </div>
+            ))}
+          </div>
+          <label className={styles.siteAdminField}>
+            <span>New domain folder</span>
+            <input
+              type="text"
+              value={domainName}
+              onChange={(event) => {
+                const nextName = event.target.value;
+                setDomainName(nextName);
+                if (!domainTitle.trim()) {
+                  setDomainTitle(nextName);
+                }
+              }}
+              placeholder="ProjectDocs"
+              disabled={saving || loading}
+            />
+          </label>
+          <label className={styles.siteAdminField}>
+            <span>Domain title</span>
+            <input type="text" value={domainTitle} onChange={(event) => setDomainTitle(event.target.value)} placeholder="Project Docs" disabled={saving || loading} />
+          </label>
+          <label className={styles.siteAdminField}>
+            <span>Domain description</span>
+            <input type="text" value={domainDescription} onChange={(event) => setDomainDescription(event.target.value)} placeholder="Optional summary for the domain landing page" disabled={saving || loading} />
+          </label>
+          {nextSidebarId ? <p className={styles.statusText}>New domain sidebar id: {nextSidebarId}</p> : null}
+          <div className={styles.siteAdminActionRow}>
+            <button type="button" className={styles.primaryButton} onClick={() => void createDomain()} disabled={saving || loading || !domainName.trim()}>
+              Create Domain
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.siteAdminSection}>
+          <div className={styles.siteAdminOverridesHeader}>
             <strong>Managed overrides</strong>
             <span>Blank uses suite defaults.</span>
           </div>
@@ -252,7 +336,7 @@ export default function SiteAdminPanel({open, onClose, requestJson}: Props): Rea
                   }
                   disabled={saving || loading}
                 >
-                  <option value="">Default</option>
+                  <option value="">Auto</option>
                   <option value="suite">Suite</option>
                   <option value="project">Project</option>
                 </select>
