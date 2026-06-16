@@ -188,12 +188,15 @@ try {
   Assert-HasLiteral -Name "gui includes global site icon control" -Text $programText -Needle "Global site icon (.svg/.png)"
   Assert-HasLiteral -Name "gui includes per-asset overrides toggle" -Text $programText -Needle "Use per-asset overrides"
   Assert-HasLiteral -Name "gui includes website install mode control" -Text $programText -Needle "Website install mode"
+  Assert-HasLiteral -Name "gui includes bulk override selector" -Text $programText -Needle "Apply to all"
   Assert-HasLiteral -Name "gui forwards website theme flag" -Text $programText -Needle "-WebsiteTheme"
   Assert-HasLiteral -Name "gui forwards website install mode flag" -Text $programText -Needle "-WebsiteInstallMode"
   Assert-HasLiteral -Name "gui forwards website global icon flag" -Text $programText -Needle "-WebsiteGlobalIconPath"
   Assert-HasLiteral -Name "gui forwards website logo flag" -Text $programText -Needle "-WebsiteLogoPath"
   Assert-HasLiteral -Name "gui forwards website favicon flag" -Text $programText -Needle "-WebsiteFaviconPath"
   Assert-HasLiteral -Name "gui forwards website social card flag" -Text $programText -Needle "-WebsiteSocialCardPath"
+  Assert-HasLiteral -Name "gui forwards website force suite paths as one array argument" -Text $programText -Needle 'string.Join(",", options.WebsiteForceSuitePaths)'
+  Assert-HasLiteral -Name "gui forwards website force project paths as one array argument" -Text $programText -Needle 'string.Join(",", options.WebsiteForceProjectPaths)'
   Assert-HasLiteral -Name "gui supports skip optional setup option" -Text $programText -Needle "-SkipOptionalToolSetup"
   Assert-HasLiteral -Name "gui supports skip docs setup option" -Text $programText -Needle "-SkipDocsSetup"
   Assert-HasLiteral -Name "gui supports skip docs npm install option" -Text $programText -Needle "-SkipDocsNpmInstall"
@@ -233,6 +236,7 @@ try {
   Assert-HasLiteral -Name "doc layout exposes single edit entrypoint" -Text $docsDocItemLayoutText -Needle "setEditMode(true)"
   Assert-HasLiteral -Name "doc layout exposes page visibility action" -Text $docsDocItemLayoutText -Needle "toggleCurrentPageVisibility"
   Assert-HasLiteral -Name "doc layout persists unlisted visibility state" -Text $docsDocItemLayoutText -Needle "'unlisted'"
+  Assert-HasLiteral -Name "doc layout renders hidden page notice from current page state" -Text $docsDocItemLayoutText -Needle "This page is hidden from site navigation."
   Assert-HasLiteral -Name "doc layout uses tiptap editor content" -Text $docsDocItemLayoutText -Needle "EditorContent"
   Assert-HasLiteral -Name "doc layout exposes formatting toolbar" -Text $docsDocItemLayoutText -Needle "toggleBold"
   Assert-HasLiteral -Name "doc layout exposes alignment toolbar" -Text $docsDocItemLayoutText -Needle "setTextAlign('center')"

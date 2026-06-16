@@ -1480,6 +1480,8 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const authoringAvailable = runtimeReady && runtimeAvailable;
   const windowSize = useWindowSize();
   const metadataTitle = useMemo(() => (typeof metadata.title === 'string' ? metadata.title.trim() : ''), [metadata.title]);
+  const metadataDraft = metadata.draft === true;
+  const metadataUnlisted = metadata.unlisted === true;
 
   const sourceToken = useMemo(() => resolveSourceToken(metadata.source ?? ''), [metadata.source]);
   const pageIsEditable = sourceToken.toLowerCase().endsWith('.md');
@@ -1640,6 +1642,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const [errorText, setErrorText] = useState('');
   const [loadedContent, setLoadedContent] = useState<DocsContentPayload | null>(null);
   const [frontMatterBlock, setFrontMatterBlock] = useState('');
+  const [pageHiddenOverride, setPageHiddenOverride] = useState<boolean | null>(null);
   const [originalSource, setOriginalSource] = useState('');
   const [renderSourceBody, setRenderSourceBody] = useState('');
   const [sourceDraft, setSourceDraft] = useState('');
@@ -1667,7 +1670,13 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const loadedHashRef = useRef('');
   const tocIgnoredHeadingLabelsRef = useRef<Set<string>>(new Set());
   const tocMarkerEnabledRef = useRef(false);
-  const pageHiddenFromSite = useMemo(() => frontMatterHasBoolean(frontMatterBlock, 'unlisted'), [frontMatterBlock]);
+  const frontMatterHiddenFromSite = useMemo(() => frontMatterHasBoolean(frontMatterBlock, 'unlisted'), [frontMatterBlock]);
+  const pageHiddenFromSite = pageHiddenOverride ?? (frontMatterBlock.trim() ? frontMatterHiddenFromSite : metadataUnlisted);
+
+  useEffect(() => {
+    setFrontMatterBlock('');
+    setPageHiddenOverride(null);
+  }, [sourceToken]);
 
   useEffect(() => {
     loadedHashRef.current = loadedContent?.hash ?? '';
@@ -1830,6 +1839,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
       setLoadedContent(payload.content);
       const split = splitFrontMatter(payload.content.content);
       setFrontMatterBlock(split.frontMatterBlock);
+      setPageHiddenOverride(frontMatterHasBoolean(split.frontMatterBlock, 'unlisted'));
       setOriginalSource(split.body);
 
       let nextDraftBody = split.body;
@@ -2438,6 +2448,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
         modifiedUtc: payload.result.modifiedUtc,
       } : current));
       setFrontMatterBlock((current) => setFrontMatterBoolean(current, 'unlisted', payload.result.hidden));
+      setPageHiddenOverride(payload.result.hidden);
       setStatusText(payload.result.hidden ? 'Page hidden from site.' : 'Page shown in site.');
       broadcastDocsStructureChanged();
       if (typeof window !== 'undefined') {
@@ -2896,7 +2907,12 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     >
       <div className={authoringStyles.docContentShell}>
         <div className={authoringStyles.docContentColumn}>
-        <ContentVisibility metadata={metadata} />
+        {metadataDraft ? <ContentVisibility metadata={metadata} /> : null}
+        {pageHiddenFromSite ? (
+          <div className={authoringStyles.visibilityNotice} role="status" aria-live="polite">
+            This page is hidden from site navigation.
+          </div>
+        ) : null}
         <DocVersionBanner />
         <div>
           <article>

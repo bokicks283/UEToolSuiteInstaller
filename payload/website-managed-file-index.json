@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "payloadVersion": "1.0.0",
-  "generatedUtc": "2026-06-14T01:58:27Z",
+  "generatedUtc": "2026-06-16T17:34:39Z",
   "files": [
     {
       "sha256": "7c2bf6ba263ba149a2885847a9f7186e0d7af58faae3e01f2e69a7465f7cfecc",
@@ -14,7 +14,7 @@
       "relativePath": "website/.ue-tools/site-overrides.json"
     },
     {
-      "sha256": "41e8e371177dff3036ac558b684b7cb8951ff00bf7a5490c9fd501b358944c0c",
+      "sha256": "5e4760b7220a0220494501dc5698820954b4b0748245c3ae945bd0bcb3ca3b18",
       "category": "overridable",
       "relativePath": "website/docusaurus.config.ts"
     },
@@ -59,7 +59,7 @@
       "relativePath": "website/src/css/project-overrides.css"
     },
     {
-      "sha256": "50d8003e338a801d67af565366230bf2bfbbe639ee2fc6829bbad200d447fa36",
+      "sha256": "f8c98b9d46c7c30d50f1dc3d36a4a2f5b877d9a980928b919b2eea64e806b7c2",
       "category": "shell",
       "relativePath": "website/src/css/suite-shell.css"
     },
@@ -94,12 +94,12 @@
       "relativePath": "website/src/theme/authoring/SiteAdminPanel.tsx"
     },
     {
-      "sha256": "ffa0b7e3cbe55f0f4cd97efe0d4b800b3b3736257c914d177198dc74a22ac5a0",
+      "sha256": "a9f51dde6cb0647b4301b842a659e18cce4ddf3706e5b8489037596886b1b18a",
       "category": "shell",
       "relativePath": "website/src/theme/DocItem/Layout/index.tsx"
     },
     {
-      "sha256": "3f3f49736cbe18aba07c918b8cc83685d464d4ef356e7c68bf0d859ec478029c",
+      "sha256": "fa0a8845a2362145c962b102b5d9c8c57a2e3e98c41ef49a3beeb8219f86278b",
       "category": "shell",
       "relativePath": "website/src/theme/DocItem/Layout/ueAuthoring.module.css"
     },

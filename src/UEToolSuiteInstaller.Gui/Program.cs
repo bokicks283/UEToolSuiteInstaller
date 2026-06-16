@@ -92,6 +92,7 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox customizeWebsiteOverridesCheckBox = new();
     private readonly Panel websiteOverridesPanel = new();
     private readonly Label websiteOverrideHelpLabel = new();
+    private readonly ComboBox websiteOverridesBulkModeComboBox = new();
     private readonly DataGridView websiteOverridesGrid = new();
     private readonly Panel advancedOptionsPanel = new();
     private readonly ProgressBar installProgressBar = new();
@@ -709,7 +710,7 @@ internal sealed class InstallerForm : Form
         var overridesLayout = new TableLayoutPanel
         {
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Dock = DockStyle.Fill,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -733,8 +734,46 @@ internal sealed class InstallerForm : Form
         websiteOverrideHelpLabel.Text = "Auto uses the suite default policy. That means the website shell stays suite-managed, while managed docs content is preserved unless you explicitly force Suite.";
         overridesLayout.Controls.Add(websiteOverrideHelpLabel, 0, 1);
 
+        var bulkOverridePanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(0, 0, 0, 8),
+        };
+
+        var bulkOverrideLabel = new Label
+        {
+            Text = "Apply to all",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(72, 79, 96),
+            Margin = new Padding(0, 6, 8, 0),
+        };
+        bulkOverridePanel.Controls.Add(bulkOverrideLabel);
+
+        websiteOverridesBulkModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        websiteOverridesBulkModeComboBox.Width = 180;
+        websiteOverridesBulkModeComboBox.Items.AddRange(new object[] { "Apply to all...", "Auto", "Suite", "Project" });
+        websiteOverridesBulkModeComboBox.SelectedIndex = 0;
+        websiteOverridesBulkModeComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            var selectedMode = websiteOverridesBulkModeComboBox.SelectedItem?.ToString();
+            if (string.IsNullOrWhiteSpace(selectedMode) || string.Equals(selectedMode, "Apply to all...", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            ApplyWebsiteOverrideModeToAll(selectedMode);
+            websiteOverridesBulkModeComboBox.SelectedIndex = 0;
+            statusLabel.Text = "Ready";
+        };
+        bulkOverridePanel.Controls.Add(websiteOverridesBulkModeComboBox);
+        overridesLayout.Controls.Add(bulkOverridePanel, 0, 2);
+
         ConfigureWebsiteOverridesGrid();
-        overridesLayout.Controls.Add(websiteOverridesGrid, 0, 2);
+        overridesLayout.Controls.Add(websiteOverridesGrid, 0, 3);
         websiteOverridesPanel.Controls.Add(overridesLayout);
         websiteOverridesPanel.Visible = false;
         panel.Controls.Add(websiteOverridesPanel, 0, 6);
@@ -834,6 +873,17 @@ internal sealed class InstallerForm : Form
         foreach (var path in WebsiteOverrideCandidates)
         {
             websiteOverridesGrid.Rows.Add(path, "Auto");
+        }
+    }
+
+    private void ApplyWebsiteOverrideModeToAll(string mode)
+    {
+        foreach (DataGridViewRow row in websiteOverridesGrid.Rows)
+        {
+            if (!row.IsNewRow)
+            {
+                row.Cells[1].Value = mode;
+            }
         }
     }
 
@@ -1003,6 +1053,7 @@ internal sealed class InstallerForm : Form
         customizeWebsiteOverridesCheckBox.Enabled = websiteEnabled;
         websiteOverridesPanel.Enabled = websiteEnabled && customizeWebsiteOverridesCheckBox.Checked;
         websiteOverridesGrid.Enabled = websiteEnabled && customizeWebsiteOverridesCheckBox.Checked;
+        websiteOverridesBulkModeComboBox.Enabled = websiteEnabled && customizeWebsiteOverridesCheckBox.Checked;
 
         var initEnabled = runInitCheckBox.Checked;
         initNonInteractiveCheckBox.Enabled = initEnabled;
@@ -1360,15 +1411,15 @@ internal sealed class InstallerForm : Form
                 args.Add("-WebsiteSocialCardPath");
                 args.Add(options.WebsiteSocialCardPath!);
             }
-            foreach (var path in options.WebsiteForceSuitePaths)
+            if (options.WebsiteForceSuitePaths.Count > 0)
             {
                 args.Add("-WebsiteForceSuitePath");
-                args.Add(path);
+                args.Add(string.Join(",", options.WebsiteForceSuitePaths));
             }
-            foreach (var path in options.WebsiteForceProjectPaths)
+            if (options.WebsiteForceProjectPaths.Count > 0)
             {
                 args.Add("-WebsiteForceProjectPath");
-                args.Add(path);
+                args.Add(string.Join(",", options.WebsiteForceProjectPaths));
             }
         }
 
@@ -1984,6 +2035,7 @@ internal sealed class InstallerForm : Form
         websiteSocialCardPathTextBox.Clear();
         usePerAssetBrandingOverridesCheckBox.Checked = false;
         customizeWebsiteOverridesCheckBox.Checked = false;
+        websiteOverridesBulkModeComboBox.SelectedIndex = 0;
         var defaultTheme = websiteThemeOptions.FirstOrDefault(option => option.Id.Equals(DefaultWebsiteThemeId, StringComparison.OrdinalIgnoreCase));
         if (defaultTheme is not null)
         {
