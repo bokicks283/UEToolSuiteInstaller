@@ -1,7 +1,7 @@
 .sidebarAuthoring {
   position: relative;
   box-sizing: border-box;
-  padding: 0.2rem 0.32rem 0.55rem;
+  padding: 0.24rem 0.45rem 0.62rem;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -20,7 +20,7 @@
 
 :global(.theme-doc-sidebar-container [class^='sidebarViewport_']),
 :global(.theme-doc-sidebar-container [class*=' sidebarViewport_']) {
-  top: var(--ifm-navbar-height);
+  top: 0;
   height: calc(100dvh - var(--ifm-navbar-height));
   max-height: calc(100dvh - var(--ifm-navbar-height));
 }
@@ -37,11 +37,6 @@
 
 .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path]) {
   position: relative;
-  cursor: grab;
-}
-
-.sidebarAuthoring :global(.menu__list-item[data-ue-docs-path]:active) {
-  cursor: grabbing;
 }
 
 .sidebarAuthoring :global(.menu__list-item-collapsible) {
@@ -50,10 +45,10 @@
 
 .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__link),
 .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__list-item-collapsible > .menu__link) {
-  font-size: 1.14rem;
-  line-height: 1.35;
+  font-size: 1rem;
+  line-height: 1.26;
   font-weight: 600;
-  padding-right: 8rem;
+  padding-right: 5.4rem;
 }
 
 .sidebarAuthoring :global(.menu__list-item-collapsible > .menu__caret) {
@@ -74,9 +69,9 @@
 @media (min-width: 997px) and (max-width: 1200px) {
   .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__link),
   .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__list-item-collapsible > .menu__link) {
-    font-size: 1rem;
-    line-height: 1.28;
-    padding-right: 7.1rem;
+    font-size: 0.94rem;
+    line-height: 1.22;
+    padding-right: 4.85rem;
   }
 
   .sidebarAuthoring :global(.menu__list-item-collapsible > .menu__caret) {
@@ -87,32 +82,10 @@
   }
 }
 
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-target='true'] > .menu__link),
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-target='true'] > .menu__list-item-collapsible > .menu__link) {
-  outline: 2px solid var(--ifm-color-primary);
-  outline-offset: -2px;
-  background: color-mix(in srgb, var(--ifm-color-primary) 13%, transparent);
-}
-
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-mode='before'] > .menu__link),
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-mode='before'] > .menu__list-item-collapsible > .menu__link) {
-  box-shadow: inset 0 2px 0 var(--ifm-color-primary);
-}
-
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-mode='after'] > .menu__link),
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-mode='after'] > .menu__list-item-collapsible > .menu__link) {
-  box-shadow: inset 0 -2px 0 var(--ifm-color-primary);
-}
-
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-mode='inside'] > .menu__link),
-.sidebarAuthoring :global(.menu__list-item[data-ue-drop-mode='inside'] > .menu__list-item-collapsible > .menu__link) {
-  outline-style: dashed;
-}
-
 .rowActions {
   position: absolute;
   top: 50%;
-  right: 3rem;
+  right: 2.5rem;
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
@@ -164,21 +137,6 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
-}
-
-.inlineCreateMenu {
-  position: absolute;
-  top: calc(100% + 0.16rem);
-  right: 0.34rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.18rem;
-  padding: 0.2rem;
-  border: 1px solid var(--ifm-toc-border-color);
-  border-radius: 8px;
-  background: var(--ifm-background-surface-color);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
-  z-index: 20;
 }
 
 .caretExpanded {

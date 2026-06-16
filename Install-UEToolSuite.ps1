@@ -672,7 +672,7 @@ function Apply-WebsiteThemeAndBranding {
     }
   }
 
-  $themeDestinationPath = Join-Path $websiteRoot "src\css\custom.css"
+  $themeDestinationPath = Join-Path $websiteRoot "theme-presets\active-theme.css"
   $themeDestinationParent = Split-Path -Path $themeDestinationPath -Parent
   if ($themeDestinationParent -and $PSCmdlet.ShouldProcess($themeDestinationParent, "Ensure website theme destination directory")) {
     New-Item -ItemType Directory -Force -Path $themeDestinationParent | Out-Null

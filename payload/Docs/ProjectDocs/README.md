@@ -2,9 +2,8 @@
 title: Project Docs
 sidebar_position: 1
 slug: /project-docs
+displayed_sidebar: project-docs-sidebar
 ---
-
-import DocCardList from '@theme/DocCardList';
 
 # Project Docs
 
@@ -33,7 +32,3 @@ Create sections for the areas your team actually uses. Good starting categories 
 - Release
 
 Keep this domain lean at first. Add structure only when the project needs it.
-
-## Browse This Domain
-
-<DocCardList />

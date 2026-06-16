@@ -1,6 +1,7 @@
 ---
 title: Docs Home
 slug: /
+displayed_sidebar: workflow-standards-sidebar
 ---
 
 # Docs Home

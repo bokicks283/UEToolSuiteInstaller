@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
   "payloadVersion": "1.0.0",
-  "generatedUtc": "2026-06-04T23:33:00Z",
+  "generatedUtc": "2026-06-14T01:58:17Z",
   "files": [
     {
       "relativePath": "Docs/_domains.json",
       "category": "docsShell",
-      "sha256": "fd06b28b13e29e6c92e0d3e149aa7c113b116be57649268faefe92c84e5222e3"
+      "sha256": "f9afb72b51655569d0a8040e33cc8940aed6fbb356d9545762bb4f36ad0a2ff5"
     },
     {
       "relativePath": "Docs/ProjectDocs/_category_.json",
       "category": "docsShell",
-      "sha256": "fa53055f603368a01989c97c3dfce9818e601b82cfd1e07c0abad193ae41649a"
+      "sha256": "637080d295b4275e18c7e7bf82daee5c8467ebadbf11e6e4f90e149a59c4dfbc"
     },
     {
       "relativePath": "Docs/ProjectDocs/README.md",
       "category": "docsShell",
-      "sha256": "b455df24e21e24807589f8bd7b353f9697839b717af14f7ff8ef5f3a274a787a"
+      "sha256": "4c3a18749c94fdc42e429dedb74f7dd6d6a48e6e4464c8e2b7ca2e5715d8cb4a"
     },
     {
       "relativePath": "Docs/README.md",
       "category": "docs",
-      "sha256": "002bbc7d13b9143276b2d0eb836597ba38757cad89aea782ffb24f176878bbfd"
+      "sha256": "d5c933fa4fa8d94996412bc675f99168f2de4dfa012fd70feb3d5fbe8d2cb4b1"
     },
     {
       "relativePath": "Docs/WorkflowStandards/_category_.json",
       "category": "docsShell",
-      "sha256": "439a97cb53dcd1aacef18f9ec1d51908d0842558e87c95f8948e8f5969c44ca7"
+      "sha256": "a712e88b6eb17ebd18177497910e4afe454dea87fa634896e8b8fb5456a9e64b"
     },
     {
       "relativePath": "Docs/WorkflowStandards/AI/_category_.json",
@@ -116,7 +116,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/README.md",
       "category": "docsShell",
-      "sha256": "ffb00bf7bc05759d41487bdf7c7fdbb5192bdc80afbf2cbb132ae1fd51dd3824"
+      "sha256": "d07af032bd6efe69e4df0eb60ea6292cadc101cba437843b78add201f6191818"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Setup.md",
@@ -130,4 +130,3 @@
     }
   ]
 }
-

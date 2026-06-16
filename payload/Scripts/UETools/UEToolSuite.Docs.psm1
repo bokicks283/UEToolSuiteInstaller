@@ -91,6 +91,7 @@ Create:
   new-section, create-section   Create a docs section
   new-page, create-page         Create a page at Docs root or inside a section
   reorder                       Reorder a page or section and shift sibling positions
+  visibility                    Hide/show a doc page from site navigation using front matter
 
 Run:
   start                         Start Docusaurus (and the editor API) in the current terminal
@@ -115,6 +116,7 @@ Examples:
   ue-tools docs create-page Setup -Title "Setup"
   ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
   ue-tools docs reorder Art-Source 4
+  ue-tools docs visibility Workflow/README hide
   ue-tools docs start --port 3001
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
@@ -488,7 +490,7 @@ function Get-DefaultDocsWebsiteOverridesDocument {
 function Get-DocsWebsiteOverrideCandidatePaths {
   return @(
     "website/docusaurus.config.ts",
-    "website/src/css/custom.css",
+    "website/src/css/project-overrides.css",
     "website/src/pages/index.tsx",
     "website/src/pages/index.module.css",
     "Docs/README.md"
@@ -720,7 +722,7 @@ function Invoke-DocsThemeApply {
     }
   }
 
-  $themeDestination = Join-Path $websiteRoot "src\css\custom.css"
+  $themeDestination = Join-Path $websiteRoot "theme-presets\active-theme.css"
   $themeDestinationParent = Split-Path -Path $themeDestination -Parent
   if (-not [string]::IsNullOrWhiteSpace($themeDestinationParent)) {
     New-Item -ItemType Directory -Force -Path $themeDestinationParent | Out-Null
@@ -1803,6 +1805,29 @@ Examples:
 "@
       return
     }
+    "visibility" {
+@"
+ue-tools docs visibility
+
+Usage:
+  ue-tools docs visibility <TargetPath> <show|hide>
+
+Required:
+  <TargetPath>                  Docs-relative page path or section/domain path with a landing doc
+                                Examples: Setup, Workflow/Daily-Flow, Workflow, ProjectDocs
+  <show|hide>                   show clears unlisted; hide sets unlisted: true
+
+Behavior:
+  - Keeps the file on disk
+  - Uses Docusaurus-native unlisted front matter
+  - Hidden pages stay directly routable but drop out of normal site navigation
+
+Examples:
+  ue-tools docs visibility Workflow/Daily-Flow hide
+  ue-tools docs visibility Workflow show
+"@
+      return
+    }
     "docusaurus" {
 @"
 ue-tools docs docusaurus
@@ -1879,7 +1904,7 @@ Usage:
 
 Commands:
   list                           Show available website theme presets from website/theme-presets/theme-catalog.json
-  apply                          Apply a theme preset to website/src/css/custom.css and update branding fields in website/docusaurus.config.ts
+  apply                          Apply a theme preset to website/theme-presets/active-theme.css and update branding fields in website/docusaurus.config.ts
 
 Notes:
   - Theme apply is preserve-first: unmanaged websites are not overridden by default.
@@ -2763,7 +2788,7 @@ function Invoke-NewSection {
 
   if ($sectionSegments.Count -gt 1) {
     $parentSegments = @($sectionSegments[0..($sectionSegments.Count - 2)])
-    $parentDir = Join-Path $docsRoot ([System.IO.Path]::Combine($parentSegments))
+    $parentDir = Join-Path $docsRoot (($parentSegments -join [System.IO.Path]::DirectorySeparatorChar))
     Assert-PathInsideRoot -RootPath $docsRoot -TargetPath $parentDir
 
     if (-not (Test-DocsSectionExists -SectionDir $parentDir)) {
@@ -2771,7 +2796,7 @@ function Invoke-NewSection {
     }
   }
 
-  $sectionDir = Join-Path $docsRoot ([System.IO.Path]::Combine($sectionSegments))
+  $sectionDir = Join-Path $docsRoot (($sectionSegments -join [System.IO.Path]::DirectorySeparatorChar))
   Assert-PathInsideRoot -RootPath $docsRoot -TargetPath $sectionDir
   $position = if ($parsed.Values.ContainsKey("position")) { ConvertTo-NumericValue -Value $parsed.Values["position"] -OptionName "Position" } else { Get-NextSectionPosition -DocsRoot $docsRoot -SectionPath $sectionPath }
 
@@ -2780,6 +2805,12 @@ function Invoke-NewSection {
   $docSlug = if ($parsed.Values.ContainsKey("slug")) { $parsed.Values["slug"] } else { Get-SlugForSectionPath -SectionPath $sectionPath }
   $bridgeStatus = Get-BridgeStatus
   $includeToc = (-not $noToc) -and $bridgeStatus.TocReady
+  $linkType = if ($parsed.Values.ContainsKey("linktype")) { $parsed.Values["linktype"] } else { "doc" }
+  $normalizedLinkType = [string]$linkType
+  if (-not [string]::IsNullOrWhiteSpace($normalizedLinkType)) {
+    $normalizedLinkType = $normalizedLinkType.Trim().ToLowerInvariant()
+  }
+  $createsReadme = ($normalizedLinkType -eq "doc")
 
   if ((Test-Path -LiteralPath $sectionDir) -and (-not $force)) {
     throw "Section directory already exists: $sectionDir"
@@ -2787,17 +2818,21 @@ function Invoke-NewSection {
 
   New-Item -ItemType Directory -Force -Path $sectionDir | Out-Null
 
-  $docSidebarPosition = if ($parsed.Values.ContainsKey("docsidebarposition")) { ConvertTo-NumericValue -Value $parsed.Values["docsidebarposition"] -OptionName "DocSidebarPosition" } else { 1 }
-  $readmeFrontMatter = New-DocFrontMatter -Title $title -Slug $docSlug -SidebarPosition $docSidebarPosition
-  Apply-CommonDocOptionValues -FrontMatter $readmeFrontMatter -Values $parsed.Values
-  Apply-KeyValueAssignmentsToMap `
-    -Map $readmeFrontMatter `
-    -Assignments @($parsed.MultiValues["docfield"]) `
-    -JsonAssignments @($parsed.MultiValues["docfieldjson"])
+  $docId = ""
+  $readmeContent = ""
+  if ($createsReadme) {
+    $docSidebarPosition = if ($parsed.Values.ContainsKey("docsidebarposition")) { ConvertTo-NumericValue -Value $parsed.Values["docsidebarposition"] -OptionName "DocSidebarPosition" } else { 1 }
+    $readmeFrontMatter = New-DocFrontMatter -Title $title -Slug $docSlug -SidebarPosition $docSidebarPosition
+    Apply-CommonDocOptionValues -FrontMatter $readmeFrontMatter -Values $parsed.Values
+    Apply-KeyValueAssignmentsToMap `
+      -Map $readmeFrontMatter `
+      -Assignments @($parsed.MultiValues["docfield"]) `
+      -JsonAssignments @($parsed.MultiValues["docfieldjson"])
 
-  $readmeContent = Build-ScaffoldDocContent -FrontMatter $readmeFrontMatter -HeadingTitle $title -IncludeToc:$includeToc -OverviewNoun "section"
-  $docId = Get-DocIdForPath -DocsRoot $docsRoot -FullPath $readmePath
-  $linkType = if ($parsed.Values.ContainsKey("linktype")) { $parsed.Values["linktype"] } else { "doc" }
+    $readmeContent = Build-ScaffoldDocContent -FrontMatter $readmeFrontMatter -HeadingTitle $title -IncludeToc:$includeToc -OverviewNoun "section"
+    $docId = Get-DocIdForPath -DocsRoot $docsRoot -FullPath $readmePath
+  }
+
   $linkDocId = if ($parsed.Values.ContainsKey("linkid")) { $parsed.Values["linkid"] } else { $docId }
   $generatedIndexTitle = if ($parsed.Values.ContainsKey("generatedindextitle")) { $parsed.Values["generatedindextitle"] } else { $label }
   $generatedIndexSlug = if ($parsed.Values.ContainsKey("generatedindexslug")) { $parsed.Values["generatedindexslug"] } else { $docSlug }
@@ -2824,19 +2859,22 @@ function Invoke-NewSection {
     -JsonAssignments @($parsed.MultiValues["categoryjson"])
   $categoryContent = Build-CategoryMetadataContent -Metadata $categoryMetadata
 
-  Write-Utf8NoBomFile -Path $readmePath -Content $readmeContent
+  if ($createsReadme) {
+    Write-Utf8NoBomFile -Path $readmePath -Content $readmeContent
+  }
   Write-Utf8NoBomFile -Path $categoryPath -Content $categoryContent
 
-  if ($includeToc) {
+  if ($createsReadme -and $includeToc) {
     $null = Queue-TocRequest -ResolvedRepoRoot $ResolvedRepoRoot -FilePath $readmePath
     [void](Open-PathInVSCode -ResolvedRepoRoot $ResolvedRepoRoot -FilePath $readmePath)
   }
 
   [pscustomobject]@{
     Command = "new-section"
-    Path = $readmePath
+    Path = $sectionDir
+    ReadmePath = $(if ($createsReadme) { $readmePath } else { "" })
     CategoryPath = $categoryPath
-    TocQueued = $includeToc
+    TocQueued = ($createsReadme -and $includeToc)
     BridgeStatus = $bridgeStatus
   }
 }
@@ -2880,7 +2918,7 @@ function Invoke-NewPage {
       throw "Section path must not be empty."
     }
 
-    $sectionDir = Join-Path $docsRoot ([System.IO.Path]::Combine($sectionSegments))
+    $sectionDir = Join-Path $docsRoot (($sectionSegments -join [System.IO.Path]::DirectorySeparatorChar))
     Assert-PathInsideRoot -RootPath $docsRoot -TargetPath $sectionDir
 
     if (-not (Test-DocsSectionExists -SectionDir $sectionDir)) {
@@ -3021,7 +3059,7 @@ function Get-NextSectionPosition {
   }
   else {
     $parentSegments = @($sectionSegments[0..($sectionSegments.Count - 2)])
-    $parentDir = Join-Path $DocsRoot ([System.IO.Path]::Combine($parentSegments))
+    $parentDir = Join-Path $DocsRoot (($parentSegments -join [System.IO.Path]::DirectorySeparatorChar))
   }
 
   $positions = New-Object System.Collections.Generic.List[double]
@@ -3351,6 +3389,126 @@ function Invoke-DocsReorder {
     NewPosition = $desiredPosition
     UpdatedCount = $changedItems.Count
     UpdatedItems = @($changedItems | Sort-Object RelativePath)
+  }
+}
+
+function Resolve-DocsVisibilityTarget {
+  param(
+    [Parameter(Mandatory)][string]$DocsRoot,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $normalized = Normalize-DocsTargetPath -TargetPath $TargetPath
+
+  $directoryCandidate = Join-Path $DocsRoot $normalized
+  Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $directoryCandidate
+  if (Test-Path -LiteralPath $directoryCandidate -PathType Container) {
+    foreach ($candidateName in @("README.md", "README.mdx", "index.md", "index.mdx")) {
+      $candidatePath = Join-Path $directoryCandidate $candidateName
+      if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+        return [pscustomobject]@{
+          FullPath = $candidatePath
+          RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $candidatePath)
+        }
+      }
+    }
+
+    throw "No landing document exists for '$TargetPath'."
+  }
+
+  foreach ($extension in @(".md", ".mdx")) {
+    $fileCandidate = Join-Path $DocsRoot ($normalized + $extension)
+    Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $fileCandidate
+    if (Test-Path -LiteralPath $fileCandidate -PathType Leaf) {
+      return [pscustomobject]@{
+        FullPath = $fileCandidate
+        RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $fileCandidate)
+      }
+    }
+  }
+
+  $directCandidate = Join-Path $DocsRoot $normalized
+  Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $directCandidate
+  if (Test-Path -LiteralPath $directCandidate -PathType Leaf) {
+    return [pscustomobject]@{
+      FullPath = $directCandidate
+      RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $directCandidate)
+    }
+  }
+
+  throw "Docs page or landing document not found: $TargetPath"
+}
+
+function Invoke-DocsVisibility {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments = @()
+  )
+
+  $argumentList = @($CommandArguments)
+  if ($argumentList.Count -lt 2) {
+    throw "Usage: ue-tools docs visibility <TargetPath> <show|hide>. Run 'ue-tools docs help visibility'."
+  }
+  if ($argumentList.Count -gt 2) {
+    throw "Too many arguments for visibility. Usage: ue-tools docs visibility <TargetPath> <show|hide>."
+  }
+
+  $mode = ([string]$argumentList[1]).Trim().ToLowerInvariant()
+  if ($mode -notin @("show", "hide")) {
+    throw "Visibility mode must be 'show' or 'hide'."
+  }
+
+  $docsRoot = Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  $target = Resolve-DocsVisibilityTarget -DocsRoot $docsRoot -TargetPath $argumentList[0]
+  $content = Get-Content -LiteralPath $target.FullPath -Raw
+  $newline = if ($content.Contains("`r`n")) { "`r`n" } else { "`n" }
+  $match = [regex]::Match($content, '(?s)\A---\s*\r?\n(?<frontMatter>.*?)\r?\n---(?<rest>(?:\r?\n|$).*)\z')
+  $hide = $mode -eq "hide"
+
+  if ($match.Success) {
+    $frontMatter = $match.Groups['frontMatter'].Value
+    $rest = $match.Groups['rest'].Value
+    if ($hide) {
+      if ($frontMatter -match '(?mi)^\s*unlisted\s*:') {
+        $updatedFrontMatter = [regex]::Replace($frontMatter, '(?mi)^\s*unlisted\s*:\s*.+$', 'unlisted: true', 1)
+      }
+      else {
+        $updatedFrontMatter = if ([string]::IsNullOrWhiteSpace($frontMatter.Trim())) {
+          'unlisted: true'
+        }
+        else {
+          $frontMatter.TrimEnd("`r", "`n") + $newline + 'unlisted: true'
+        }
+      }
+    }
+    else {
+      $updatedFrontMatter = [regex]::Replace($frontMatter, '(?mi)^\s*unlisted\s*:\s*.+(?:\r?\n)?', '')
+      $updatedFrontMatter = $updatedFrontMatter.TrimEnd("`r", "`n")
+    }
+
+    $updatedContent = if ([string]::IsNullOrWhiteSpace($updatedFrontMatter)) {
+      $rest.TrimStart("`r", "`n")
+    }
+    else {
+      "---$newline$updatedFrontMatter$newline---$rest"
+    }
+    Write-Utf8NoBomFile -Path $target.FullPath -Content $updatedContent
+  }
+  elseif ($hide) {
+    $updatedContent = @(
+      '---'
+      'unlisted: true'
+      '---'
+      ''
+      $content.TrimStart("`r", "`n")
+    ) -join $newline
+    Write-Utf8NoBomFile -Path $target.FullPath -Content $updatedContent
+  }
+
+  return [pscustomobject]@{
+    Command = "visibility"
+    Target = $target.RelativePath
+    Hidden = $hide
   }
 }
 
@@ -4248,6 +4406,16 @@ function Invoke-DocsToolsMain {
       else {
         Write-Output "Reordered '$($result.Target)' from $($result.OldPosition) to $($result.NewPosition)."
         Write-Output "Updated items: $($result.UpdatedCount)"
+      }
+      return
+    }
+    "visibility" {
+      $result = Invoke-DocsVisibility -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
+      if ($result.Hidden) {
+        Write-Output "Hidden '$($result.Target)' from site navigation."
+      }
+      else {
+        Write-Output "Showed '$($result.Target)' in site navigation."
       }
       return
     }

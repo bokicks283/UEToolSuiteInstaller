@@ -30,8 +30,7 @@ import {Node, mergeAttributes, nodeInputRule, nodePasteRule, type Editor} from '
 import {icons} from 'lucide';
 
 import authoringStyles from './ueAuthoring.module.css';
-import {resolveSourceToken, useDocsAuthoringApi, type DocsContentPayload} from '../../authoring/api';
-import SiteAdminPanel from '../../authoring/SiteAdminPanel';
+import {broadcastDocsStructureChanged, resolveSourceToken, useDocsAuthoringApi, type DocsContentPayload} from '../../authoring/api';
 import {
   EMOJI_MAP,
   SHORTCODE_INPUT_REGEX,
@@ -45,6 +44,7 @@ import {
 
 type DocsContentResponse = {ok: true; content: DocsContentPayload};
 type DocsSaveResponse = {ok: true; result: {path: string; hash: string; modifiedUtc: string}};
+type DocsVisibilityResponse = {ok: true; result: {path: string; hidden: boolean; hash: string; modifiedUtc: string}};
 
 type FrontMatterSplit = {
   frontMatterBlock: string;
@@ -1175,6 +1175,40 @@ function joinFrontMatter(frontMatterBlock: string, body: string): string {
   return `${trimmedFrontMatter}\n\n${normalizedBody}`;
 }
 
+function frontMatterHasBoolean(frontMatterBlock: string, key: string): boolean {
+  if (!frontMatterBlock.trim()) {
+    return false;
+  }
+  const pattern = new RegExp(`^\\s*${key}\\s*:\\s*(true|false)\\s*$`, 'im');
+  const match = frontMatterBlock.match(pattern);
+  return (match?.[1] ?? '').toLowerCase() === 'true';
+}
+
+function setFrontMatterBoolean(frontMatterBlock: string, key: string, value: boolean): string {
+  const trimmed = frontMatterBlock.trim();
+  const keyPattern = new RegExp(`^\\s*${key}\\s*:\\s*.+(?:\\r?\\n)?`, 'im');
+
+  if (!trimmed) {
+    return value ? `---\n${key}: true\n---` : '';
+  }
+
+  const lines = trimmed.split(/\r?\n/);
+  if (lines[0] !== '---' || lines[lines.length - 1] !== '---') {
+    return frontMatterBlock;
+  }
+
+  const bodyLines = lines.slice(1, -1).filter((line) => !keyPattern.test(`${line}\n`));
+  if (value) {
+    bodyLines.push(`${key}: true`);
+  }
+
+  if (bodyLines.length === 0) {
+    return '';
+  }
+
+  return ['---', ...bodyLines, '---'].join('\n');
+}
+
 function getDraftStorageKey(sourceToken: string): string {
   return `ue-docs-editor-draft:${sourceToken}`;
 }
@@ -1449,10 +1483,21 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
 
   const sourceToken = useMemo(() => resolveSourceToken(metadata.source ?? ''), [metadata.source]);
   const pageIsEditable = sourceToken.toLowerCase().endsWith('.md');
-  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
-  const [rightTocCollapsed, setRightTocCollapsed] = useState(false);
-  const [siteAdminOpen, setSiteAdminOpen] = useState(false);
-  const [viewportWidth, setViewportWidth] = useState(0);
+  const pageCanManageVisibility = authoringAvailable && !sourceToken.toLowerCase().endsWith('/_category_.json') && !!sourceToken;
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.localStorage.getItem(LEFT_SIDEBAR_COLLAPSED_KEY) === 'true';
+  });
+  const [rightTocCollapsed, setRightTocCollapsed] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const storedRightToc = window.localStorage.getItem(RIGHT_TOC_COLLAPSED_KEY);
+    return storedRightToc === null ? window.innerWidth < 2200 : storedRightToc === 'true';
+  });
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 0 : window.innerWidth));
   const [layoutViewportShift, setLayoutViewportShift] = useState(0);
   const [tocAutoVisible, setTocAutoVisible] = useState(true);
   const [tocAutoHideVersion, setTocAutoHideVersion] = useState(0);
@@ -1471,32 +1516,30 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const narrowDesktopSingleRail = viewportWidth > 996 && viewportWidth <= 1100;
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      return undefined;
     }
-    setLeftSidebarCollapsed(window.localStorage.getItem(LEFT_SIDEBAR_COLLAPSED_KEY) === 'true');
-    const storedRightToc = window.localStorage.getItem(RIGHT_TOC_COLLAPSED_KEY);
-    const nextViewportWidth = window.innerWidth;
-    setViewportWidth(nextViewportWidth);
-    setRightTocCollapsed(storedRightToc === null ? nextViewportWidth < 2200 : storedRightToc === 'true');
+
+    document.documentElement.dataset.ueDocsUiReady = 'false';
+    let cancelled = false;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (cancelled) {
+          return;
+        }
+        document.documentElement.dataset.ueDocsUiReady = 'true';
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) {
+        window.cancelAnimationFrame(secondFrame);
+      }
+    };
   }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !authoringAvailable) {
-      return;
-    }
-
-    const currentUrl = new URL(window.location.href);
-    const shouldOpenSiteAdmin = currentUrl.searchParams.get('siteAdmin') === '1';
-    if (!shouldOpenSiteAdmin) {
-      return;
-    }
-
-    setSiteAdminOpen(true);
-    currentUrl.searchParams.delete('siteAdmin');
-    const nextUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
-    window.history.replaceState(window.history.state, '', nextUrl);
-  }, [authoringAvailable]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1513,17 +1556,13 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
 
   useEffect(() => {
     if (typeof document === 'undefined') {
-      return undefined;
+      return;
     }
 
     document.documentElement.dataset.ueDocsLeftSidebarCollapsed = leftSidebarCollapsed ? 'true' : 'false';
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(LEFT_SIDEBAR_COLLAPSED_KEY, leftSidebarCollapsed ? 'true' : 'false');
     }
-
-    return () => {
-      delete document.documentElement.dataset.ueDocsLeftSidebarCollapsed;
-    };
   }, [leftSidebarCollapsed]);
 
   useEffect(() => {
@@ -1628,6 +1667,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const loadedHashRef = useRef('');
   const tocIgnoredHeadingLabelsRef = useRef<Set<string>>(new Set());
   const tocMarkerEnabledRef = useRef(false);
+  const pageHiddenFromSite = useMemo(() => frontMatterHasBoolean(frontMatterBlock, 'unlisted'), [frontMatterBlock]);
 
   useEffect(() => {
     loadedHashRef.current = loadedContent?.hash ?? '';
@@ -2374,6 +2414,42 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     }
   }, [pageIsEditable, requestJson, sourceToken]);
 
+  const toggleCurrentPageVisibility = useCallback(async () => {
+    if (!pageCanManageVisibility || !sourceToken) {
+      return;
+    }
+
+    setSaving(true);
+    setErrorText('');
+    setStatusText('');
+    try {
+      const payload = await requestJson<DocsVisibilityResponse>('/api/visibility', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          path: sourceToken,
+          hidden: !pageHiddenFromSite,
+        }),
+      });
+
+      setLoadedContent((current) => (current ? {
+        ...current,
+        hash: payload.result.hash,
+        modifiedUtc: payload.result.modifiedUtc,
+      } : current));
+      setFrontMatterBlock((current) => setFrontMatterBoolean(current, 'unlisted', payload.result.hidden));
+      setStatusText(payload.result.hidden ? 'Page hidden from site.' : 'Page shown in site.');
+      broadcastDocsStructureChanged();
+      if (typeof window !== 'undefined') {
+        window.setTimeout(() => window.location.reload(), 250);
+      }
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : 'Visibility update failed.');
+    } finally {
+      setSaving(false);
+    }
+  }, [pageCanManageVisibility, pageHiddenFromSite, requestJson, sourceToken]);
+
   const controlsDisabled = saving || loading || deleting;
   const sourceModeRequired = advancedMdx || richEditorUnavailable;
   const canUseTableTools = Boolean(editor && editorRevision >= 0 && editor.isActive('table') && !sourceModeRequired && !saving && !loading && !deleting);
@@ -2462,18 +2538,24 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   }, [revealGlobalScrollbars]);
 
   const toggleLeftSidebar = useCallback(() => {
-    if (narrowDesktopSingleRail && leftSidebarCollapsed && !rightTocCollapsed) {
-      setRightTocCollapsed(true);
-    }
-    setLeftSidebarCollapsed((value) => !value);
-  }, [leftSidebarCollapsed, narrowDesktopSingleRail, rightTocCollapsed]);
+    setLeftSidebarCollapsed((currentLeft) => {
+      const nextLeft = !currentLeft;
+      if (narrowDesktopSingleRail && !nextLeft) {
+        setRightTocCollapsed(true);
+      }
+      return nextLeft;
+    });
+  }, [narrowDesktopSingleRail]);
 
   const toggleRightToc = useCallback(() => {
-    if (narrowDesktopSingleRail && rightTocCollapsed && !leftSidebarCollapsed) {
-      setLeftSidebarCollapsed(true);
-    }
-    setRightTocCollapsed((value) => !value);
-  }, [leftSidebarCollapsed, narrowDesktopSingleRail, rightTocCollapsed]);
+    setRightTocCollapsed((currentRight) => {
+      const nextRight = !currentRight;
+      if (narrowDesktopSingleRail && !nextRight) {
+        setLeftSidebarCollapsed(true);
+      }
+      return nextRight;
+    });
+  }, [narrowDesktopSingleRail]);
 
   const getTocScrollElement = useCallback((): HTMLDivElement | null => {
     const container = tocColumnRef.current;
@@ -2843,24 +2925,19 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                       <ToolbarIcon name="panelRight" />
                       <span>TOC</span>
                     </button>
-                    {authoringAvailable ? (
-                      <button
-                        type="button"
-                        className={authoringStyles.layoutToggleButton}
-                        aria-label="Open site settings"
-                        title="Open site settings"
-                        onClick={() => setSiteAdminOpen(true)}
-                      >
-                        <ToolbarIcon name="sparkles" />
-                        <span>Site</span>
-                      </button>
-                    ) : null}
                   </div>
-                  {pageIsEditable && authoringAvailable ? (
+                  {((pageIsEditable && authoringAvailable) || pageCanManageVisibility) ? (
                     <div className={authoringStyles.editActions}>
-                      <button type="button" className={authoringStyles.primaryButton} onClick={() => void enterEditMode()}>
-                        Edit
-                      </button>
+                      {pageCanManageVisibility ? (
+                        <button type="button" className={authoringStyles.secondaryButton} onClick={() => void toggleCurrentPageVisibility()} disabled={saving || loading || deleting}>
+                          {pageHiddenFromSite ? 'Show In Site' : 'Hide From Site'}
+                        </button>
+                      ) : null}
+                      {pageIsEditable && authoringAvailable ? (
+                        <button type="button" className={authoringStyles.primaryButton} onClick={() => void enterEditMode()}>
+                          Edit
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -3191,7 +3268,6 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
 
             <DocItemFooter />
           </article>
-          {authoringAvailable ? <SiteAdminPanel open={siteAdminOpen} onClose={() => setSiteAdminOpen(false)} requestJson={requestJson} /> : null}
           <DocItemPaginator />
         </div>
       </div>

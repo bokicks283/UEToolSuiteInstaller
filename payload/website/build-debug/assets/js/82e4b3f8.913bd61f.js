@@ -1,0 +1,368 @@
+"use strict";
+(globalThis["webpackChunkue_project_docs"] = globalThis["webpackChunkue_project_docs"] || []).push([[8873],{
+
+/***/ 4790
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+// ESM COMPAT FLAG
+__webpack_require__.r(__webpack_exports__);
+
+// EXPORTS
+__webpack_require__.d(__webpack_exports__, {
+  assets: () => (/* binding */ assets),
+  contentTitle: () => (/* binding */ contentTitle),
+  "default": () => (/* binding */ MDXContent),
+  frontMatter: () => (/* binding */ frontMatter),
+  metadata: () => (/* reexport */ site_docs_workflow_standards_docs_site_authoring_md_82e_namespaceObject),
+  toc: () => (/* binding */ toc)
+});
+
+;// ./.docusaurus/docusaurus-plugin-content-docs/default/site-docs-workflow-standards-docs-site-authoring-md-82e.json
+const site_docs_workflow_standards_docs_site_authoring_md_82e_namespaceObject = /*#__PURE__*/JSON.parse('{"id":"WorkflowStandards/DocsSite/Authoring","title":"Authoring Docs","description":"Write docs in Docs/. Keep the site shell in website/ thin.","source":"@site/../Docs/WorkflowStandards/DocsSite/Authoring.md","sourceDirName":"WorkflowStandards/DocsSite","slug":"/docs-site/authoring","permalink":"/docs/docs-site/authoring","draft":false,"unlisted":false,"tags":[],"version":"current","frontMatter":{"title":"Authoring Docs","slug":"/docs-site/authoring"},"sidebar":"workflow-standards-sidebar","previous":{"title":"Docs Site","permalink":"/docs/docs-site"},"next":{"title":"Docusaurus Setup","permalink":"/docs/docs-site/setup"}}');
+// EXTERNAL MODULE: ./node_modules/react/jsx-runtime.js
+var jsx_runtime = __webpack_require__(4848);
+// EXTERNAL MODULE: ./node_modules/@mdx-js/react/lib/index.js
+var lib = __webpack_require__(8453);
+;// ../Docs/WorkflowStandards/DocsSite/Authoring.md
+
+
+const frontMatter = {
+	title: 'Authoring Docs',
+	slug: '/docs-site/authoring'
+};
+const contentTitle = 'Authoring Docs';
+
+const assets = {
+
+};
+
+
+
+const toc = [{
+  "value": "Authoring Rules",
+  "id": "authoring-rules",
+  "level": 2
+}, {
+  "value": "Content Rules",
+  "id": "content-rules",
+  "level": 2
+}, {
+  "value": "Linking Guidance",
+  "id": "linking-guidance",
+  "level": 2
+}, {
+  "value": "New Section And Page Workflow",
+  "id": "new-section-and-page-workflow",
+  "level": 2
+}, {
+  "value": "Reordering Existing Docs",
+  "id": "reordering-existing-docs",
+  "level": 2
+}, {
+  "value": "Optional TOC Automation",
+  "id": "optional-toc-automation",
+  "level": 2
+}, {
+  "value": "Local Site Commands",
+  "id": "local-site-commands",
+  "level": 2
+}];
+function _createMdxContent(props) {
+  const _components = {
+    code: "code",
+    h1: "h1",
+    h2: "h2",
+    header: "header",
+    li: "li",
+    ol: "ol",
+    p: "p",
+    pre: "pre",
+    ul: "ul",
+    ...(0,lib/* useMDXComponents */.R)(),
+    ...props.components
+  };
+  return (0,jsx_runtime.jsxs)(jsx_runtime.Fragment, {
+    children: [(0,jsx_runtime.jsx)(_components.header, {
+      children: (0,jsx_runtime.jsx)(_components.h1, {
+        id: "authoring-docs",
+        children: "Authoring Docs"
+      })
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: ["Write docs in ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "Docs/"
+      }), ". Keep the site shell in ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "website/"
+      }), " thin."]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "authoring-rules",
+      children: "Authoring Rules"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Prefer concrete examples tied to this repo."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Put commands in fenced code blocks."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Use repository-relative paths."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Add front matter when a page needs a stable slug or custom title."
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["Use ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "ue-tools docs new-section"
+        }), " and ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "ue-tools docs new-page"
+        }), " for routine scaffolding instead of hand-creating the same front matter repeatedly."]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["Keep normal docs navigation data in the ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "Docs/"
+        }), " tree with ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "_category_.json"
+        }), " and ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "sidebar_position"
+        }), "; ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "website/sidebars.ts"
+        }), " is only the thin autogenerated shell now."]
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "content-rules",
+      children: "Content Rules"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Replace stale process docs instead of layering contradictory notes on top."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Keep Confluence references clearly marked as legacy context only."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Avoid TODO-only pages. Either write the policy or do not create the page yet."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Keep operational runbooks close to the scripts they describe."
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "linking-guidance",
+      children: "Linking Guidance"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["Link sibling docs with relative markdown links inside ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "Docs/"
+        }), "."]
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Link repo files with explicit repo-relative paths when giving commands or examples."
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Prefer stable section headings over loose “see above” references."
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "new-section-and-page-workflow",
+      children: "New Section And Page Workflow"
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "Create a section:"
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs new-section Workflow -Title \"Workflow\" -Position 9\n"
+      })
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "Create a page inside that section:"
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs new-page Workflow Daily-Flow -Title \"Daily Flow\" -Position 2\n"
+      })
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "Create a top-level docs page without a section:"
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs new-page Setup -Title \"Setup\"\n"
+      })
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "What those commands handle for you:"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "create the markdown file"
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "generate front matter and canonical slugs"
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["write ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "_category_.json"
+        }), " for new sections"]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["treat ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "_category_.json"
+        }), " as the section marker; ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "README.md"
+        }), " is only the optional landing doc"]
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "keep the new content compatible with autogenerated Docusaurus sidebars"
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["support both top-level ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "Docs/<Page>.md"
+        }), " pages and ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "Docs/<Section>/<Page>.md"
+        }), " pages"]
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: ["If you omit ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "-Position"
+      }), ", ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "ue-tools docs"
+      }), " now assigns the next available sidebar position automatically instead of reusing the same default for every new page or section."]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "reordering-existing-docs",
+      children: "Reordering Existing Docs"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: ["Use ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "ue-tools docs reorder"
+      }), " when you want to move an existing page or section and shift its siblings automatically."]
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "Examples:"
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs reorder Art-Source 4\nue-tools docs reorder Workflow 3\nue-tools docs reorder Workflow/Daily-Flow 2\n"
+      })
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "What it updates:"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["page ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "sidebar_position"
+        }), " values"]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["section ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "_category_.json"
+        }), " ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "position"
+        }), " values"]
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "sibling positions in the same parent container so you do not have to hand-edit every item below the move target"
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "optional-toc-automation",
+      children: "Optional TOC Automation"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: [(0,jsx_runtime.jsx)(_components.code, {
+        children: "ue-tools docs"
+      }), " can optionally ask VS Code to run Markdown All in One's table-of-contents command after scaffolding a new page or section."]
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "Setup:"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ol, {
+      children: ["\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["Install the VS Code extension ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "Markdown All in One"
+        }), "."]
+      }), "\n", (0,jsx_runtime.jsx)(_components.li, {
+        children: "Run:"
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs install-bridge\n"
+      })
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "Notes:"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["If both the bridge and Markdown All in One are available, new pages and sections include a temporary TOC marker and queue a request for VS Code to run ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "Create Table of Contents"
+        }), "."]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["If either dependency is missing, ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "ue-tools docs"
+        }), " skips TOC generation automatically."]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["Use ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-NoToc"
+        }), " when you want to suppress TOC generation even when the optional bridge is available."]
+      }), "\n"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.h2, {
+      id: "local-site-commands",
+      children: "Local Site Commands"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: ["Use the repo-local wrappers instead of dropping into ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "website/"
+      }), " for normal work:"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs start\nue-tools docs stop\nue-tools docs status\nue-tools docs check\nue-tools docs doctor\nue-tools docs serve\nue-tools docs write-heading-ids\nue-tools docs docusaurus <args...>\n"
+      })
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: [(0,jsx_runtime.jsx)(_components.code, {
+        children: "start"
+      }), " now runs the Docusaurus dev server attached to the current terminal so you can see live stdout/stderr. Use ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "ue-tools docs start --background"
+      }), " when you want the old detached tracked-server behavior. ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "stop"
+      }), " and ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "status"
+      }), " only apply to that tracked background mode. ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "doctor"
+      }), " checks common local prerequisites such as ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "node"
+      }), ", ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "npm"
+      }), ", ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "website/node_modules"
+      }), ", and the optional VS Code TOC bridge."]
+    }), "\n", (0,jsx_runtime.jsxs)(_components.p, {
+      children: ["Use ", (0,jsx_runtime.jsx)(_components.code, {
+        children: "ue-tools docs help <command>"
+      }), " for the detailed option list on any command:"]
+    }), "\n", (0,jsx_runtime.jsx)(_components.pre, {
+      children: (0,jsx_runtime.jsx)(_components.code, {
+        className: "language-powershell",
+        children: "ue-tools docs help new-page\nue-tools docs help new-section\n"
+      })
+    }), "\n", (0,jsx_runtime.jsx)(_components.p, {
+      children: "For advanced Docusaurus metadata, the scaffold commands support both typed flags and generic passthrough fields:"
+    }), "\n", (0,jsx_runtime.jsxs)(_components.ul, {
+      children: ["\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: [(0,jsx_runtime.jsx)(_components.code, {
+          children: "new-page"
+        }), ": use ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-Field key=value"
+        }), " and ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-FieldJson key=json"
+        }), " for any extra front matter."]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: [(0,jsx_runtime.jsx)(_components.code, {
+          children: "new-section"
+        }), ": use ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-DocField"
+        }), " / ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-DocFieldJson"
+        }), " for the section ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "README.md"
+        }), ", and ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-CategoryField"
+        }), " / ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-CategoryJson"
+        }), " for ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "_category_.json"
+        }), "."]
+      }), "\n", (0,jsx_runtime.jsxs)(_components.li, {
+        children: ["Use ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-LinkType generated-index"
+        }), " for autogenerated landing pages, or ", (0,jsx_runtime.jsx)(_components.code, {
+          children: "-CategoryJson 'link={...}'"
+        }), " when you need full manual control of the category link object."]
+      }), "\n"]
+    })]
+  });
+}
+function MDXContent(props = {}) {
+  const {wrapper: MDXLayout} = {
+    ...(0,lib/* useMDXComponents */.R)(),
+    ...props.components
+  };
+  return MDXLayout ? (0,jsx_runtime.jsx)(MDXLayout, {
+    ...props,
+    children: (0,jsx_runtime.jsx)(_createMdxContent, {
+      ...props
+    })
+  }) : _createMdxContent(props);
+}
+
+
+
+/***/ }
+
+}]);

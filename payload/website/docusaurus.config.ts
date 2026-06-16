@@ -106,7 +106,15 @@ const config: Config = {
         alt: 'UE Project Docs',
         src: 'img/themes/neutral/logo.svg',
       },
-      items: navbarDomainItems,
+      items: [
+        ...navbarDomainItems,
+        {
+          type: 'html',
+          position: 'right',
+          value:
+            '<a class="navbar__item navbar__link ue-navbar-settings-link clean-btn" href="/site-settings" aria-label="Site settings" title="Site settings"><svg class="ue-navbar-settings-link__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.75a3.25 3.25 0 1 0 0 6.5a3.25 3.25 0 0 0 0-6.5Zm8.15 2.32l-1.52-.25a6.95 6.95 0 0 0-.64-1.54l.9-1.25a1 1 0 0 0-.1-1.29l-1.78-1.78a1 1 0 0 0-1.29-.1l-1.25.9a6.95 6.95 0 0 0-1.54-.64l-.25-1.52A1 1 0 0 0 11.7 2h-2.4a1 1 0 0 0-.98.83l-.25 1.52a6.95 6.95 0 0 0-1.54.64l-1.25-.9a1 1 0 0 0-1.29.1L2.21 5.97a1 1 0 0 0-.1 1.29l.9 1.25c-.28.49-.5 1-.64 1.54l-1.52.25a1 1 0 0 0-.83.98v2.4a1 1 0 0 0 .83.98l1.52.25c.14.54.36 1.05.64 1.54l-.9 1.25a1 1 0 0 0 .1 1.29l1.78 1.78a1 1 0 0 0 1.29.1l1.25-.9c.49.28 1 .5 1.54.64l.25 1.52a1 1 0 0 0 .98.83h2.4a1 1 0 0 0 .98-.83l.25-1.52c.54-.14 1.05-.36 1.54-.64l1.25.9a1 1 0 0 0 1.29-.1l1.78-1.78a1 1 0 0 0 .1-1.29l-.9-1.25c.28-.49.5-1 .64-1.54l1.52-.25a1 1 0 0 0 .83-.98v-2.4a1 1 0 0 0-.83-.98Z"></path></svg></a>',
+        },
+      ],
     },
     footer: {
       style: 'dark',
@@ -116,7 +124,7 @@ const config: Config = {
           items: [
             {
               label: 'Home',
-              to: '/docs/',
+              to: '/',
             },
           ],
         },
@@ -124,8 +132,12 @@ const config: Config = {
           title: 'Domains',
           items: [
             {
-              label: 'Docs Home',
-              to: '/docs/',
+              label: 'Workflow & Standards',
+              to: '/docs/workflow-standards',
+            },
+            {
+              label: 'Project Docs',
+              to: '/docs/project-docs',
             },
           ],
         },

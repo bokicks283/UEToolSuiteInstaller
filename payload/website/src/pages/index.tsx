@@ -42,7 +42,7 @@ const quickLinks = [
   {
     title: 'Site Settings',
     body: 'Open theme, branding, domain, and managed override controls from the docs surface.',
-    to: '/docs/?siteAdmin=1',
+    to: '/site-settings',
   },
 ];
 
@@ -77,7 +77,7 @@ export default function Home(): ReactNode {
               <Link className="button button--primary button--lg" to="/docs/">
                 Open Docs
               </Link>
-              <Link className={styles.ghostButton} to="/docs/?siteAdmin=1">
+              <Link className={styles.ghostButton} to="/site-settings">
                 Site Settings
               </Link>
             </div>
@@ -97,7 +97,7 @@ export default function Home(): ReactNode {
           <div className={styles.sectionHeader}>
             <p className={styles.sectionLabel}>Domains</p>
             <Heading as="h2">Start from the right container.</Heading>
-            <p>Each domain gets its own landing page and its own pages sidebar.</p>
+            <p>Each domain gets its own pages sidebar. Landing pages are optional.</p>
           </div>
           <div className={styles.cardGrid}>
             {domainCards.map((item) => (

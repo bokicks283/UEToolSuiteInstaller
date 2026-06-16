@@ -7,8 +7,20 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
-if (-not $repoRoot) { throw "Not inside a git repository." }
+$gitRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
+if (-not $gitRoot) { throw "Not inside a git repository." }
+
+$repoRoot = $gitRoot
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  $payloadRoot = Join-Path $gitRoot "payload"
+  $payloadHarnessPath = Join-Path $payloadRoot "Scripts\Tests\TestHarness.ps1"
+  if (Test-Path -LiteralPath $payloadHarnessPath -PathType Leaf) {
+    $repoRoot = $payloadRoot
+    $testHarnessPath = $payloadHarnessPath
+  }
+}
+
 Set-Location $repoRoot
 
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
@@ -17,7 +29,6 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "DocsToolsTest-$stamp.log"
 $tempRoot = Join-Path $resultsDir "scratch-$stamp"
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
-$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
 if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
 }
@@ -75,13 +86,38 @@ Minimal docs root for ue-tools docs testing.
   if (Test-Path -LiteralPath $configSource) {
     Copy-Item -LiteralPath $configSource -Destination (Join-Path $scratchWebsiteRoot "docusaurus.config.ts") -Force
   }
+  foreach ($websiteSourceRelativePath in @(
+      "website\sidebars.ts",
+      "website\domainCatalog.ts"
+    )) {
+    $websiteSourcePath = Join-Path $repoRoot $websiteSourceRelativePath
+    if (-not (Test-Path -LiteralPath $websiteSourcePath -PathType Leaf)) {
+      continue
+    }
+
+    $websiteDestinationPath = Join-Path $scratchWebsiteRoot ($websiteSourceRelativePath.Substring("website\".Length))
+    $websiteDestinationParent = Split-Path -Path $websiteDestinationPath -Parent
+    if ($websiteDestinationParent) {
+      New-Item -ItemType Directory -Force -Path $websiteDestinationParent | Out-Null
+    }
+    Copy-Item -LiteralPath $websiteSourcePath -Destination $websiteDestinationPath -Force
+  }
   $themePresetsSource = Join-Path $repoRoot "website\theme-presets"
   if (Test-Path -LiteralPath $themePresetsSource -PathType Container) {
     Copy-Item -LiteralPath $themePresetsSource -Destination (Join-Path $scratchWebsiteRoot "theme-presets") -Recurse -Force
   }
-  $cssSource = Join-Path $repoRoot "website\src\css\custom.css"
-  if (Test-Path -LiteralPath $cssSource -PathType Leaf) {
-    $cssDestination = Join-Path $scratchWebsiteRoot "src\css\custom.css"
+  foreach ($relativeCssPath in @(
+      "website\src\css\custom.css",
+      "website\src\css\suite-shell.css",
+      "website\src\css\project-overrides.css",
+      "website\theme-presets\active-theme.css"
+    )) {
+    $cssSource = Join-Path $repoRoot $relativeCssPath
+    if (-not (Test-Path -LiteralPath $cssSource -PathType Leaf)) {
+      continue
+    }
+
+    $cssDestination = Join-Path $scratchWebsiteRoot ($relativeCssPath.Substring("website\".Length))
     $cssDestinationParent = Split-Path -Path $cssDestination -Parent
     if ($cssDestinationParent) {
       New-Item -ItemType Directory -Force -Path $cssDestinationParent | Out-Null
@@ -371,7 +407,8 @@ try {
   Assert-Condition "case1f adopt theme apply exits cleanly" ($themeAdoptResult.ExitCode -eq 0) "exit code=0" "exit code=$($themeAdoptResult.ExitCode)"
   Assert-TextContains "case1f adopt message emitted" $themeAdoptResult.OutputText "Adopted existing website"
   Assert-TextContains "case1f apply message emitted" $themeAdoptResult.OutputText "Applied website theme 'ocean'."
-  Assert-TextContains "case1f custom css updated to ocean palette" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\src\css\custom.css") -Raw) "--ifm-color-primary: #0d7ea2;"
+  Assert-TextContains "case1f custom css keeps theme shell imports" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\src\css\custom.css") -Raw) "@import '../../theme-presets/active-theme.css';"
+  Assert-TextContains "case1f active theme css updated to ocean palette" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\theme-presets\active-theme.css") -Raw) "--ifm-color-primary: #0d7ea2;"
   $themeAdoptConfig = Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\docusaurus.config.ts") -Raw
   Assert-TextContains "case1f config stores updated theme id" $themeAdoptConfig "suiteThemeId: 'ocean'"
   Assert-TextContains "case1f custom logo rewires navbar icon" $themeAdoptConfig "src: 'img/branding/project-logo.svg'"
@@ -473,18 +510,19 @@ try {
       $createSetupPage = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/create/page" -Method Post -ContentType "application/json" -Body $createSetupPageBody -TimeoutSec 5
       Assert-Condition "case1g api seed setup page endpoint returns ok payload" ($createSetupPage.ok -eq $true) "create setup page ok=true" "create setup page response did not set ok=true"
 
-      $docsConfigPath = Join-Path $apiHostRepo "website\docusaurus.config.ts"
-      if (Test-Path -LiteralPath $docsConfigPath -PathType Leaf) {
-        $docsConfigBeforeSeed = Get-Content -LiteralPath $docsConfigPath -Raw
-        $docsConfigAfterSeed = [regex]::Replace(
-          $docsConfigBeforeSeed,
-          "(?s)(type:\s*'doc'\s*,\s*docId:\s*')[^']+('\s*,\s*position:\s*'left'\s*,\s*label:\s*'Setup')",
-          ('$1Setup$2')
-        )
-        if ($docsConfigAfterSeed -ne $docsConfigBeforeSeed) {
-          Write-Utf8NoBomFile -Path $docsConfigPath -Content $docsConfigAfterSeed
+      $sidebarsPath = Join-Path $apiHostRepo "website\sidebars.ts"
+      if (Test-Path -LiteralPath $sidebarsPath -PathType Leaf) {
+        $sidebarsBeforeSeed = Get-Content -LiteralPath $sidebarsPath -Raw
+        $sidebarsAfterSeed = if ($sidebarsBeforeSeed -notmatch "docId:\s*'Setup'") {
+          $sidebarsBeforeSeed.TrimEnd() + "`r`n`r`nexport const testSidebarReference = [{type: 'doc', docId: 'Setup'}];`r`n"
         }
-        Assert-TextContains "case1g seed setup navbar docId reference" $docsConfigAfterSeed "docId: 'Setup'"
+        else {
+          $sidebarsBeforeSeed
+        }
+        if ($sidebarsAfterSeed -ne $sidebarsBeforeSeed) {
+          Write-Utf8NoBomFile -Path $sidebarsPath -Content $sidebarsAfterSeed
+        }
+        Assert-TextContains "case1g seed setup sidebar docId reference" $sidebarsAfterSeed "docId: 'Setup'"
       }
 
       $moveReferencedPageBody = @{
@@ -494,9 +532,9 @@ try {
       } | ConvertTo-Json -Depth 6
       $moveReferencedPage = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/move" -Method Post -ContentType "application/json" -Body $moveReferencedPageBody -TimeoutSec 5
       Assert-Condition "case1g api move handles navbar docId references" ($moveReferencedPage.ok -eq $true) "move referenced page ok=true" "move referenced page response did not set ok=true"
-      $docsConfigAfterReferencedMove = Get-Content -LiteralPath (Join-Path $apiHostRepo "website\docusaurus.config.ts") -Raw
-      Assert-TextContains "case1g api move rewrites navbar docId reference after path move" $docsConfigAfterReferencedMove "docId: 'Guides Space/Setup'"
-      Assert-TextNotContains "case1g api move removes stale navbar docId reference" $docsConfigAfterReferencedMove "docId: 'Setup'"
+      $sidebarsAfterReferencedMove = Get-Content -LiteralPath (Join-Path $apiHostRepo "website\sidebars.ts") -Raw
+      Assert-TextContains "case1g api move rewrites sidebar docId reference after path move" $sidebarsAfterReferencedMove "docId: 'Guides Space/Setup'"
+      Assert-TextNotContains "case1g api move removes stale sidebar docId reference" $sidebarsAfterReferencedMove "docId: 'Setup'"
       $movedSetupContent = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=Guides%20Space%2FSetup.md" -Method Get -TimeoutSec 5
       Assert-TextContains "case1g api move keeps referenced page slug stable" ([string]$movedSetupContent.content.content) "slug: /setup"
 
@@ -832,6 +870,49 @@ sidebar_position: 1
   Assert-Condition "case3e new-page fails for missing section" ($missingSectionResult.ExitCode -ne 0) "exit code=$($missingSectionResult.ExitCode)" "expected non-zero exit code"
   Assert-TextContains "case3e output is user-friendly" $missingSectionResult.OutputText "Error: Section does not exist:"
   Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "UEToolSuite.Docs.psm1:"
+
+  Step "Case 3f: visibility toggles page and section landing docs through Docusaurus unlisted front matter"
+  $visibilityPagePath = Join-Path $noTocRepo "Docs\GameDesign\Fear-Loop.md"
+  $hidePageResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign/Fear-Loop", "hide") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-hide-page")
+  $hiddenPageText = Get-Content -LiteralPath $visibilityPagePath -Raw
+  Assert-Condition "case3f hide page exits cleanly" ($hidePageResult.ExitCode -eq 0) "exit code=0" "exit code=$($hidePageResult.ExitCode)"
+  Assert-TextContains "case3f hide page confirms action" $hidePageResult.OutputText "Hidden 'GameDesign/Fear-Loop.md' from site navigation."
+  Assert-TextContains "case3f hide page writes unlisted front matter" $hiddenPageText "unlisted: true"
+
+  $showPageResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign/Fear-Loop", "show") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-show-page")
+  $shownPageText = Get-Content -LiteralPath $visibilityPagePath -Raw
+  Assert-Condition "case3f show page exits cleanly" ($showPageResult.ExitCode -eq 0) "exit code=0" "exit code=$($showPageResult.ExitCode)"
+  Assert-TextContains "case3f show page confirms action" $showPageResult.OutputText "Showed 'GameDesign/Fear-Loop.md' in site navigation."
+  Assert-TextNotContains "case3f show page removes unlisted front matter" $shownPageText "unlisted: true"
+
+  $visibilitySectionPath = Join-Path $noTocRepo "Docs\GameDesign\README.md"
+  $hideSectionResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign", "hide") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-hide-section")
+  $hiddenSectionText = Get-Content -LiteralPath $visibilitySectionPath -Raw
+  Assert-Condition "case3f hide section exits cleanly" ($hideSectionResult.ExitCode -eq 0) "exit code=0" "exit code=$($hideSectionResult.ExitCode)"
+  Assert-TextContains "case3f hide section confirms landing target" $hideSectionResult.OutputText "Hidden 'GameDesign/README.md' from site navigation."
+  Assert-TextContains "case3f hide section writes unlisted front matter" $hiddenSectionText "unlisted: true"
+
+  $showSectionResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign", "show") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-show-section")
+  $shownSectionText = Get-Content -LiteralPath $visibilitySectionPath -Raw
+  Assert-Condition "case3f show section exits cleanly" ($showSectionResult.ExitCode -eq 0) "exit code=0" "exit code=$($showSectionResult.ExitCode)"
+  Assert-TextContains "case3f show section confirms landing target" $showSectionResult.OutputText "Showed 'GameDesign/README.md' in site navigation."
+  Assert-TextNotContains "case3f show section removes unlisted front matter" $shownSectionText "unlisted: true"
 
   Step "Case 4: install-bridge copies the optional VS Code bridge"
   $bridgeToolset = New-StubToolset -Name "toolset-install-bridge" -CodeExtensions @("yzhang.markdown-all-in-one")

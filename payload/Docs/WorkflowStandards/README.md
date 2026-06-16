@@ -2,9 +2,8 @@
 title: Workflow And Standards
 sidebar_position: 1
 slug: /workflow-standards
+displayed_sidebar: workflow-standards-sidebar
 ---
-
-import DocCardList from '@theme/DocCardList';
 
 # Workflow And Standards
 
@@ -18,7 +17,3 @@ This domain holds the shared rules for how the repo is set up, how code moves th
 - Unreal and C++ standards
 - docs authoring and site operations
 - shared AI operating context
-
-## Browse This Domain
-
-<DocCardList />

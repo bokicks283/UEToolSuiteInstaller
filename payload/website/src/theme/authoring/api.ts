@@ -7,6 +7,7 @@ export type DocsTreeNode = {
   path: string;
   name: string;
   position: number;
+  unlisted?: boolean;
   children?: DocsTreeNode[];
 };
 
@@ -24,6 +25,7 @@ export type DocsDomain = {
   sidebarId: string;
   readmePath?: string;
   description?: string;
+  showLandingInSidebar?: boolean;
   ownedRoots?: string[];
   ownedDocs?: string[];
   catchAll?: boolean;
@@ -36,6 +38,10 @@ export type DocsDomainsPayload = {
     sidebarId: string;
   } | null;
 };
+
+export const DOCS_STRUCTURE_CHANGED_EVENT = 'ue-docs:structure-changed';
+const DOCS_STRUCTURE_CHANGED_STORAGE_KEY = 'ue-docs:structure-changed';
+const EDITOR_API_CAPABILITY_VERSION = 2;
 
 export type DocsContentPayload = {
   path: string;
@@ -57,6 +63,28 @@ export function normalizeApiBase(value: string): string {
     return DEFAULT_EDITOR_API_URL;
   }
   return `${trimTrailingSlash(trimmed)}/`;
+}
+
+export function broadcastDocsStructureChanged(detail?: {sidebarId?: string}): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const payload = {
+    sidebarId: detail?.sidebarId || '',
+    timestamp: Date.now(),
+  };
+
+  window.dispatchEvent(new CustomEvent(DOCS_STRUCTURE_CHANGED_EVENT, {detail: payload}));
+  try {
+    window.localStorage.setItem(DOCS_STRUCTURE_CHANGED_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage write failures. The in-page event is the primary path.
+  }
+}
+
+export function getDocsStructureChangedStorageKey(): string {
+  return DOCS_STRUCTURE_CHANGED_STORAGE_KEY;
 }
 
 function stripLeadingSlash(value: string): string {
@@ -156,12 +184,15 @@ function buildApiCandidates(preferredApiBase: string): string[] {
   const preferred = normalizeApiBase(preferredApiBase || DEFAULT_EDITOR_API_URL);
   candidates.add(preferred);
   candidates.add(normalizeApiBase(DEFAULT_EDITOR_API_URL));
+  for (let port = 38474; port <= 38490; port += 1) {
+    candidates.add(normalizeApiBase(`http://127.0.0.1:${port}/`));
+  }
   return [...candidates];
 }
 
 async function probeApiBase(apiBase: string): Promise<boolean> {
   const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 1000);
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), 350);
   try {
     const response = await fetch(`${apiBase}${EDITOR_API_HEALTH_PATH}`, {
       cache: 'no-store',
@@ -170,8 +201,29 @@ async function probeApiBase(apiBase: string): Promise<boolean> {
     if (!response.ok) {
       return false;
     }
-    const payload = (await response.json()) as {ok?: boolean};
-    return payload.ok !== false;
+    const payload = (await response.json()) as {
+      ok?: boolean;
+      capabilities?: {
+        authoringApiVersion?: number;
+        siteConfig?: boolean;
+        domains?: boolean;
+        tree?: boolean;
+        visibility?: boolean;
+      };
+    };
+    if (payload.ok === false) {
+      return false;
+    }
+
+    const capabilities = payload.capabilities;
+    return (
+      !!capabilities &&
+      capabilities.authoringApiVersion === EDITOR_API_CAPABILITY_VERSION &&
+      capabilities.siteConfig === true &&
+      capabilities.domains === true &&
+      capabilities.tree === true &&
+      capabilities.visibility === true
+    );
   } catch {
     return false;
   } finally {
@@ -181,9 +233,10 @@ async function probeApiBase(apiBase: string): Promise<boolean> {
 
 async function resolveReachableApiBase(preferredApiBase: string): Promise<{apiBaseUrl: string; runtimeAvailable: boolean}> {
   const candidates = buildApiCandidates(preferredApiBase);
-  for (const candidate of candidates) {
-    if (await probeApiBase(candidate)) {
-      return {apiBaseUrl: candidate, runtimeAvailable: true};
+  const probeResults = await Promise.all(candidates.map(async (candidate) => ({candidate, ok: await probeApiBase(candidate)})));
+  for (const result of probeResults) {
+    if (result.ok) {
+      return {apiBaseUrl: result.candidate, runtimeAvailable: true};
     }
   }
   return {apiBaseUrl: candidates[0], runtimeAvailable: false};

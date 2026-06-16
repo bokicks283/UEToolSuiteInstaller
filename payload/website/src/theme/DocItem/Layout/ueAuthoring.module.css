@@ -1,9 +1,10 @@
 .docLayoutRow,
 .docLayoutNoToc {
-  --doc-toc-width: 12rem;
-  --doc-toc-gap: 0.85rem;
-  --doc-content-gutter: clamp(1.25rem, 4.2vw, 8.75rem);
+  --doc-toc-width: var(--ue-doc-sidebar-width);
+  --doc-toc-gap: 1rem;
+  --doc-content-gutter: clamp(1.1rem, 2.7vw, 3rem);
   --doc-edge-gap: clamp(1rem, 2vw, 2.25rem);
+  --doc-hidden-left-reserve: clamp(8rem, 11vw, 11rem);
   --doc-viewport-centering-shift: 0px;
   position: relative;
   width: 100%;
@@ -22,8 +23,10 @@
 
 :global(main[class*='docMainContainer']) {
   max-width: none !important;
-  width: 100% !important;
-  flex-basis: 100% !important;
+  width: auto !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  flex-basis: auto !important;
   overflow-x: clip;
 }
 
@@ -46,6 +49,15 @@
     padding-right 260ms ease,
     width 260ms ease,
     max-width 260ms ease;
+}
+
+:global(html[data-ue-docs-left-sidebar-collapsed='true']) .docLayoutRow {
+  --doc-toc-width: clamp(14.5rem, 15vw, 16.75rem);
+}
+
+:global(html[data-ue-docs-left-sidebar-collapsed='true']) .docLayoutRow:not(.docLayoutNoToc) .docContentColumn {
+  width: calc(100% - var(--doc-hidden-left-reserve) - var(--doc-edge-gap));
+  margin-left: var(--doc-hidden-left-reserve);
 }
 
 .docLayoutNoToc .docContentColumn {
@@ -77,6 +89,13 @@
     width 260ms ease,
     opacity 220ms ease,
     transform 220ms ease;
+}
+
+html:not([data-ue-docs-ui-ready='true']) .docContentColumn,
+html:not([data-ue-docs-ui-ready='true']) .docTocColumn,
+html:not([data-ue-docs-ui-ready='true']) .docTocStickyFrame,
+html:not([data-ue-docs-ui-ready='true']) .docTocScrollbar {
+  transition: none !important;
 }
 
 .docTocOverlayBackdrop {
@@ -284,10 +303,10 @@
 @media (min-width: 997px) and (max-width: 1439px) {
   .docLayoutRow,
   .docLayoutNoToc {
-    --doc-toc-width: 12rem;
-    --doc-toc-gap: 0.7rem;
-    --doc-content-gutter: 0.9rem;
+    --doc-toc-gap: 0.85rem;
+    --doc-content-gutter: 0.95rem;
     --doc-edge-gap: 0.9rem;
+    --doc-hidden-left-reserve: clamp(7rem, 10vw, 9.5rem);
   }
 
   .docContentColumn {
@@ -370,7 +389,7 @@
 @media (min-width: 997px) {
 }
 
-@media (max-width: 996px) {
+@media (max-width: 767px) {
   .docLayoutRow,
   .docLayoutNoToc {
     display: block;
@@ -391,6 +410,47 @@
 
   .viewModeActions {
     justify-content: flex-start;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 996px) {
+  .docLayoutRow,
+  .docLayoutNoToc {
+    --doc-toc-gap: 0.72rem;
+    --doc-content-gutter: 0.72rem;
+    --doc-edge-gap: 0.75rem;
+    --doc-hidden-left-reserve: clamp(5rem, 8vw, 7rem);
+  }
+
+  .docHeaderRow,
+  .viewModeActions {
+    flex-wrap: wrap;
+  }
+
+  .viewModeActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .layoutControls {
+    gap: 0.25rem;
+  }
+
+  .layoutToggleButton,
+  .primaryButton,
+  .secondaryButton {
+    min-height: 2rem;
+    padding: 0 0.52rem;
+    font-size: 0.75rem;
+  }
+
+  .docTocColumn :global(.table-of-contents) {
+    padding: 0 0.28rem 1rem 0.58rem;
+    font-size: 0.91rem;
+  }
+
+  .docTocColumn :global(.table-of-contents__link) {
+    font-size: 0.9rem;
   }
 }
 
@@ -1235,6 +1295,16 @@
   gap: 0.25rem;
 }
 
+.siteAdminPage {
+  width: min(64rem, 100%);
+  margin: 0 auto;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--ifm-background-surface-color) 98%, transparent);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+}
+
 .siteAdminBackdrop {
   position: fixed;
   inset: 0;
@@ -1305,9 +1375,41 @@
   color: #f8fafc;
 }
 
+.siteAdminCheckboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+}
+
+.siteAdminCheckboxRow input {
+  margin: 0;
+}
+
 .siteAdminActionRow {
   display: flex;
   justify-content: flex-end;
+}
+
+.siteAdminInlineActions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.siteAdminMutedPill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.45rem;
+  padding: 0.12rem 0.42rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.8);
+  background: rgba(15, 23, 42, 0.75);
 }
 
 .siteAdminOverridesHeader {
@@ -1320,6 +1422,80 @@
 .siteAdminOverrideTable {
   display: grid;
   gap: 0.5rem;
+}
+
+.siteAdminStructureBlock {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.siteAdminTreeShell {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0.7rem;
+  background: rgba(15, 23, 42, 0.4);
+  padding: 0.55rem 0.65rem;
+}
+
+.siteAdminTreeList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.siteAdminTreeItem {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.siteAdminTreeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.siteAdminTreeLabel {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.siteAdminTreeLabel small {
+  color: rgba(226, 232, 240, 0.68);
+}
+
+.siteAdminTreeToggle,
+.siteAdminTreeToggleSpacer {
+  flex: 0 0 1rem;
+  width: 1rem;
+}
+
+.siteAdminTreeToggle {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.82);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.siteAdminTreeToggleSpacer {
+  display: inline-block;
+}
+
+.siteAdminStructureHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.siteAdminStructureHeader span {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.68);
 }
 
 .siteAdminOverrideRow {
