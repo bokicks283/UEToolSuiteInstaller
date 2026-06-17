@@ -80,6 +80,38 @@ const STANDARD_DIR_NAMES = new Set([
 ]);
 const STANDARD_DOC_IDS = new Set(['setup', 'testing']);
 
+function pathExists(fullPath: string): boolean {
+  try {
+    return fs.existsSync(fullPath);
+  } catch {
+    return false;
+  }
+}
+
+function isDirectoryPath(fullPath: string): boolean {
+  try {
+    return fs.statSync(fullPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isFilePath(fullPath: string): boolean {
+  try {
+    return fs.statSync(fullPath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function safeReadDir(directoryPath: string): fs.Dirent[] {
+  try {
+    return fs.readdirSync(directoryPath, {withFileTypes: true});
+  } catch {
+    return [];
+  }
+}
+
 function isMarkdownFile(fileName: string): boolean {
   return MARKDOWN_EXTENSIONS.has(path.extname(fileName).toLowerCase());
 }
@@ -150,7 +182,7 @@ function readJsonFile(filePath: string): Record<string, unknown> | null {
 }
 
 function readDomainsConfig(): RawDomainConfig | null {
-  if (!fs.existsSync(DOMAINS_CONFIG_PATH)) {
+  if (!pathExists(DOMAINS_CONFIG_PATH)) {
     return null;
   }
   try {
@@ -179,6 +211,21 @@ function extractFrontMatterValue(content: string, key: string): string {
   return match ? match[1].trim().replace(/^['"]|['"]$/g, '') : '';
 }
 
+function isTruthyFrontMatterValue(value: string): boolean {
+  const normalized = value.trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+  return normalized === 'true';
+}
+
+function isDocHiddenFromSidebar(fullPath: string): boolean {
+  if (!isFilePath(fullPath)) {
+    return false;
+  }
+
+  const content = readTextFile(fullPath);
+  const rawValue = extractFrontMatterValue(content, 'unlisted');
+  return rawValue ? isTruthyFrontMatterValue(rawValue) : false;
+}
+
 function extractHeading(content: string): string {
   const match = content.match(/^\#\s+(.+?)\s*$/m);
   return match ? match[1].trim() : '';
@@ -186,7 +233,7 @@ function extractHeading(content: string): string {
 
 function getDirectoryReadmePath(directoryPath: string): string | null {
   const candidates = new Set(['readme.md', 'readme.mdx', 'index.md', 'index.mdx']);
-  for (const entry of fs.readdirSync(directoryPath, {withFileTypes: true})) {
+  for (const entry of safeReadDir(directoryPath)) {
     if (!entry.isFile()) {
       continue;
     }
@@ -280,8 +327,17 @@ function getDirectoryLandingDocId(directoryPath: string): string | null {
   return readmePath ? toDocId(readmePath) : null;
 }
 
+function isDocIdVisible(docId: string): boolean {
+  const docPath = findDocPathFromDocId(docId);
+  if (!docPath) {
+    return false;
+  }
+
+  return !isDocHiddenFromSidebar(docPath);
+}
+
 function buildDirectoryChildSidebarItems(directoryPath: string): SidebarItem[] {
-  const entries = fs.readdirSync(directoryPath, {withFileTypes: true});
+  const entries = safeReadDir(directoryPath);
   const items = entries
     .filter((entry) => {
       if (entry.isDirectory()) {
@@ -297,6 +353,7 @@ function buildDirectoryChildSidebarItems(directoryPath: string): SidebarItem[] {
         return (
           !isExcludedDocsPath(fullPath) &&
           isMarkdownFile(entry.name) &&
+          !isDocHiddenFromSidebar(fullPath) &&
           !/^readme\.(md|mdx)$/i.test(entry.name) &&
           !/^index\.(md|mdx)$/i.test(entry.name)
         );
@@ -312,11 +369,14 @@ function buildDirectoryChildSidebarItems(directoryPath: string): SidebarItem[] {
           items: buildDirectoryChildSidebarItems(fullPath),
         };
         const landingDocId = getDirectoryLandingDocId(fullPath);
-        if (landingDocId) {
+        if (landingDocId && isDocIdVisible(landingDocId)) {
           categoryItem.link = {
             type: 'doc',
             id: landingDocId,
           };
+        }
+        if (categoryItem.items.length === 0 && !categoryItem.link) {
+          return null;
         }
         return {
           item: categoryItem,
@@ -330,7 +390,8 @@ function buildDirectoryChildSidebarItems(directoryPath: string): SidebarItem[] {
         position: getDocPosition(fullPath),
         label: entry.name,
       };
-    });
+    })
+    .filter((entry): entry is {item: SidebarItem; position: number; label: string} => entry !== null);
 
   items.sort((left, right) => {
     if (left.position !== right.position) {
@@ -343,13 +404,13 @@ function buildDirectoryChildSidebarItems(directoryPath: string): SidebarItem[] {
 }
 
 function directoryHasDocsContent(directoryPath: string): boolean {
-  const entries = fs.readdirSync(directoryPath, {withFileTypes: true});
+  const entries = safeReadDir(directoryPath);
   for (const entry of entries) {
     const fullPath = path.join(directoryPath, entry.name);
     if (isExcludedDocsPath(fullPath)) {
       continue;
     }
-    if (entry.isFile() && isMarkdownFile(entry.name)) {
+    if (entry.isFile() && isMarkdownFile(entry.name) && !isDocHiddenFromSidebar(fullPath)) {
       return true;
     }
     if (entry.isDirectory() && isVisibleDirectory(entry.name) && directoryHasDocsContent(fullPath)) {
@@ -360,23 +421,27 @@ function directoryHasDocsContent(directoryPath: string): boolean {
 }
 
 function getTopLevelDirectoryNames(): string[] {
-  if (!fs.existsSync(DOCS_ROOT)) {
+  if (!pathExists(DOCS_ROOT)) {
     return [];
   }
-  return fs
-    .readdirSync(DOCS_ROOT, {withFileTypes: true})
+  return safeReadDir(DOCS_ROOT)
     .filter((entry) => entry.isDirectory() && isVisibleDirectory(entry.name) && directoryHasDocsContent(path.join(DOCS_ROOT, entry.name)))
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right));
 }
 
 function getTopLevelMarkdownDocIds(): string[] {
-  if (!fs.existsSync(DOCS_ROOT)) {
+  if (!pathExists(DOCS_ROOT)) {
     return [];
   }
-  return fs
-    .readdirSync(DOCS_ROOT, {withFileTypes: true})
-    .filter((entry) => entry.isFile() && isMarkdownFile(entry.name) && !/^readme\.(md|mdx)$/i.test(entry.name))
+  return safeReadDir(DOCS_ROOT)
+    .filter((entry) => {
+      if (!entry.isFile() || !isMarkdownFile(entry.name) || /^readme\.(md|mdx)$/i.test(entry.name)) {
+        return false;
+      }
+
+      return !isDocHiddenFromSidebar(path.join(DOCS_ROOT, entry.name));
+    })
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => toDocId(path.join(DOCS_ROOT, entry.name)));
 }
@@ -389,7 +454,7 @@ function findDocPathFromDocId(docId: string): string | null {
 
   for (const extension of MARKDOWN_EXTENSIONS) {
     const fullPath = path.join(DOCS_ROOT, `${normalized}${extension}`);
-    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+    if (isFilePath(fullPath)) {
       return fullPath;
     }
   }
@@ -526,7 +591,7 @@ function normalizeConfigDomains(rawConfig: RawDomainConfig | null, topLevelDirec
 }
 
 export function getDocsDomainCatalog(): DocsDomainCatalog {
-  if (!fs.existsSync(DOCS_ROOT)) {
+  if (!pathExists(DOCS_ROOT)) {
     return {domains: [], generalDocs: null};
   }
 
@@ -537,9 +602,10 @@ export function getDocsDomainCatalog(): DocsDomainCatalog {
 
   const enrichedDomains = domains.map((domain) => {
     const domainDirectoryPath = path.join(DOCS_ROOT, domain.dirName);
-    const fallbackLabel = fs.existsSync(domainDirectoryPath) ? getDirectoryLabel(domainDirectoryPath, domain.dirName) : domain.label;
-    const fallbackDescription = fs.existsSync(domainDirectoryPath) ? getDirectoryDescription(domainDirectoryPath) : '';
-    const fallbackPosition = fs.existsSync(domainDirectoryPath) ? getDirectoryPosition(domainDirectoryPath) : domain.position;
+    const hasDirectory = isDirectoryPath(domainDirectoryPath);
+    const fallbackLabel = hasDirectory ? getDirectoryLabel(domainDirectoryPath, domain.dirName) : domain.label;
+    const fallbackDescription = hasDirectory ? getDirectoryDescription(domainDirectoryPath) : '';
+    const fallbackPosition = hasDirectory ? getDirectoryPosition(domainDirectoryPath) : domain.position;
     return {
       ...domain,
       label: domain.label || fallbackLabel,
@@ -555,43 +621,119 @@ export function getDocsDomainCatalog(): DocsDomainCatalog {
   };
 }
 
+function getOrderedTopLevelSidebarEntries(): Array<
+  | {kind: 'page'; docId: string; position: number; label: string}
+  | {kind: 'root'; root: string; position: number; label: string}
+> {
+  if (!pathExists(DOCS_ROOT)) {
+    return [];
+  }
+
+  const entries = safeReadDir(DOCS_ROOT)
+    .filter((entry) => {
+      const fullPath = path.join(DOCS_ROOT, entry.name);
+      if (isExcludedDocsPath(fullPath)) {
+        return false;
+      }
+
+      if (entry.isFile()) {
+        return (
+          isMarkdownFile(entry.name) &&
+          !isDocHiddenFromSidebar(fullPath) &&
+          !/^readme\.(md|mdx)$/i.test(entry.name)
+        );
+      }
+
+      if (entry.isDirectory()) {
+        return isVisibleDirectory(entry.name) && directoryHasDocsContent(fullPath);
+      }
+
+      return false;
+    })
+    .map((entry) => {
+      const fullPath = path.join(DOCS_ROOT, entry.name);
+      if (entry.isFile()) {
+        return {
+          kind: 'page' as const,
+          docId: toDocId(fullPath),
+          position: getDocPosition(fullPath),
+          label: entry.name,
+        };
+      }
+
+      return {
+        kind: 'root' as const,
+        root: normalizeToken(entry.name),
+        position: getDirectoryPosition(fullPath),
+        label: entry.name,
+      };
+    });
+
+  entries.sort((left, right) => {
+    if (left.position !== right.position) {
+      return left.position - right.position;
+    }
+    return left.label.localeCompare(right.label);
+  });
+
+  return entries;
+}
+
 export function buildDocsSidebarsConfig(): SidebarsConfig {
   const catalog = getDocsDomainCatalog();
   const sidebars: SidebarsConfig = {};
+  const topLevelEntries = getOrderedTopLevelSidebarEntries();
 
   for (const domain of catalog.domains) {
     const items: SidebarItem[] = [];
-    for (const docId of domain.ownedDocs) {
-      items.push(docId);
-    }
-    for (const root of domain.ownedRoots) {
-      const fullRootPath = path.join(DOCS_ROOT, root);
-      if (fs.existsSync(fullRootPath) && fs.statSync(fullRootPath).isDirectory() && directoryHasDocsContent(fullRootPath)) {
-        if (normalizeToken(root).toLowerCase() === normalizeToken(domain.dirName).toLowerCase()) {
-          const landingDocId = getDirectoryLandingDocId(fullRootPath);
-          if (landingDocId && domain.showLandingInSidebar === true) {
-            items.push(landingDocId);
-          }
-          items.push(...buildDirectoryChildSidebarItems(fullRootPath));
-          continue;
-        }
+    const ownedDocs = new Set(domain.ownedDocs.map((value) => normalizeToken(value)).filter(Boolean));
+    const ownedRoots = new Set(domain.ownedRoots.map((value) => normalizeToken(value)).filter(Boolean));
+    const normalizedDomainRoot = normalizeToken(domain.dirName).toLowerCase();
 
-        const categoryItem: SidebarCategoryItem = {
-          type: 'category',
-          label: getDirectoryLabel(fullRootPath, root),
-          items: buildDirectoryChildSidebarItems(fullRootPath),
-        };
-        const landingDocId = getDirectoryLandingDocId(fullRootPath);
-        if (landingDocId) {
-          categoryItem.link = {
-            type: 'doc',
-            id: landingDocId,
-          };
+    for (const entry of topLevelEntries) {
+      if (entry.kind === 'page') {
+        if (ownedDocs.has(normalizeToken(entry.docId))) {
+          items.push(entry.docId);
         }
+        continue;
+      }
+
+      const root = normalizeToken(entry.root);
+      if (!ownedRoots.has(root)) {
+        continue;
+      }
+
+      const fullRootPath = path.join(DOCS_ROOT, root);
+      if (!isDirectoryPath(fullRootPath) || !directoryHasDocsContent(fullRootPath)) {
+        continue;
+      }
+
+      if (root.toLowerCase() === normalizedDomainRoot) {
+        const landingDocId = getDirectoryLandingDocId(fullRootPath);
+        if (landingDocId && domain.showLandingInSidebar === true && isDocIdVisible(landingDocId)) {
+          items.push(landingDocId);
+        }
+        items.push(...buildDirectoryChildSidebarItems(fullRootPath));
+        continue;
+      }
+
+      const categoryItem: SidebarCategoryItem = {
+        type: 'category',
+        label: getDirectoryLabel(fullRootPath, root),
+        items: buildDirectoryChildSidebarItems(fullRootPath),
+      };
+      const landingDocId = getDirectoryLandingDocId(fullRootPath);
+      if (landingDocId && isDocIdVisible(landingDocId)) {
+        categoryItem.link = {
+          type: 'doc',
+          id: landingDocId,
+        };
+      }
+      if (categoryItem.items.length > 0 || categoryItem.link) {
         items.push(categoryItem);
       }
     }
-    if (items.length === 0 && domain.docId) {
+    if (items.length === 0 && domain.docId && isDocIdVisible(domain.docId)) {
       items.push(domain.docId);
     }
     sidebars[domain.sidebarId] = items;
