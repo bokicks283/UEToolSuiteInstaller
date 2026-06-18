@@ -117,7 +117,7 @@ function Write-ErrorResponse {
   )
 
   Write-JsonResponse -Context $Context -StatusCode $StatusCode -Payload ([ordered]@{
-      ok = $false
+      ok    = $false
       error = $Message
     })
 }
@@ -444,8 +444,8 @@ function Get-DocsEditorCategoryLinkInfo {
   return [pscustomobject]@{
     CategoryPath = $categoryPath
     CategoryJson = $categoryJson
-    LinkType = $linkType
-    LinkId = ([string]$categoryJson.link.id).Trim().Replace('\', '/')
+    LinkType     = $linkType
+    LinkId       = ([string]$categoryJson.link.id).Trim().Replace('\', '/')
   }
 }
 
@@ -651,9 +651,9 @@ function Get-DocsEditorNavigationSiblingGroups {
 
   $siblings = New-Object System.Collections.Generic.List[object]
   foreach ($sibling in @(Invoke-DocsModuleInternal -ScriptBlock {
-      param($docsRootPath, $parentDirectory)
-      Get-DocsNavigationSiblings -DocsRoot $docsRootPath -ParentDir $parentDirectory
-    } -Arguments @($script:DocsRoot, $ParentDir))) {
+        param($docsRootPath, $parentDirectory)
+        Get-DocsNavigationSiblings -DocsRoot $docsRootPath -ParentDir $parentDirectory
+      } -Arguments @($script:DocsRoot, $ParentDir))) {
     $siblings.Add($sibling) | Out-Null
   }
   Add-DocsEditorFallbackTreeSiblings -Siblings $siblings -ParentDir $ParentDir
@@ -685,7 +685,7 @@ function Get-DocsEditorNavigationSiblingGroups {
   }
 
   return [pscustomobject]@{
-    Pinned = @($pinned.ToArray())
+    Pinned  = @($pinned.ToArray())
     Visible = @($visible.ToArray())
   }
 }
@@ -973,7 +973,7 @@ function Update-DocsMarkdownLinksForMove {
     $content = Get-Content -LiteralPath $currentPath -Raw
     $changed = $false
     $script:DocsEditorLinkRewriteChanged = $false
-    $updated = [regex]::Replace($content, $linkPattern, [System.Text.RegularExpressions.MatchEvaluator]{
+    $updated = [regex]::Replace($content, $linkPattern, [System.Text.RegularExpressions.MatchEvaluator] {
         param($match)
 
         $rawTarget = $match.Groups['target'].Value
@@ -1662,21 +1662,21 @@ function Get-DocsDomainsConfigPath {
 function Get-DocsTopLevelDomainCandidateDirectories {
   return @(
     Get-ChildItem -LiteralPath $script:DocsRoot -Directory -ErrorAction SilentlyContinue |
-      Sort-Object Name |
-      Where-Object { Test-DocsEditorFallbackSectionExists -DirectoryPath $_.FullName } |
-      ForEach-Object { $_.Name }
+    Sort-Object Name |
+    Where-Object { Test-DocsEditorFallbackSectionExists -DirectoryPath $_.FullName } |
+    ForEach-Object { $_.Name }
   )
 }
 
 function Get-DocsTopLevelStandaloneDocIds {
   $files = @(
     Get-ChildItem -LiteralPath $script:DocsRoot -File -ErrorAction SilentlyContinue |
-      Where-Object {
-        $_.Extension -in @(".md", ".mdx") -and
-        -not $_.Name.Equals("README.md", [System.StringComparison]::OrdinalIgnoreCase) -and
-        -not $_.Name.Equals("README.mdx", [System.StringComparison]::OrdinalIgnoreCase)
-      } |
-      Sort-Object Name
+    Where-Object {
+      $_.Extension -in @(".md", ".mdx") -and
+      -not $_.Name.Equals("README.md", [System.StringComparison]::OrdinalIgnoreCase) -and
+      -not $_.Name.Equals("README.mdx", [System.StringComparison]::OrdinalIgnoreCase)
+    } |
+    Sort-Object Name
   )
 
   return @(
@@ -1702,30 +1702,30 @@ function Get-DefaultDocsDomainDefinitions {
 
   return @(
     [pscustomobject]@{
-      key = "workflow-standards"
-      path = "WorkflowStandards"
-      label = "Workflow & Standards"
-      sidebarId = "workflow-standards-sidebar"
-      readmePath = "WorkflowStandards/README.md"
-      description = "Best practices, setup guidance, and technical standards for the project."
+      key                  = "workflow-standards"
+      path                 = "WorkflowStandards"
+      label                = "Workflow & Standards"
+      sidebarId            = "workflow-standards-sidebar"
+      readmePath           = "WorkflowStandards/README.md"
+      description          = "Best practices, setup guidance, and technical standards for the project."
       showLandingInSidebar = $false
-      position = 10
-      ownedRoots = @(@("WorkflowStandards") + $standardRoots | Select-Object -Unique)
-      ownedDocs = $standardDocs
-      catchAll = $false
+      position             = 10
+      ownedRoots           = @(@("WorkflowStandards") + $standardRoots | Select-Object -Unique)
+      ownedDocs            = $standardDocs
+      catchAll             = $false
     }
     [pscustomobject]@{
-      key = "project-docs"
-      path = "ProjectDocs"
-      label = "Project Docs"
-      sidebarId = "project-docs-sidebar"
-      readmePath = "ProjectDocs/README.md"
-      description = "Project-specific design, gameplay, and implementation documentation."
+      key                  = "project-docs"
+      path                 = "ProjectDocs"
+      label                = "Project Docs"
+      sidebarId            = "project-docs-sidebar"
+      readmePath           = "ProjectDocs/README.md"
+      description          = "Project-specific design, gameplay, and implementation documentation."
       showLandingInSidebar = $false
-      position = 20
-      ownedRoots = @(@("ProjectDocs") + $projectRoots | Select-Object -Unique)
-      ownedDocs = $projectDocs
-      catchAll = $true
+      position             = 20
+      ownedRoots           = @(@("ProjectDocs") + $projectRoots | Select-Object -Unique)
+      ownedDocs            = $projectDocs
+      catchAll             = $true
     }
   )
 }
@@ -1807,17 +1807,17 @@ function Get-DocsDomainDefinitions {
       $landingDoc = ([string]$entry.landingDoc).Trim().Replace('\', '/').Trim('/')
 
       $normalizedDomains.Add([pscustomobject]@{
-          key = $key
-          path = $pathValue
-          label = $(if ([string]::IsNullOrWhiteSpace([string]$entry.label)) { Get-DocsDomainDisplayLabel -DirectoryPath (Join-Path $script:DocsRoot $pathValue) -FallbackName $pathValue } else { [string]$entry.label })
-          sidebarId = $(if ([string]::IsNullOrWhiteSpace([string]$entry.sidebarId)) { Get-DocsDomainSidebarId -DomainPath $key } else { [string]$entry.sidebarId })
-          readmePath = $(if ([string]::IsNullOrWhiteSpace($landingDoc)) { "" } else { "$landingDoc.md" })
-          description = [string]$entry.description
+          key                  = $key
+          path                 = $pathValue
+          label                = $(if ([string]::IsNullOrWhiteSpace([string]$entry.label)) { Get-DocsDomainDisplayLabel -DirectoryPath (Join-Path $script:DocsRoot $pathValue) -FallbackName $pathValue } else { [string]$entry.label })
+          sidebarId            = $(if ([string]::IsNullOrWhiteSpace([string]$entry.sidebarId)) { Get-DocsDomainSidebarId -DomainPath $key } else { [string]$entry.sidebarId })
+          readmePath           = $(if ([string]::IsNullOrWhiteSpace($landingDoc)) { "" } else { "$landingDoc.md" })
+          description          = [string]$entry.description
           showLandingInSidebar = [bool]$entry.showLandingInSidebar
-          position = $(if ($null -ne $entry.position) { [double]$entry.position } else { [double]($index * 10) })
-          ownedRoots = @($ownedRoots.ToArray())
-          ownedDocs = @($ownedDocs.ToArray())
-          catchAll = [bool]$entry.catchAll
+          position             = $(if ($null -ne $entry.position) { [double]$entry.position } else { [double]($index * 10) })
+          ownedRoots           = @($ownedRoots.ToArray())
+          ownedDocs            = @($ownedDocs.ToArray())
+          catchAll             = [bool]$entry.catchAll
         }) | Out-Null
     }
 
@@ -1855,19 +1855,19 @@ function Get-DocsDomainDefinitions {
   }
 
   return [ordered]@{
-    domains = @($orderedDomains | ForEach-Object {
+    domains       = @($orderedDomains | ForEach-Object {
         [ordered]@{
-          key = [string]$_.key
-          path = [string]$_.path
-          label = [string]$_.label
-          sidebarId = [string]$_.sidebarId
-          readmePath = [string]$_.readmePath
-          description = [string]$_.description
+          key                  = [string]$_.key
+          path                 = [string]$_.path
+          label                = [string]$_.label
+          sidebarId            = [string]$_.sidebarId
+          readmePath           = [string]$_.readmePath
+          description          = [string]$_.description
           showLandingInSidebar = [bool]$_.showLandingInSidebar
-          position = [double]$_.position
-          ownedRoots = @($_.ownedRoots)
-          ownedDocs = @($_.ownedDocs)
-          catchAll = [bool]$_.catchAll
+          position             = [double]$_.position
+          ownedRoots           = @($_.ownedRoots)
+          ownedDocs            = @($_.ownedDocs)
+          catchAll             = [bool]$_.catchAll
         }
       })
     generalDomain = $null
@@ -1883,9 +1883,9 @@ function Get-DocsTree {
 
   if ($GeneralOnly) {
     return [ordered]@{
-      root = "General"
+      root      = "General"
       sidebarId = "general-sidebar"
-      children = @(Get-DocsTreeChildren -ParentDir $script:DocsRoot -PagesOnly:$true)
+      children  = @(Get-DocsTreeChildren -ParentDir $script:DocsRoot -PagesOnly:$true)
     }
   }
 
@@ -1939,9 +1939,9 @@ function Get-DocsTree {
               $landingPath = $landingPath.Substring(0, $landingPath.Length - 3)
             }
             $children.Add([ordered]@{
-                type = "page"
-                path = $landingPath
-                name = [string]$domain.label
+                type     = "page"
+                path     = $landingPath
+                name     = [string]$domain.label
                 position = [double]$topLevelNode.position
                 unlisted = (Test-DocsFrontMatterUnlisted -Content (Get-Content -LiteralPath (Get-DocsVisibilityTargetPagePath -PathToken $landingPath) -Raw))
               }) | Out-Null
@@ -1956,15 +1956,15 @@ function Get-DocsTree {
       }
 
       return [ordered]@{
-        root = [string]$domain.label
+        root       = [string]$domain.label
         domainPath = [string]$domain.path
-        sidebarId = [string]$domain.sidebarId
-        children = @($children.ToArray())
+        sidebarId  = [string]$domain.sidebarId
+        children   = @($children.ToArray())
       }
     }
 
     return [ordered]@{
-      root = "Docs"
+      root     = "Docs"
       children = @(Get-DocsTreeChildren -ParentDir $script:DocsRoot)
     }
   }
@@ -1975,10 +1975,10 @@ function Get-DocsTree {
   }
 
   return [ordered]@{
-    root = $RootPath
+    root       = $RootPath
     domainPath = $RootPath
-    sidebarId = (Get-DocsDomainSidebarId -DomainPath $RootPath)
-    children = @(Get-DocsTreeChildren -ParentDir $fullRootPath)
+    sidebarId  = (Get-DocsDomainSidebarId -DomainPath $RootPath)
+    children   = @(Get-DocsTreeChildren -ParentDir $fullRootPath)
   }
 }
 
@@ -2023,11 +2023,11 @@ function Add-DocsEditorFallbackTreeSiblings {
     }
 
     $Siblings.Add([pscustomobject]@{
-        ItemType = "page"
-        FullPath = $markdownFile.FullName
-        ParentDir = $ParentDir
+        ItemType     = "page"
+        FullPath     = $markdownFile.FullName
+        ParentDir    = $ParentDir
         RelativePath = (Get-RelativePathFromDocsRoot -FullPath $markdownFile.FullName)
-        Position = $fallbackPosition
+        Position     = $fallbackPosition
       }) | Out-Null
     $fallbackPosition += 1.0
   }
@@ -2043,11 +2043,11 @@ function Add-DocsEditorFallbackTreeSiblings {
     }
 
     $Siblings.Add([pscustomobject]@{
-        ItemType = "section"
-        FullPath = $childDir.FullName
-        ParentDir = $ParentDir
+        ItemType     = "section"
+        FullPath     = $childDir.FullName
+        ParentDir    = $ParentDir
         RelativePath = (Get-RelativePathFromDocsRoot -FullPath $childDir.FullName)
-        Position = $fallbackPosition
+        Position     = $fallbackPosition
       }) | Out-Null
     $fallbackPosition += 1.0
   }
@@ -2086,9 +2086,9 @@ function Get-DocsTreeChildren {
 
   $siblings = New-Object System.Collections.Generic.List[object]
   foreach ($sibling in @(Invoke-DocsModuleInternal -ScriptBlock {
-      param($docsRootPath, $parentDirectory)
-      Get-DocsNavigationSiblings -DocsRoot $docsRootPath -ParentDir $parentDirectory
-    } -Arguments @($script:DocsRoot, $ParentDir))) {
+        param($docsRootPath, $parentDirectory)
+        Get-DocsNavigationSiblings -DocsRoot $docsRootPath -ParentDir $parentDirectory
+      } -Arguments @($script:DocsRoot, $ParentDir))) {
     $siblings.Add($sibling) | Out-Null
   }
   Add-DocsEditorFallbackTreeSiblings -Siblings $siblings -ParentDir $ParentDir
@@ -2152,9 +2152,9 @@ function Get-DocsTreeChildren {
       }
 
       $nodes.Add([ordered]@{
-          type = "section"
-          path = $relativePath
-          name = $displayName
+          type     = "section"
+          path     = $relativePath
+          name     = $displayName
           position = $position
           children = @(Get-DocsTreeChildren -ParentDir $fullPath)
         }) | Out-Null
@@ -2173,9 +2173,9 @@ function Get-DocsTreeChildren {
     } -Arguments @($pageText, $fullPath)
 
     $nodes.Add([ordered]@{
-        type = "page"
-        path = $relativePath
-        name = [string]$displayName
+        type     = "page"
+        path     = $relativePath
+        name     = [string]$displayName
         position = $position
         unlisted = (Test-DocsFrontMatterUnlisted -Content $pageText)
       }) | Out-Null
@@ -2191,9 +2191,9 @@ function Get-DocsContent {
   $content = Get-Content -LiteralPath $pagePath -Raw
   $mtime = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o")
   return [ordered]@{
-    path = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
-    content = $content
-    hash = (Get-JsonHash -Value $content)
+    path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
+    content     = $content
+    hash        = (Get-JsonHash -Value $content)
     modifiedUtc = $mtime
   }
 }
@@ -2235,8 +2235,8 @@ function Save-DocsContent {
 
   $updated = Get-Content -LiteralPath $pagePath -Raw
   return [ordered]@{
-    path = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
-    hash = (Get-JsonHash -Value $updated)
+    path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
+    hash        = (Get-JsonHash -Value $updated)
     modifiedUtc = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o")
   }
 }
@@ -2350,9 +2350,9 @@ function Set-DocsPageVisibility {
 
   $updated = Get-Content -LiteralPath $pagePath -Raw
   return [ordered]@{
-    path = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
-    hidden = (Test-DocsFrontMatterUnlisted -Content $updated)
-    hash = (Get-JsonHash -Value $updated)
+    path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
+    hidden      = (Test-DocsFrontMatterUnlisted -Content $updated)
+    hash        = (Get-JsonHash -Value $updated)
     modifiedUtc = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o")
   }
 }
@@ -2418,11 +2418,11 @@ function Update-DocsNodeMetadata {
     Set-DocsEditorFrontMatterValue -PagePath ([string]$target.FullPath) -Key "title" -Value $Title
     $updated = Get-Content -LiteralPath ([string]$target.FullPath) -Raw
     return [ordered]@{
-      path = (Get-RelativePathFromDocsRoot -FullPath ([string]$target.FullPath))
-      type = "page"
-      name = [string]$Title
-      hidden = (Test-DocsFrontMatterUnlisted -Content $updated)
-      hash = (Get-JsonHash -Value $updated)
+      path        = (Get-RelativePathFromDocsRoot -FullPath ([string]$target.FullPath))
+      type        = "page"
+      name        = [string]$Title
+      hidden      = (Test-DocsFrontMatterUnlisted -Content $updated)
+      hash        = (Get-JsonHash -Value $updated)
       modifiedUtc = (Get-Item -LiteralPath ([string]$target.FullPath)).LastWriteTimeUtc.ToString("o")
     }
   }
@@ -2457,9 +2457,9 @@ function Update-DocsNodeMetadata {
   }
 
   return [ordered]@{
-    path = (Get-RelativePathFromDocsRoot -FullPath $sectionDir)
-    type = "section"
-    name = [string]$nextLabel
+    path        = (Get-RelativePathFromDocsRoot -FullPath $sectionDir)
+    type        = "section"
+    name        = [string]$nextLabel
     modifiedUtc = (Get-Item -LiteralPath $categoryPath).LastWriteTimeUtc.ToString("o")
   }
 }
@@ -2572,24 +2572,24 @@ function Write-DocsDomainsConfig {
   $configPath = Get-DocsDomainsConfigPath
   $document = [ordered]@{
     schemaVersion = 1
-    domains = @($Domains | ForEach-Object {
+    domains       = @($Domains | ForEach-Object {
         $landingDoc = ([string]$_.readmePath).Replace('\', '/')
         if ($landingDoc.EndsWith(".md", [System.StringComparison]::OrdinalIgnoreCase)) {
           $landingDoc = $landingDoc.Substring(0, $landingDoc.Length - 3)
         }
 
         [ordered]@{
-          key = [string]$_.key
-          dirName = [string]$_.path
-          sidebarId = [string]$_.sidebarId
-          label = [string]$_.label
-          position = [double]$_.position
-          landingDoc = $landingDoc
-          description = [string]$_.description
+          key                  = [string]$_.key
+          dirName              = [string]$_.path
+          sidebarId            = [string]$_.sidebarId
+          label                = [string]$_.label
+          position             = [double]$_.position
+          landingDoc           = $landingDoc
+          description          = [string]$_.description
           showLandingInSidebar = [bool]$_.showLandingInSidebar
-          ownedRoots = @($_.ownedRoots)
-          ownedDocs = @($_.ownedDocs)
-          catchAll = [bool]$_.catchAll
+          ownedRoots           = @($_.ownedRoots)
+          ownedDocs            = @($_.ownedDocs)
+          catchAll             = [bool]$_.catchAll
         }
       })
   }
@@ -2616,7 +2616,7 @@ function Get-DocsTopLevelOwnershipBinding {
 
   if ($ItemType -eq "section") {
     return [ordered]@{
-      kind = "root"
+      kind  = "root"
       token = $segments[0]
     }
   }
@@ -2635,7 +2635,7 @@ function Get-DocsTopLevelOwnershipBinding {
     }
 
     return [ordered]@{
-      kind = "doc"
+      kind  = "doc"
       token = $docToken
     }
   }
@@ -2669,15 +2669,15 @@ function Set-DocsDomainOwnerForTopLevelItem {
     $currentDomainPath = ([string]$domain.path).Trim().Replace('\', '/').Trim('/')
     $ownedRoots = @(
       @($domain.ownedRoots) |
-        ForEach-Object { ([string]$_).Trim().Replace('\', '/').Trim('/') } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Select-Object -Unique
+      ForEach-Object { ([string]$_).Trim().Replace('\', '/').Trim('/') } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Select-Object -Unique
     )
     $ownedDocs = @(
       @($domain.ownedDocs) |
-        ForEach-Object { ([string]$_).Trim().Replace('\', '/').Trim('/') } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Select-Object -Unique
+      ForEach-Object { ([string]$_).Trim().Replace('\', '/').Trim('/') } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Select-Object -Unique
     )
 
     if ($binding.kind -eq "root") {
@@ -2702,17 +2702,17 @@ function Set-DocsDomainOwnerForTopLevelItem {
     }
 
     $nextDomains.Add([pscustomobject]@{
-        key = [string]$domain.key
-        path = [string]$domain.path
-        label = [string]$domain.label
-        sidebarId = [string]$domain.sidebarId
-        readmePath = [string]$domain.readmePath
-        description = [string]$domain.description
+        key                  = [string]$domain.key
+        path                 = [string]$domain.path
+        label                = [string]$domain.label
+        sidebarId            = [string]$domain.sidebarId
+        readmePath           = [string]$domain.readmePath
+        description          = [string]$domain.description
         showLandingInSidebar = [bool]$domain.showLandingInSidebar
-        position = [double]$domain.position
-        ownedRoots = @($ownedRoots)
-        ownedDocs = @($ownedDocs)
-        catchAll = [bool]$domain.catchAll
+        position             = [double]$domain.position
+        ownedRoots           = @($ownedRoots)
+        ownedDocs            = @($ownedDocs)
+        catchAll             = [bool]$domain.catchAll
       }) | Out-Null
   }
 
@@ -2774,40 +2774,40 @@ function Create-DocsDomain {
         -not ([string]$_).Equals($DomainName, [System.StringComparison]::OrdinalIgnoreCase)
       })
     $nextDomains.Add([pscustomobject]@{
-        key = [string]$domain.key
-        path = [string]$domain.path
-        label = [string]$domain.label
-        sidebarId = [string]$domain.sidebarId
-        readmePath = [string]$domain.readmePath
-        description = [string]$domain.description
+        key                  = [string]$domain.key
+        path                 = [string]$domain.path
+        label                = [string]$domain.label
+        sidebarId            = [string]$domain.sidebarId
+        readmePath           = [string]$domain.readmePath
+        description          = [string]$domain.description
         showLandingInSidebar = [bool]$domain.showLandingInSidebar
-        position = [double]$domain.position
-        ownedRoots = @($ownedRoots)
-        ownedDocs = @($domain.ownedDocs)
-        catchAll = [bool]$domain.catchAll
+        position             = [double]$domain.position
+        ownedRoots           = @($ownedRoots)
+        ownedDocs            = @($domain.ownedDocs)
+        catchAll             = [bool]$domain.catchAll
       }) | Out-Null
   }
 
   if (-not @($nextDomains.ToArray() | Where-Object { ([string]$_.sidebarId).Equals($sidebarId, [System.StringComparison]::OrdinalIgnoreCase) }).Count) {
     $nextDomains.Add([pscustomobject]@{
-        key = $DomainName
-        path = $DomainName
-        label = $(if ([string]::IsNullOrWhiteSpace($Title)) { $DomainName } else { $Title })
-        sidebarId = $sidebarId
-        readmePath = $(if ($CreateLandingPage) { "$DomainName/README.md" } else { "" })
-        description = [string]$Description
+        key                  = $DomainName
+        path                 = $DomainName
+        label                = $(if ([string]::IsNullOrWhiteSpace($Title)) { $DomainName } else { $Title })
+        sidebarId            = $sidebarId
+        readmePath           = $(if ($CreateLandingPage) { "$DomainName/README.md" } else { "" })
+        description          = [string]$Description
         showLandingInSidebar = $false
-        position = [double](10 * ($nextDomains.Count + 1))
-        ownedRoots = @($DomainName)
-        ownedDocs = @()
-        catchAll = $false
+        position             = [double](10 * ($nextDomains.Count + 1))
+        ownedRoots           = @($DomainName)
+        ownedDocs            = @()
+        catchAll             = $false
       }) | Out-Null
   }
 
   Write-DocsDomainsConfig -Domains @($nextDomains.ToArray())
   Touch-DocsWebsiteNavigationFiles
   return [ordered]@{
-    path = [string]$created.path
+    path      = [string]$created.path
     sidebarId = $sidebarId
   }
 }
@@ -2822,17 +2822,17 @@ function Move-DocsDomain {
   $orderedDomains = New-Object System.Collections.Generic.List[object]
   foreach ($domain in @($definitions.domains | Sort-Object position, label)) {
     $orderedDomains.Add([pscustomobject]@{
-        key = [string]$domain.key
-        path = [string]$domain.path
-        label = [string]$domain.label
-        sidebarId = [string]$domain.sidebarId
-        readmePath = [string]$domain.readmePath
-        description = [string]$domain.description
+        key                  = [string]$domain.key
+        path                 = [string]$domain.path
+        label                = [string]$domain.label
+        sidebarId            = [string]$domain.sidebarId
+        readmePath           = [string]$domain.readmePath
+        description          = [string]$domain.description
         showLandingInSidebar = [bool]$domain.showLandingInSidebar
-        position = [double]$domain.position
-        ownedRoots = @($domain.ownedRoots)
-        ownedDocs = @($domain.ownedDocs)
-        catchAll = [bool]$domain.catchAll
+        position             = [double]$domain.position
+        ownedRoots           = @($domain.ownedRoots)
+        ownedDocs            = @($domain.ownedDocs)
+        catchAll             = [bool]$domain.catchAll
       }) | Out-Null
   }
 
@@ -2886,17 +2886,17 @@ function Update-DocsDomain {
   $target = $null
   foreach ($domain in @($definitions.domains | Sort-Object position, label)) {
     $domainCopy = [pscustomobject]@{
-      key = [string]$domain.key
-      path = [string]$domain.path
-      label = [string]$domain.label
-      sidebarId = [string]$domain.sidebarId
-      readmePath = [string]$domain.readmePath
-      description = [string]$domain.description
+      key                  = [string]$domain.key
+      path                 = [string]$domain.path
+      label                = [string]$domain.label
+      sidebarId            = [string]$domain.sidebarId
+      readmePath           = [string]$domain.readmePath
+      description          = [string]$domain.description
       showLandingInSidebar = [bool]$domain.showLandingInSidebar
-      position = [double]$domain.position
-      ownedRoots = @($domain.ownedRoots)
-      ownedDocs = @($domain.ownedDocs)
-      catchAll = [bool]$domain.catchAll
+      position             = [double]$domain.position
+      ownedRoots           = @($domain.ownedRoots)
+      ownedDocs            = @($domain.ownedDocs)
+      catchAll             = [bool]$domain.catchAll
     }
     if (([string]$domainCopy.path).Equals($DomainPath, [System.StringComparison]::OrdinalIgnoreCase)) {
       $target = $domainCopy
@@ -2959,7 +2959,7 @@ function Update-DocsDomain {
   Write-DocsDomainsConfig -Domains @($domains.ToArray())
   Touch-DocsWebsiteNavigationFiles
   return [ordered]@{
-    domain = $target
+    domain  = $target
     domains = @($domains.ToArray())
   }
 }
@@ -3044,9 +3044,9 @@ function Remove-DocsDomain {
   Touch-DocsWebsiteNavigationFiles
   Invoke-DocsEditorDevServerInvalidate | Out-Null
   return [ordered]@{
-    deleted = [string]$DomainPath
+    deleted      = [string]$DomainPath
     deletedItems = @($deleted.ToArray())
-    domains = @($remaining)
+    domains      = @($remaining)
   }
 }
 
@@ -3119,10 +3119,34 @@ function Remove-DocsNode {
   }
 
   return [ordered]@{
-    deleted = $PathToken
+    deleted              = $PathToken
     devServerInvalidated = $devServerInvalidated
-    warning = $warning
+    warning              = $warning
   }
+}
+
+
+function Get-Normalized-DocsFullPath {
+  param([Parameter(Mandatory)][string]$Path)
+
+  $full = [System.IO.Path]::GetFullPath($Path)
+
+  # Normalize / to \ on Windows so mixed slash paths compare correctly
+  $full = $full.Replace(
+    [System.IO.Path]::AltDirectorySeparatorChar,
+    [System.IO.Path]::DirectorySeparatorChar
+  )
+
+  # Avoid trailing slash differences, except for drive roots like G:\
+  $root = [System.IO.Path]::GetPathRoot($full)
+  if ($full -ne $root) {
+    $full = $full.TrimEnd(
+      [System.IO.Path]::DirectorySeparatorChar,
+      [System.IO.Path]::AltDirectorySeparatorChar
+    )
+  }
+
+  return $full
 }
 
 function Move-DocsNode {
@@ -3148,9 +3172,23 @@ function Move-DocsNode {
     [string]$section.FullPath
   }
 
-  $sourceFullPath = [System.IO.Path]::GetFullPath([string]$source.FullPath)
-  $destinationParentFullPath = [System.IO.Path]::GetFullPath($destinationParentDir)
-  if ($destinationParentFullPath.StartsWith($sourceFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+  $sourceFullPath = Normalize-DocsFullPath ([string]$source.FullPath)
+  $destinationParentFullPath = Normalize-DocsFullPath $destinationParentDir
+
+  $separator = [string][System.IO.Path]::DirectorySeparatorChar
+
+  $isSamePath = [string]::Equals(
+    $destinationParentFullPath,
+    $sourceFullPath,
+    [System.StringComparison]::OrdinalIgnoreCase
+  )
+
+  $isDescendantPath = $destinationParentFullPath.StartsWith(
+    $sourceFullPath + $separator,
+    [System.StringComparison]::OrdinalIgnoreCase
+  )
+
+  if ($isSamePath -or $isDescendantPath) {
     throw "Cannot move a section into itself or one of its descendants."
   }
 
@@ -3291,9 +3329,9 @@ function Move-DocsNode {
     }
 
     return [ordered]@{
-      path = $newRelativePath
+      path                 = $newRelativePath
       devServerInvalidated = $devServerInvalidated
-      warning = $warning
+      warning              = $warning
     }
   }
   catch {
@@ -3373,8 +3411,8 @@ function Reorder-DocsNode {
   } -Arguments @($script:RepoRoot, $TargetPath, $Position)
 
   return [ordered]@{
-    target = [string]$result.Target
-    newPosition = [double]$result.NewPosition
+    target       = [string]$result.Target
+    newPosition  = [double]$result.NewPosition
     updatedCount = [int]$result.UpdatedCount
   }
 }
@@ -3385,7 +3423,7 @@ function Get-SiteThemeCatalogPayload {
       $catalog = Read-DocsThemeCatalog -ResolvedRepoRoot $resolvedRepoRoot
       return [ordered]@{
         defaultTheme = [string]$catalog.DefaultTheme
-        themes = @($catalog.Themes)
+        themes       = @($catalog.Themes)
       }
     } -Arguments @($script:RepoRoot))
 }
@@ -3401,14 +3439,14 @@ function Get-SiteConfigPayload {
       }
 
       return [ordered]@{
-        ownership = $ownership
-        overrides = $overrides.Document
-        overridesPath = $overrides.Path
+        ownership             = $ownership
+        overrides             = $overrides.Document
+        overridesPath         = $overrides.Path
         knownOverridablePaths = @(Get-DocsWebsiteOverrideCandidatePaths)
-        theme = [ordered]@{
-          themeId = $themeId
-          logoPath = [string]$overrides.Document.theme.logoPath
-          faviconPath = [string]$overrides.Document.theme.faviconPath
+        theme                 = [ordered]@{
+          themeId        = $themeId
+          logoPath       = [string]$overrides.Document.theme.logoPath
+          faviconPath    = [string]$overrides.Document.theme.faviconPath
           socialCardPath = [string]$overrides.Document.theme.socialCardPath
         }
       }
@@ -3475,9 +3513,9 @@ function Apply-SiteOverridesFromApiBody {
             continue
           }
           $entries.Add([ordered]@{
-            path = $relativePath.Replace("\", "/").TrimStart("/")
-            mode = $mode
-          }) | Out-Null
+              path = $relativePath.Replace("\", "/").TrimStart("/")
+              mode = $mode
+            }) | Out-Null
         }
         $overrides.Document.fileOverrides = @($entries.ToArray() | Sort-Object path)
         Write-DocsWebsiteOverrides -ResolvedRepoRoot $resolvedRepoRoot -Document $overrides.Document
@@ -3511,15 +3549,15 @@ function Invoke-EditorApiRequest {
 
   if ($path -eq "/health" -and $request.HttpMethod -eq "GET") {
     Write-JsonResponse -Context $Context -Payload ([ordered]@{
-        ok = $true
-        repoRoot = $script:RepoRoot
-        docsRoot = $script:DocsRoot
+        ok           = $true
+        repoRoot     = $script:RepoRoot
+        docsRoot     = $script:DocsRoot
         capabilities = [ordered]@{
           authoringApiVersion = 2
-          siteConfig = $true
-          domains = $true
-          tree = $true
-          visibility = $true
+          siteConfig          = $true
+          domains             = $true
+          tree                = $true
+          visibility          = $true
         }
       })
     return
@@ -3530,7 +3568,7 @@ function Invoke-EditorApiRequest {
     $sidebarId = [string]$request.QueryString["sidebarId"]
     $generalOnly = ([string]$request.QueryString["general"]).Equals("1")
     Write-JsonResponse -Context $Context -Payload ([ordered]@{
-        ok = $true
+        ok   = $true
         tree = (Get-DocsTree -RootPath $rootToken -SidebarId $sidebarId -GeneralOnly:$generalOnly)
       })
     return
@@ -3538,7 +3576,7 @@ function Invoke-EditorApiRequest {
 
   if ($path -eq "/api/domains" -and $request.HttpMethod -eq "GET") {
     Write-JsonResponse -Context $Context -Payload ([ordered]@{
-        ok = $true
+        ok      = $true
         domains = (Get-DocsDomainDefinitions)
       })
     return
@@ -3556,7 +3594,7 @@ function Invoke-EditorApiRequest {
 
   if ($path -eq "/api/site/config" -and $request.HttpMethod -eq "GET") {
     Write-JsonResponse -Context $Context -Payload ([ordered]@{
-        ok = $true
+        ok     = $true
         config = (Get-SiteConfigPayload)
       })
     return
@@ -3564,7 +3602,7 @@ function Invoke-EditorApiRequest {
 
   if ($path -eq "/api/site/theme-catalog" -and $request.HttpMethod -eq "GET") {
     Write-JsonResponse -Context $Context -Payload ([ordered]@{
-        ok = $true
+        ok      = $true
         catalog = (Get-SiteThemeCatalogPayload)
       })
     return
