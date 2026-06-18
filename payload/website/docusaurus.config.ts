@@ -4,6 +4,28 @@ import type * as Preset from '@docusaurus/preset-classic';
 import {getDocsDomainCatalog} from './domainCatalog';
 
 const docsDomainCatalog = getDocsDomainCatalog();
+const docsAuthoringProxyPath = '/__ue_docs_api__';
+const docsAuthoringProxyPlugin = () => ({
+  name: 'ue-docs-authoring-proxy',
+  configureWebpack() {
+    return {
+      devServer: {
+        proxy: [
+          {
+            context: [docsAuthoringProxyPath],
+            target: 'http://127.0.0.1:38473',
+            changeOrigin: true,
+            secure: false,
+            pathRewrite: {
+              [`^${docsAuthoringProxyPath}`]: '',
+            },
+          },
+        ],
+      },
+    } as any;
+  },
+});
+
 const navbarDomainItems = [
   ...(docsDomainCatalog.generalDocs
     ? [
@@ -61,6 +83,7 @@ const config: Config = {
 
   clientModules: ['./src/clientModules/lucideShortcodes.ts'],
   themes: ['@docusaurus/theme-mermaid'],
+  plugins: [docsAuthoringProxyPlugin],
 
   presets: [
     [

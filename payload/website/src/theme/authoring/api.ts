@@ -50,8 +50,11 @@ export type DocsContentPayload = {
   modifiedUtc: string;
 };
 
-export const DEFAULT_EDITOR_API_URL = 'http://127.0.0.1:38473/';
+export const DEFAULT_EDITOR_API_URL = '/__ue_docs_api__/';
+const DIRECT_EDITOR_API_URL = 'http://127.0.0.1:38473/';
 const EDITOR_API_HEALTH_PATH = 'health';
+const EDITOR_API_PROBE_TIMEOUT_MS = 1500;
+const EDITOR_API_PROBE_RETRY_DELAY_MS = 1000;
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
@@ -115,9 +118,10 @@ export function resolveSourceToken(sourcePath: string): string {
     candidate = candidate.slice('@site/'.length);
   }
 
-  if (candidate.startsWith('Docs/')) {
-    candidate = candidate.slice('Docs/'.length);
-  }
+  candidate = candidate.replace(/^(?:\.\/)+/, '');
+  candidate = candidate.replace(/^(?:\.\.\/)+Docs\//i, '');
+  candidate = candidate.replace(/^Docs\//i, '');
+  candidate = candidate.replace(/^(?:\.\.\/)+/, '');
 
   return stripLeadingSlash(candidate);
 }
@@ -184,15 +188,16 @@ function buildApiCandidates(preferredApiBase: string): string[] {
   const preferred = normalizeApiBase(preferredApiBase || DEFAULT_EDITOR_API_URL);
   candidates.add(preferred);
   candidates.add(normalizeApiBase(DEFAULT_EDITOR_API_URL));
+  candidates.add(normalizeApiBase(DIRECT_EDITOR_API_URL));
   for (let port = 38474; port <= 38490; port += 1) {
     candidates.add(normalizeApiBase(`http://127.0.0.1:${port}/`));
   }
   return [...candidates];
 }
 
-async function probeApiBase(apiBase: string): Promise<boolean> {
+async function probeApiBase(apiBase: string, timeoutMs = EDITOR_API_PROBE_TIMEOUT_MS): Promise<boolean> {
   const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), 350);
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${apiBase}${EDITOR_API_HEALTH_PATH}`, {
       cache: 'no-store',
@@ -249,6 +254,8 @@ export function useDocsAuthoringApi() {
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+
     async function loadRuntimeConfig() {
       let preferredApiBase = DEFAULT_EDITOR_API_URL;
       try {
@@ -273,6 +280,13 @@ export function useDocsAuthoringApi() {
           setApiBaseUrl(resolvedApi.apiBaseUrl);
           setRuntimeAvailable(resolvedApi.runtimeAvailable);
           setRuntimeReady(true);
+          if (!resolvedApi.runtimeAvailable) {
+            retryTimeoutId = globalThis.setTimeout(() => {
+              if (!cancelled) {
+                void loadRuntimeConfig();
+              }
+            }, EDITOR_API_PROBE_RETRY_DELAY_MS);
+          }
         }
       }
     }
@@ -280,6 +294,9 @@ export function useDocsAuthoringApi() {
     void loadRuntimeConfig();
     return () => {
       cancelled = true;
+      if (retryTimeoutId !== null) {
+        globalThis.clearTimeout(retryTimeoutId);
+      }
     };
   }, []);
 

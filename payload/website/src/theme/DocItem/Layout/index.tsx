@@ -12,6 +12,7 @@ import DocBreadcrumbs from '@theme/DocBreadcrumbs';
 import ContentVisibility from '@theme/ContentVisibility';
 import {EditorContent, NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor} from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import {CodeBlock as BaseCodeBlock} from '@tiptap/extension-code-block';
 import {Table} from '@tiptap/extension-table';
 import {TableRow} from '@tiptap/extension-table-row';
 import {TableCell} from '@tiptap/extension-table-cell';
@@ -51,7 +52,7 @@ type FrontMatterSplit = {
   body: string;
 };
 
-type InsertFormMode = 'link' | 'image' | 'code';
+type InsertFormMode = 'link' | 'image';
 type NoteVariant = 'note' | 'info' | 'success' | 'warning' | 'error';
 type PickerTab = 'emoji' | 'icon';
 
@@ -127,12 +128,28 @@ type MarkdownJsonNode = {
   content?: MarkdownJsonNode[];
 };
 
+const ALIGNABLE_BLOCK_NODE_TYPES = new Set(['heading', 'paragraph', 'bulletList', 'orderedList', 'taskList']);
+const LIST_NODE_TYPES = new Set(['bulletList', 'orderedList', 'taskList']);
+const LIST_CONTAINER_NODE_TYPES = new Set(['bulletList', 'orderedList', 'taskList', 'listItem']);
+
 function createAlignmentPlaceholder(alignment: TextAlignmentValue): string {
   return `[[ue-docs-align:${alignment}]]`;
 }
 
 function normalizeTextAlignment(value: unknown): TextAlignmentValue | null {
   return value === 'left' || value === 'center' || value === 'right' ? value : null;
+}
+
+function isAlignableBlockNodeType(type: unknown): type is 'heading' | 'paragraph' | 'bulletList' | 'orderedList' | 'taskList' {
+  return typeof type === 'string' && ALIGNABLE_BLOCK_NODE_TYPES.has(type);
+}
+
+function isListNodeType(type: unknown): type is 'bulletList' | 'orderedList' | 'taskList' {
+  return typeof type === 'string' && LIST_NODE_TYPES.has(type);
+}
+
+function isListContainerNodeType(type: unknown): boolean {
+  return typeof type === 'string' && LIST_CONTAINER_NODE_TYPES.has(type);
 }
 
 function parseAlignmentPlaceholder(value: string): TextAlignmentValue | null {
@@ -191,7 +208,7 @@ function applyAlignmentPlaceholdersToDoc(node: MarkdownJsonNode): MarkdownJsonNo
     }
 
     const nextChild = applyAlignmentPlaceholdersToDoc(child);
-    if (pendingAlignment && (nextChild.type === 'heading' || nextChild.type === 'paragraph')) {
+    if (pendingAlignment && isAlignableBlockNodeType(nextChild.type)) {
       nextChild.attrs = {...(nextChild.attrs ?? {}), textAlign: pendingAlignment};
       pendingAlignment = null;
     }
@@ -200,6 +217,16 @@ function applyAlignmentPlaceholdersToDoc(node: MarkdownJsonNode): MarkdownJsonNo
 
   cloned.content = nextContent;
   return cloned;
+}
+
+function shouldEmitAlignmentPlaceholder(nodeType: unknown, parentType: unknown): boolean {
+  if (!isAlignableBlockNodeType(nodeType)) {
+    return false;
+  }
+  if (isListNodeType(nodeType)) {
+    return true;
+  }
+  return !isListContainerNodeType(parentType);
 }
 
 function injectAlignmentPlaceholdersIntoDoc(node: MarkdownJsonNode): MarkdownJsonNode {
@@ -212,7 +239,7 @@ function injectAlignmentPlaceholdersIntoDoc(node: MarkdownJsonNode): MarkdownJso
   for (const child of cloned.content) {
     const nextChild = injectAlignmentPlaceholdersIntoDoc(child);
     const alignment = normalizeTextAlignment(nextChild.attrs?.textAlign);
-    if (alignment && alignment !== 'left' && (nextChild.type === 'heading' || nextChild.type === 'paragraph')) {
+    if (alignment && alignment !== 'left' && shouldEmitAlignmentPlaceholder(nextChild.type, cloned.type)) {
       nextContent.push(createAlignmentPlaceholderParagraph(alignment));
     }
     nextContent.push(nextChild);
@@ -225,21 +252,28 @@ function injectAlignmentPlaceholdersIntoDoc(node: MarkdownJsonNode): MarkdownJso
 function collectMarkdownBlockAlignments(node: MarkdownJsonNode): Array<TextAlignmentValue | null> {
   const alignments: Array<TextAlignmentValue | null> = [];
 
-  const visit = (current: MarkdownJsonNode) => {
-    if (current.type === 'heading' || current.type === 'paragraph') {
+  const visit = (current: MarkdownJsonNode, insideList: boolean) => {
+    if (isListNodeType(current.type)) {
+      alignments.push(normalizeTextAlignment(current.attrs?.textAlign));
+    } else if (!insideList && (current.type === 'heading' || current.type === 'paragraph')) {
       alignments.push(normalizeTextAlignment(current.attrs?.textAlign));
     }
     if (Array.isArray(current.content)) {
-      current.content.forEach(visit);
+      const nextInsideList = insideList || isListNodeType(current.type) || current.type === 'listItem';
+      current.content.forEach((child) => visit(child, nextInsideList));
     }
   };
 
-  visit(node);
+  visit(node, false);
   return alignments;
 }
 
 function isHeadingMarkdownLine(line: string): boolean {
   return /^\s*#{1,6}\s+\S/.test(line);
+}
+
+function isListMarkdownLine(line: string): boolean {
+  return /^[-*+]\s+/.test(line) || /^\d+[.)]\s+/.test(line);
 }
 
 function isNonParagraphMarkdownLine(line: string): boolean {
@@ -250,8 +284,7 @@ function isNonParagraphMarkdownLine(line: string): boolean {
     /^(```|~~~)/.test(trimmed) ||
     /^:::+/.test(trimmed) ||
     /^>/.test(trimmed) ||
-    /^[-*+]\s+/.test(trimmed) ||
-    /^\d+[.)]\s+/.test(trimmed) ||
+    isListMarkdownLine(trimmed) ||
     /^\|/.test(trimmed) ||
     /^!\[/.test(trimmed) ||
     /^<[^!]/.test(trimmed) ||
@@ -259,7 +292,10 @@ function isNonParagraphMarkdownLine(line: string): boolean {
   );
 }
 
-function collectRenderBlockAlignments(markdown: string): Array<TextAlignmentValue | null> {
+function collectRenderBlockAlignments(markdown: string, editor?: Editor): Array<TextAlignmentValue | null> {
+  if (editor) {
+    return collectMarkdownBlockAlignments(parseEditorMarkdownDocument(editor, markdown));
+  }
   const lines = prepareMarkdownForEditor(markdown).split(/\r?\n/);
   const alignments: Array<TextAlignmentValue | null> = [];
   let pendingAlignment: TextAlignmentValue | null = null;
@@ -289,6 +325,32 @@ function collectRenderBlockAlignments(markdown: string): Array<TextAlignmentValu
     if (isHeadingMarkdownLine(trimmed)) {
       alignments.push(pendingAlignment);
       pendingAlignment = null;
+      continue;
+    }
+
+    if (isListMarkdownLine(trimmed)) {
+      alignments.push(pendingAlignment);
+      pendingAlignment = null;
+
+      while (index + 1 < lines.length) {
+        const nextLine = lines[index + 1];
+        const nextTrimmed = nextLine.trim();
+        if (
+          !nextTrimmed
+          || isHeadingMarkdownLine(nextTrimmed)
+          || /^<!--\s*ue-align:(left|center|right)\s*-->$/i.test(nextTrimmed)
+          || /^(```|~~~)/.test(nextTrimmed)
+          || /^:::+/.test(nextTrimmed)
+          || /^>/.test(nextTrimmed)
+          || /^\|/.test(nextTrimmed)
+          || /^!\[/.test(nextTrimmed)
+          || /^<[^!]/.test(nextTrimmed)
+          || /^(-{3,}|\*{3,}|_{3,})$/.test(nextTrimmed)
+        ) {
+          break;
+        }
+        index += 1;
+      }
       continue;
     }
 
@@ -874,6 +936,93 @@ const DocusaurusMermaid = Node.create({
   },
 });
 
+function CodeBlockNodeView({
+  node,
+  selected,
+  editor,
+  getPos,
+  updateAttributes,
+}: {
+  node: {attrs: {language?: string | null}; nodeSize: number};
+  selected: boolean;
+  editor: Editor;
+  getPos: (() => number) | boolean;
+  updateAttributes: (attrs: Record<string, unknown>) => void;
+}): React.ReactElement {
+  const language = String(node.attrs.language || '');
+  const isSelectionInsideCodeBlock = useCallback(() => {
+    if (typeof getPos !== 'function') {
+      return false;
+    }
+
+    try {
+      const position = getPos();
+      if (typeof position !== 'number') {
+        return false;
+      }
+
+      const {from, to} = editor.state.selection;
+      const contentStart = position + 1;
+      const contentEnd = position + Math.max(node.nodeSize - 1, 1);
+      return from >= contentStart && to <= contentEnd;
+    } catch {
+      return false;
+    }
+  }, [editor, getPos, node.nodeSize]);
+  const [showLanguageControls, setShowLanguageControls] = useState(() => selected || isSelectionInsideCodeBlock());
+
+  useEffect(() => {
+    const syncLanguageControlVisibility = () => {
+      setShowLanguageControls(selected || isSelectionInsideCodeBlock());
+    };
+
+    syncLanguageControlVisibility();
+    editor.on('selectionUpdate', syncLanguageControlVisibility);
+    editor.on('transaction', syncLanguageControlVisibility);
+
+    return () => {
+      editor.off('selectionUpdate', syncLanguageControlVisibility);
+      editor.off('transaction', syncLanguageControlVisibility);
+    };
+  }, [editor, isSelectionInsideCodeBlock, selected]);
+
+  return (
+    <NodeViewWrapper as="div" className={authoringStyles.codeBlockNode} data-ue-code-block-selected={showLanguageControls ? 'true' : 'false'}>
+      {showLanguageControls ? (
+        <div className={authoringStyles.codeBlockHeader}>
+          <select
+            className={authoringStyles.codeBlockLanguageSelect}
+            value={language}
+            aria-label="Code block language"
+            title="Code block language"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => updateAttributes({language: event.target.value.trim() || null})}
+          >
+            <option value="">Plain text</option>
+            {CODE_LANGUAGE_OPTIONS.filter(Boolean).map((option) => (
+              <option value={option} key={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+      <div className={authoringStyles.codeBlockSurface}>
+        <NodeViewContent className={authoringStyles.codeBlockContent} spellCheck={false} />
+      </div>
+    </NodeViewWrapper>
+  );
+}
+
+const DocsCodeBlock = BaseCodeBlock.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView, {
+      selectedOnTextSelection: true,
+    });
+  },
+});
+
 const DocusaurusShortcode = Node.create({
   name: 'docusaurusShortcode',
   group: 'inline',
@@ -1452,6 +1601,29 @@ function IconButton({
   );
 }
 
+function getActiveListAlignmentNodeType(editor: Editor): 'taskList' | 'bulletList' | 'orderedList' | null {
+  if (editor.isActive('taskList')) {
+    return 'taskList';
+  }
+  if (editor.isActive('bulletList')) {
+    return 'bulletList';
+  }
+  if (editor.isActive('orderedList')) {
+    return 'orderedList';
+  }
+  return null;
+}
+
+function applyTextAlignment(editor: Editor, alignment: TextAlignmentValue): void {
+  const activeListNodeType = getActiveListAlignmentNodeType(editor);
+  if (activeListNodeType) {
+    editor.chain().focus().updateAttributes(activeListNodeType, {textAlign: alignment}).run();
+    return;
+  }
+
+  editor.chain().focus().setTextAlign(alignment).run();
+}
+
 function useDocTOC(ignoredHeadingLabels: Set<string>) {
   const {frontMatter, toc} = useDoc();
   const hidden = frontMatter.hide_table_of_contents;
@@ -1483,7 +1655,14 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const metadataDraft = metadata.draft === true;
   const metadataUnlisted = metadata.unlisted === true;
 
-  const sourceToken = useMemo(() => resolveSourceToken(metadata.source ?? ''), [metadata.source]);
+  const sourceToken = useMemo(() => {
+    const directSourceToken = resolveSourceToken(metadata.source ?? '');
+    if (directSourceToken) {
+      return directSourceToken;
+    }
+    const metadataId = typeof metadata.id === 'string' ? metadata.id.trim() : '';
+    return metadataId ? resolveSourceToken(`${metadataId}.md`) : '';
+  }, [metadata.id, metadata.source]);
   const pageIsEditable = sourceToken.toLowerCase().endsWith('.md');
   const pageCanManageVisibility = authoringAvailable && !sourceToken.toLowerCase().endsWith('/_category_.json') && !!sourceToken;
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
@@ -1657,7 +1836,6 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const [linkHref, setLinkHref] = useState('');
   const [imageAlt, setImageAlt] = useState('');
   const [imageSrc, setImageSrc] = useState('');
-  const [codeLanguage, setCodeLanguage] = useState('');
   const [insertFormPosition, setInsertFormPosition] = useState<{left: number; top: number} | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [noteMenuOpen, setNoteMenuOpen] = useState(false);
@@ -1685,7 +1863,9 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const editor = useEditor({
     extensions: [
       DocusaurusMermaid,
+      DocsCodeBlock,
       StarterKit.configure({
+        codeBlock: false,
         heading: false,
         link: false,
         paragraph: false,
@@ -1704,7 +1884,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
       TaskItem.configure({nested: true}),
       Underline,
       TextAlign.configure({
-        types: ['heading', 'paragraph'],
+        types: ['heading', 'paragraph', 'bulletList', 'orderedList', 'taskList'],
       }),
       DocusaurusTocMarker,
       DocusaurusShortcode,
@@ -2128,11 +2308,9 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
         const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
         setLinkText(selectedText);
         setLinkHref(String(editor.getAttributes('link').href || ''));
-      } else if (mode === 'image') {
+      } else {
         setImageAlt('');
         setImageSrc('');
-      } else {
-        setCodeLanguage(String(editor.getAttributes('codeBlock').language || ''));
       }
 
       setInsertFormPosition(getCursorPanelPosition());
@@ -2225,21 +2403,6 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     setIsDirty(true);
     setEditorRevision((value) => value + 1);
   }, [advancedMdx, deleting, editor, ensureParagraphAfterTable, imageAlt, imageSrc, loading, saving]);
-
-  const submitCodeLanguage = useCallback(() => {
-    if (!editor || advancedMdx || saving || loading || deleting) {
-      return;
-    }
-
-    const language = codeLanguage.trim();
-    editor.chain().focus().setCodeBlock(language ? {language} : undefined).run();
-    setInsertFormMode(null);
-    setInsertFormPosition(null);
-    setNoteMenuOpen(false);
-    setPickerOpen(false);
-    setIsDirty(true);
-    setEditorRevision((value) => value + 1);
-  }, [advancedMdx, codeLanguage, deleting, editor, loading, saving]);
 
   const insertPickerToken = useCallback((token: string) => {
     if (advancedMdx) {
@@ -2866,15 +3029,16 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
 
     const sourceForRender = renderSourceBody || sourceDraftRef.current || originalSource;
     if (!sourceForRender.trim()) {
-      markdownRoot.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, p').forEach((element) => {
+      markdownRoot.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, p, ul, ol').forEach((element) => {
         element.style.textAlign = '';
       });
       return undefined;
     }
 
     const frame = window.requestAnimationFrame(() => {
-      const alignments = collectRenderBlockAlignments(sourceForRender);
-      const blocks = Array.from(markdownRoot.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, p'));
+      const alignments = collectRenderBlockAlignments(sourceForRender, editor ?? undefined);
+      const blocks = Array.from(markdownRoot.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6, p, ul, ol'))
+        .filter((element) => element.tagName !== 'P' || !element.closest('li'));
       const alignedBlocks = metadataTitle && !hasLevelOneHeading(sourceForRender) && blocks[0]?.tagName === 'H1'
         ? blocks.slice(1)
         : blocks;
@@ -3046,9 +3210,9 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                           <IconButton icon="image" label="Insert image" onClick={() => openInsertForm('image')} disabled={controlsDisabled} />
                         </div>
                         <div className={authoringStyles.toolbarGroup}>
-                          <IconButton icon="alignLeft" label="Align left" active={editor?.isActive({textAlign: 'left'})} onClick={() => runEditorCommand((activeEditor) => activeEditor.chain().focus().setTextAlign('left').run())} disabled={controlsDisabled} />
-                          <IconButton icon="alignCenter" label="Align center" active={editor?.isActive({textAlign: 'center'})} onClick={() => runEditorCommand((activeEditor) => activeEditor.chain().focus().setTextAlign('center').run())} disabled={controlsDisabled} />
-                          <IconButton icon="alignRight" label="Align right" active={editor?.isActive({textAlign: 'right'})} onClick={() => runEditorCommand((activeEditor) => activeEditor.chain().focus().setTextAlign('right').run())} disabled={controlsDisabled} />
+                          <IconButton icon="alignLeft" label="Align left" active={editor?.isActive({textAlign: 'left'})} onClick={() => runEditorCommand((activeEditor) => applyTextAlignment(activeEditor, 'left'))} disabled={controlsDisabled} />
+                          <IconButton icon="alignCenter" label="Align center" active={editor?.isActive({textAlign: 'center'})} onClick={() => runEditorCommand((activeEditor) => applyTextAlignment(activeEditor, 'center'))} disabled={controlsDisabled} />
+                          <IconButton icon="alignRight" label="Align right" active={editor?.isActive({textAlign: 'right'})} onClick={() => runEditorCommand((activeEditor) => applyTextAlignment(activeEditor, 'right'))} disabled={controlsDisabled} />
                         </div>
                         <div className={authoringStyles.toolbarGroup}>
                           <IconButton icon="toc" label="Table of contents marker" onClick={() => insertTocMarker()} disabled={controlsDisabled} />
@@ -3077,7 +3241,6 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                             onClick={() => togglePickerMenu()}
                             disabled={controlsDisabled}
                           />
-                          <IconButton icon="codeBlock" label="Set code language" onClick={() => openInsertForm('code')} disabled={controlsDisabled} />
                         </div>
                       </div>
                     </aside>
@@ -3177,45 +3340,6 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                         />
                         <div className={authoringStyles.insertFormActions}>
                           <IconButton icon="save" label="Insert image" onClick={submitImage} disabled={!imageSrc.trim() || controlsDisabled} />
-                          <IconButton
-                            icon="minusCircle"
-                            label="Cancel insert"
-                            onClick={() => {
-                              setInsertFormMode(null);
-                              setInsertFormPosition(null);
-                            }}
-                            disabled={controlsDisabled}
-                          />
-                        </div>
-                      </form>
-                    ) : null}
-                    {insertFormMode === 'code' ? (
-                      <form
-                        className={authoringStyles.insertForm}
-                        style={insertFormPosition ? {left: `${insertFormPosition.left}px`, top: `${insertFormPosition.top}px`} : undefined}
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          submitCodeLanguage();
-                        }}
-                      >
-                        <input
-                          className={authoringStyles.insertInput}
-                          aria-label="Code block language"
-                          placeholder="Select language"
-                          list="ue-docs-code-languages"
-                          value={codeLanguage}
-                          onChange={(event) => setCodeLanguage(event.target.value)}
-                          disabled={controlsDisabled}
-                        />
-                        <datalist id="ue-docs-code-languages">
-                          {CODE_LANGUAGE_OPTIONS.map((option) => (
-                            <option value={option} key={option}>
-                              {option || '(none)'}
-                            </option>
-                          ))}
-                        </datalist>
-                        <div className={authoringStyles.insertFormActions}>
-                          <IconButton icon="save" label="Apply code language" onClick={submitCodeLanguage} disabled={controlsDisabled} />
                           <IconButton
                             icon="minusCircle"
                             label="Cancel insert"

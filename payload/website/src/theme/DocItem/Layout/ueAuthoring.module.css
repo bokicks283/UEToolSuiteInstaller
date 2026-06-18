@@ -633,6 +633,54 @@ html:not([data-ue-docs-ui-ready='true']) .docTocScrollbar {
   line-height: 1.5;
 }
 
+.codeBlockNode {
+  margin: 0.8rem 0;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 24%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ifm-pre-background);
+  color: var(--ifm-pre-color);
+}
+
+.codeBlockHeader {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.42rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ifm-color-primary) 18%, transparent);
+  background: color-mix(in srgb, var(--ifm-color-primary) 10%, transparent);
+}
+
+.codeBlockLanguageSelect {
+  min-width: 8.5rem;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 24%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ifm-background-surface-color) 94%, var(--ifm-color-primary) 6%);
+  color: inherit;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  padding: 0.24rem 0.45rem;
+}
+
+.codeBlockSurface {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.7rem 0.8rem;
+  overflow: auto;
+  background: transparent;
+  color: inherit;
+}
+
+.codeBlockContent {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .inlineEditorContent :global(code) {
   border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 28%, transparent);
   border-radius: 6px;

@@ -75,15 +75,29 @@ function Write-JsonResponse {
     [int]$StatusCode = 200
   )
 
+  $json = ($Payload | ConvertTo-Json -Depth 20)
+  Write-JsonTextResponse -Context $Context -JsonText $json -StatusCode $StatusCode
+}
+
+function Write-JsonTextResponse {
+  param(
+    [Parameter(Mandatory)][System.Net.HttpListenerContext]$Context,
+    [Parameter(Mandatory)][AllowEmptyString()][string]$JsonText,
+    [int]$StatusCode = 200
+  )
+
   $response = $Context.Response
   $response.StatusCode = $StatusCode
   $response.ContentType = "application/json; charset=utf-8"
+  $response.ContentEncoding = [System.Text.Encoding]::UTF8
+  $response.KeepAlive = $false
+  $response.SendChunked = $false
   $response.Headers["Access-Control-Allow-Origin"] = "*"
   $response.Headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
   $response.Headers["Access-Control-Allow-Headers"] = "Content-Type"
 
-  $json = ($Payload | ConvertTo-Json -Depth 20)
-  $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+  $buffer = [System.Text.Encoding]::UTF8.GetBytes($JsonText)
+  $response.ContentLength64 = $buffer.Length
   $response.OutputStream.Write($buffer, 0, $buffer.Length)
   $response.OutputStream.Flush()
   $response.Close()
@@ -99,11 +113,15 @@ function Write-PlainResponse {
   $response = $Context.Response
   $response.StatusCode = $StatusCode
   $response.ContentType = "text/plain; charset=utf-8"
+  $response.ContentEncoding = [System.Text.Encoding]::UTF8
+  $response.KeepAlive = $false
+  $response.SendChunked = $false
   $response.Headers["Access-Control-Allow-Origin"] = "*"
   $response.Headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
   $response.Headers["Access-Control-Allow-Headers"] = "Content-Type"
 
   $buffer = [System.Text.Encoding]::UTF8.GetBytes([string]$Text)
+  $response.ContentLength64 = $buffer.Length
   $response.OutputStream.Write($buffer, 0, $buffer.Length)
   $response.OutputStream.Flush()
   $response.Close()
@@ -193,7 +211,7 @@ function Resolve-DocsPathFromToken {
     throw "Path '$PathToken' resolves outside Docs/."
   }
 
-  if ($RequireExisting -and -not (Test-Path -LiteralPath $resolvedCandidate)) {
+  if ($RequireExisting -and -not ([System.IO.File]::Exists($resolvedCandidate) -or [System.IO.Directory]::Exists($resolvedCandidate))) {
     throw "Path not found under Docs/: $PathToken"
   }
 
@@ -2188,8 +2206,8 @@ function Get-DocsContent {
   param([Parameter(Mandatory)][string]$PathToken)
 
   $pagePath = Resolve-PagePathFromToken -PathToken $PathToken -RequireExisting
-  $content = Get-Content -LiteralPath $pagePath -Raw
-  $mtime = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o")
+  $content = [System.IO.File]::ReadAllText($pagePath)
+  $mtime = ([System.IO.FileInfo]::new($pagePath)).LastWriteTimeUtc.ToString("o")
   return [ordered]@{
     path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
     content     = $content
@@ -2220,7 +2238,7 @@ function Save-DocsContent {
   )
 
   $pagePath = Resolve-PagePathFromToken -PathToken $PathToken -RequireExisting
-  $current = Get-Content -LiteralPath $pagePath -Raw
+  $current = [System.IO.File]::ReadAllText($pagePath)
   $currentHash = Get-JsonHash -Value $current
 
   if (-not [string]::IsNullOrWhiteSpace($ExpectedHash) -and $ExpectedHash -ne $currentHash) {
@@ -2233,11 +2251,11 @@ function Save-DocsContent {
 
   Write-DocsEditorUtf8NoBomFile -Path $pagePath -Content $Content
 
-  $updated = Get-Content -LiteralPath $pagePath -Raw
+  $updated = [System.IO.File]::ReadAllText($pagePath)
   return [ordered]@{
     path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
     hash        = (Get-JsonHash -Value $updated)
-    modifiedUtc = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o")
+    modifiedUtc = ([System.IO.FileInfo]::new($pagePath)).LastWriteTimeUtc.ToString("o")
   }
 }
 
@@ -3588,7 +3606,8 @@ function Invoke-EditorApiRequest {
       throw "Query parameter 'path' is required."
     }
     $content = Get-DocsContent -PathToken $token
-    Write-JsonResponse -Context $Context -Payload ([ordered]@{ ok = $true; content = $content })
+    $payloadJson = ([ordered]@{ ok = $true; content = $content } | ConvertTo-Json -Depth 20)
+    Write-JsonTextResponse -Context $Context -JsonText $payloadJson
     return
   }
 
