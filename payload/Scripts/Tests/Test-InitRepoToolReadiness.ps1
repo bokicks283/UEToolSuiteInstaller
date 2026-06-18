@@ -59,6 +59,11 @@ exit /b 0
 >> "%INIT_REPO_TOOL_READINESS_LOG%" echo npm cwd=%CD% args=%*
 if "%~1"=="install" (
   if not exist node_modules mkdir node_modules
+  if not exist node_modules\react mkdir node_modules\react
+)
+if "%~1"=="ci" (
+  if not exist node_modules mkdir node_modules
+  if not exist node_modules\react mkdir node_modules\react
 )
 exit /b 0
 '@
@@ -196,10 +201,30 @@ exit 0
   if ($IncludeDocsSite) {
     Write-Utf8NoBomFile -Path (Join-Path $target "website\package.json") -Content @'
 {
+  "name": "portable-sample-docs",
+  "private": true,
   "scripts": {
     "build": "docusaurus build"
   },
-  "dependencies": {}
+  "dependencies": {
+    "react": "19.1.1"
+  }
+}
+'@
+
+    Write-Utf8NoBomFile -Path (Join-Path $target "website\package-lock.json") -Content @'
+{
+  "name": "portable-sample-docs",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "portable-sample-docs",
+      "dependencies": {
+        "react": "19.1.1"
+      }
+    }
+  }
 }
 '@
 
@@ -406,7 +431,7 @@ try {
 
   Assert-Condition "case1 init exits cleanly" ($result.ExitCode -eq 0) "exit=0" "exit=$($result.ExitCode)"
   Assert-TextContains "case1 npm install invoked" $commandLogText "npm cwd="
-  Assert-TextContains "case1 npm install args" $commandLogText "args=install"
+  Assert-TextContains "case1 npm ci args" $commandLogText "args=ci"
   Assert-TextContains "case1 bridge install invoked" $commandLogText "ue-tools docs install-bridge"
   Assert-TextContains "case1 docs doctor invoked" $commandLogText "ue-tools docs doctor"
   Assert-Condition "case1 node_modules created" (Test-Path -LiteralPath (Join-Path $targetRepo "website\node_modules")) "website/node_modules created" "website/node_modules missing"
@@ -419,6 +444,28 @@ try {
   Assert-TextContains "case1 art tools ready" $result.OutputText "[OK] ue-tools art"
   Assert-TextContains "case1 aliases skipped" $result.OutputText "[SKIP] PowerShell aliases"
   Assert-TextContains "case1 ue-tools skipped" $result.OutputText "[SKIP] ue-tools"
+
+  Step "Case 1b: init re-syncs docs dependencies when node_modules drifts"
+  $case1bLog = Join-Path $script:TempRoot "case1b-commands.log"
+  Write-Utf8NoBomFile -Path $case1bLog -Content ""
+  $case1bNodeModulePath = Join-Path $targetRepo "website\node_modules\react"
+  if (Test-Path -LiteralPath $case1bNodeModulePath) {
+    Remove-Item -LiteralPath $case1bNodeModulePath -Recurse -Force
+  }
+  $case1bStatePath = Join-Path $targetRepo "website\node_modules\.ue-tools-docs-deps-state.json"
+  Write-Utf8NoBomFile -Path $case1bStatePath -Content '{"dependencyHash":"stale-hash","requiredDependencies":["react"],"installCommand":"npm ci","packageLockPresent":true,"updatedUtc":"2000-01-01T00:00:00.0000000Z"}'
+  $case1bResult = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepo `
+    -StubRoot $stubRoot `
+    -CommandLog $case1bLog `
+    -ExtraArgs @("-NonInteractive")
+  $case1bLogText = Get-Content -LiteralPath $case1bLog -Raw
+  Assert-Condition "case1b init exits cleanly" ($case1bResult.ExitCode -eq 0) "exit=0" "exit=$($case1bResult.ExitCode)"
+  Assert-TextContains "case1b npm re-sync invoked" $case1bLogText "args=ci"
+  Assert-TextContains "case1b output explains dependency drift" $case1bResult.OutputText "Docs dependency install reason:"
+  Assert-Condition "case1b state file rewritten" (Test-Path -LiteralPath $case1bStatePath -PathType Leaf) "state file present" "state file missing"
+  $case1bState = Get-Content -LiteralPath $case1bStatePath -Raw | ConvertFrom-Json
+  Assert-Condition "case1b state hash updated" ([string]$case1bState.dependencyHash -ne "stale-hash") "dependencyHash refreshed" "dependencyHash remained stale"
 
   Step "Case 2: init succeeds when optional docs and ArtSource tools are not installed"
   $commandLog2 = Join-Path $script:TempRoot "case2-commands.log"

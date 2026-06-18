@@ -2,6 +2,7 @@
   "manifestVersion": 1,
   "payloadVersion": "1.0.0",
   "docsManagedFileIndexPath": "docs-managed-file-index.json",
+  "websiteManagedFileIndexPath": "website-managed-file-index.json",
   "managedTextItems": [
     ".gitattributes",
     ".gitignore"
@@ -23,15 +24,13 @@
       "Scripts/Tests"
     ],
     "docs": [
+      "Docs/_domains.json",
       "Docs/README.md",
-      "Docs/Setup.md",
-      "Docs/Testing.md",
-      "Docs/AI",
-      "Docs/DocsSite",
-      "Docs/Pipeline"
+      "Docs/WorkflowStandards",
+      "Docs/ProjectDocs"
     ],
     "codingStandards": [
-      "Docs/CodingStandards"
+      "Docs/WorkflowStandards/CodingStandards"
     ],
     "docsTools": [
       "Scripts/Docs"
@@ -51,6 +50,8 @@
     "Scripts/Unreal/New-ArtSourcePath.ps1",
     "Scripts/git-tools/conflicts.ps1",
     "Scripts/Unreal/ProjectShellAliases.ps1",
-    "Scripts/Unreal/UESyncShellAliases.ps1"
+    "Scripts/Unreal/UESyncShellAliases.ps1",
+    "website/src/pages/editor.tsx",
+    "website/src/pages/editor.module.css"
   ]
 }

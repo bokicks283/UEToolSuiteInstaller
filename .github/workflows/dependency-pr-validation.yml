@@ -1,0 +1,47 @@
+name: Dependency PR Validation
+
+on:
+  pull_request:
+    paths:
+      - "payload/website/package.json"
+      - "payload/website/package-lock.json"
+      - "payload/website/**"
+      - "payload/Scripts/UETools/UEToolSuite.Init.psm1"
+      - "Tests/Test-PackagingContracts.ps1"
+      - "payload/Scripts/Tests/Test-InitRepoToolReadiness.ps1"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Validate docs website dependency lockfile
+        shell: pwsh
+        run: |
+          Push-Location payload/website
+          try {
+            npm ci --no-audit --no-fund
+            npm run build
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Run docs tools suite
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -Name docs-tools -FailFast
+
+      - name: Run packaging contracts suite
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast

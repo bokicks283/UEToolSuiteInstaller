@@ -726,6 +726,191 @@ function Invoke-UEToolSuiteInitRuntime {
   function Show-ToolReadinessSummary {
     Show-UEToolSuiteInitToolReadinessSummary -Entries $script:ToolReadiness -Prefix "[Init]"
   }
+
+  function Get-DocsDependencyStatePath {
+    param([Parameter(Mandatory)][string]$WebsiteRoot)
+    return (Join-Path $WebsiteRoot "node_modules\.ue-tools-docs-deps-state.json")
+  }
+
+  function Get-DocsDependencyFingerprint {
+    param([Parameter(Mandatory)][string]$WebsiteRoot)
+
+    $packagePath = Join-Path $WebsiteRoot "package.json"
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+      throw "Docs dependency fingerprint requires website/package.json."
+    }
+
+    $lockPath = Join-Path $WebsiteRoot "package-lock.json"
+    $packageText = Get-Content -LiteralPath $packagePath -Raw
+    $lockText = if (Test-Path -LiteralPath $lockPath -PathType Leaf) { Get-Content -LiteralPath $lockPath -Raw } else { "" }
+    $composite = "$packageText`n`n$lockText"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($composite)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hash = $sha.ComputeHash($bytes)
+      return ([System.BitConverter]::ToString($hash) -replace '-', '').ToLowerInvariant()
+    }
+    finally {
+      $sha.Dispose()
+    }
+  }
+
+  function Get-DocsRequiredDependencyNames {
+    param([Parameter(Mandatory)][string]$WebsiteRoot)
+
+    $packagePath = Join-Path $WebsiteRoot "package.json"
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+      return @()
+    }
+
+    $packageJson = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
+    $dependencyNames = New-Object System.Collections.Generic.List[string]
+    if ($packageJson.PSObject.Properties["dependencies"]) {
+      foreach ($property in $packageJson.dependencies.PSObject.Properties) {
+        if ([string]::IsNullOrWhiteSpace([string]$property.Name)) { continue }
+        [void]$dependencyNames.Add([string]$property.Name)
+      }
+    }
+
+    return @($dependencyNames.ToArray() | Sort-Object -Unique)
+  }
+
+  function Read-DocsDependencyState {
+    param([Parameter(Mandatory)][string]$WebsiteRoot)
+
+    $statePath = Get-DocsDependencyStatePath -WebsiteRoot $WebsiteRoot
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+      return $null
+    }
+
+    try {
+      return (Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json)
+    }
+    catch {
+      return $null
+    }
+  }
+
+  function Write-DocsDependencyState {
+    param(
+      [Parameter(Mandatory)][string]$WebsiteRoot,
+      [Parameter(Mandatory)][string]$DependencyHash,
+      [Parameter(Mandatory)][string[]]$RequiredDependencies,
+      [Parameter(Mandatory)][string]$InstallCommand
+    )
+
+    $statePath = Get-DocsDependencyStatePath -WebsiteRoot $WebsiteRoot
+    $stateDir = Split-Path -Path $statePath -Parent
+    if ($stateDir) {
+      New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+    }
+
+    $payload = [ordered]@{
+      dependencyHash = $DependencyHash
+      requiredDependencies = @($RequiredDependencies | Sort-Object -Unique)
+      installCommand = $InstallCommand
+      packageLockPresent = (Test-Path -LiteralPath (Join-Path $WebsiteRoot "package-lock.json") -PathType Leaf)
+      updatedUtc = (Get-Date).ToUniversalTime().ToString("o")
+    }
+
+    $json = ($payload | ConvertTo-Json -Depth 8)
+    if (Get-Command -Name "Write-UEToolSuiteUtf8NoBomFile" -ErrorAction SilentlyContinue) {
+      Write-UEToolSuiteUtf8NoBomFile -Path $statePath -Content $json
+    }
+    else {
+      $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+      [System.IO.File]::WriteAllText($statePath, $json, $utf8NoBom)
+    }
+  }
+
+  function Get-DocsNpmInstallPlan {
+    param([Parameter(Mandatory)][string]$WebsiteRoot)
+
+    $lockPath = Join-Path $WebsiteRoot "package-lock.json"
+    if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
+      return [pscustomobject]@{
+        CommandName = "ci"
+        Arguments = @("ci", "--no-audit", "--no-fund")
+      }
+    }
+
+    return [pscustomobject]@{
+      CommandName = "install"
+      Arguments = @("install", "--no-audit", "--no-fund")
+    }
+  }
+
+  function Test-DocsDependenciesSynchronized {
+    param(
+      [Parameter(Mandatory)][string]$WebsiteRoot,
+      [switch]$IgnoreStateFile
+    )
+
+    $nodeModulesPath = Join-Path $WebsiteRoot "node_modules"
+    if (-not (Test-Path -LiteralPath $nodeModulesPath -PathType Container)) {
+      return [pscustomobject]@{
+        IsSynchronized = $false
+        Reason = "website/node_modules is missing."
+        MissingDependencies = @()
+        RequiredDependencies = @()
+        DependencyHash = (Get-DocsDependencyFingerprint -WebsiteRoot $WebsiteRoot)
+      }
+    }
+
+    $requiredDependencies = @(Get-DocsRequiredDependencyNames -WebsiteRoot $WebsiteRoot)
+    $missingDependencies = New-Object System.Collections.Generic.List[string]
+    foreach ($dependency in $requiredDependencies) {
+      $dependencyPath = Join-Path $nodeModulesPath ($dependency -replace '/', '\')
+      if (-not (Test-Path -LiteralPath $dependencyPath)) {
+        [void]$missingDependencies.Add($dependency)
+      }
+    }
+    if ($missingDependencies.Count -gt 0) {
+      return [pscustomobject]@{
+        IsSynchronized = $false
+        Reason = "Required package(s) missing from website/node_modules: $($missingDependencies -join ', ')"
+        MissingDependencies = @($missingDependencies.ToArray())
+        RequiredDependencies = $requiredDependencies
+        DependencyHash = (Get-DocsDependencyFingerprint -WebsiteRoot $WebsiteRoot)
+      }
+    }
+
+    $fingerprint = Get-DocsDependencyFingerprint -WebsiteRoot $WebsiteRoot
+    if (-not $IgnoreStateFile) {
+      $state = Read-DocsDependencyState -WebsiteRoot $WebsiteRoot
+      if ($null -eq $state) {
+        return [pscustomobject]@{
+          IsSynchronized = $false
+          Reason = "Docs dependency state file is missing."
+          MissingDependencies = @()
+          RequiredDependencies = $requiredDependencies
+          DependencyHash = $fingerprint
+        }
+      }
+
+      $stateHash = ""
+      if ($state.PSObject.Properties["dependencyHash"]) {
+        $stateHash = [string]$state.dependencyHash
+      }
+      if ([string]::IsNullOrWhiteSpace($stateHash) -or $stateHash -ne $fingerprint) {
+        return [pscustomobject]@{
+          IsSynchronized = $false
+          Reason = "Docs dependency fingerprint changed since last install."
+          MissingDependencies = @()
+          RequiredDependencies = $requiredDependencies
+          DependencyHash = $fingerprint
+        }
+      }
+    }
+
+    return [pscustomobject]@{
+      IsSynchronized = $true
+      Reason = "Docs dependencies are synchronized."
+      MissingDependencies = @()
+      RequiredDependencies = $requiredDependencies
+      DependencyHash = $fingerprint
+    }
+  }
   
   function Initialize-DocsTooling {
     param(
@@ -768,22 +953,37 @@ function Invoke-UEToolSuiteInitRuntime {
     $nodeVersion = Assert-NodeVersion
     Add-ToolReadiness -Tool "node/npm" -Status "OK" -Detail "Node.js $nodeVersion and npm are available."
   
-    $nodeModulesPath = Join-Path $websiteRoot "node_modules"
+    $npmInstallPlan = Get-DocsNpmInstallPlan -WebsiteRoot $websiteRoot
+    $dependencySync = Test-DocsDependenciesSynchronized -WebsiteRoot $websiteRoot
     if ($SkipNpmInstall) {
       Warn "Skipping docs npm install (SkipDocsNpmInstall set)."
-      Add-ToolReadiness -Tool "docs dependencies" -Status "SKIP" -Detail "website/node_modules setup skipped by parameter."
+      if (-not $dependencySync.IsSynchronized) {
+        Warn "Docs dependency check detected drift: $($dependencySync.Reason)"
+      }
+      Add-ToolReadiness -Tool "docs dependencies" -Status "SKIP" -Detail "Docs dependency synchronization skipped by parameter."
     }
-    elseif ($ForceNpmInstall -or -not (Test-Path -LiteralPath $nodeModulesPath)) {
-      Info "Installing docs site dependencies with npm install..."
+    elseif ($ForceNpmInstall -or -not $dependencySync.IsSynchronized) {
+      $installReason = if ($ForceNpmInstall) { "forced by parameter" } else { $dependencySync.Reason }
+      Info "Installing docs site dependencies with npm $($npmInstallPlan.CommandName)..."
+      Info "Docs dependency install reason: $installReason"
       Invoke-CheckedTool `
-        -Description "npm install for docs site" `
+        -Description "npm $($npmInstallPlan.CommandName) for docs site" `
         -FilePath "npm" `
-        -Arguments @("install") `
+        -Arguments $npmInstallPlan.Arguments `
         -WorkingDirectory $websiteRoot
-      Add-ToolReadiness -Tool "docs dependencies" -Status "OK" -Detail "npm install completed in website/."
+      $postInstallSync = Test-DocsDependenciesSynchronized -WebsiteRoot $websiteRoot -IgnoreStateFile
+      if (-not $postInstallSync.IsSynchronized) {
+        throw "Docs dependency install completed but validation failed: $($postInstallSync.Reason)"
+      }
+      Write-DocsDependencyState `
+        -WebsiteRoot $websiteRoot `
+        -DependencyHash $postInstallSync.DependencyHash `
+        -RequiredDependencies $postInstallSync.RequiredDependencies `
+        -InstallCommand ("npm " + $npmInstallPlan.CommandName)
+      Add-ToolReadiness -Tool "docs dependencies" -Status "OK" -Detail "npm $($npmInstallPlan.CommandName) completed in website/."
     }
     else {
-      Add-ToolReadiness -Tool "docs dependencies" -Status "OK" -Detail "website/node_modules already exists."
+      Add-ToolReadiness -Tool "docs dependencies" -Status "OK" -Detail "website/node_modules is synchronized with package manifests."
     }
   
     if ($SkipBridgeInstall) {

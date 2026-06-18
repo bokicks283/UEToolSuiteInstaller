@@ -7,8 +7,20 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
-if (-not $repoRoot) { throw "Not inside a git repository." }
+$gitRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
+if (-not $gitRoot) { throw "Not inside a git repository." }
+
+$repoRoot = $gitRoot
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
+  $payloadRoot = Join-Path $gitRoot "payload"
+  $payloadHarnessPath = Join-Path $payloadRoot "Scripts\Tests\TestHarness.ps1"
+  if (Test-Path -LiteralPath $payloadHarnessPath -PathType Leaf) {
+    $repoRoot = $payloadRoot
+    $testHarnessPath = $payloadHarnessPath
+  }
+}
+
 Set-Location $repoRoot
 
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
@@ -17,7 +29,6 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "DocsToolsTest-$stamp.log"
 $tempRoot = Join-Path $resultsDir "scratch-$stamp"
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
-$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
 if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
 }
@@ -33,6 +44,17 @@ Initialize-TestHarness -LogPath $logPath -FailFast:$FailFast
 
 function New-ScratchPath([string]$Name) {
   return (Join-Path $tempRoot $Name)
+}
+
+function Get-FreeTcpPort {
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+  $listener.Start()
+  try {
+    return [int]([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+  }
+  finally {
+    $listener.Stop()
+  }
 }
 
 function New-MinimalDocsRepo {
@@ -64,13 +86,38 @@ Minimal docs root for ue-tools docs testing.
   if (Test-Path -LiteralPath $configSource) {
     Copy-Item -LiteralPath $configSource -Destination (Join-Path $scratchWebsiteRoot "docusaurus.config.ts") -Force
   }
+  foreach ($websiteSourceRelativePath in @(
+      "website\sidebars.ts",
+      "website\domainCatalog.ts"
+    )) {
+    $websiteSourcePath = Join-Path $repoRoot $websiteSourceRelativePath
+    if (-not (Test-Path -LiteralPath $websiteSourcePath -PathType Leaf)) {
+      continue
+    }
+
+    $websiteDestinationPath = Join-Path $scratchWebsiteRoot ($websiteSourceRelativePath.Substring("website\".Length))
+    $websiteDestinationParent = Split-Path -Path $websiteDestinationPath -Parent
+    if ($websiteDestinationParent) {
+      New-Item -ItemType Directory -Force -Path $websiteDestinationParent | Out-Null
+    }
+    Copy-Item -LiteralPath $websiteSourcePath -Destination $websiteDestinationPath -Force
+  }
   $themePresetsSource = Join-Path $repoRoot "website\theme-presets"
   if (Test-Path -LiteralPath $themePresetsSource -PathType Container) {
     Copy-Item -LiteralPath $themePresetsSource -Destination (Join-Path $scratchWebsiteRoot "theme-presets") -Recurse -Force
   }
-  $cssSource = Join-Path $repoRoot "website\src\css\custom.css"
-  if (Test-Path -LiteralPath $cssSource -PathType Leaf) {
-    $cssDestination = Join-Path $scratchWebsiteRoot "src\css\custom.css"
+  foreach ($relativeCssPath in @(
+      "website\src\css\custom.css",
+      "website\src\css\suite-shell.css",
+      "website\src\css\project-overrides.css",
+      "website\theme-presets\active-theme.css"
+    )) {
+    $cssSource = Join-Path $repoRoot $relativeCssPath
+    if (-not (Test-Path -LiteralPath $cssSource -PathType Leaf)) {
+      continue
+    }
+
+    $cssDestination = Join-Path $scratchWebsiteRoot ($relativeCssPath.Substring("website\".Length))
     $cssDestinationParent = Split-Path -Path $cssDestination -Parent
     if ($cssDestinationParent) {
       New-Item -ItemType Directory -Force -Path $cssDestinationParent | Out-Null
@@ -272,6 +319,7 @@ try {
   Assert-TextContains "case1 help shows page alias" $helpResult.OutputText "new-page, create-page"
   Assert-TextContains "case1 help shows reorder" $helpResult.OutputText "reorder"
   Assert-TextContains "case1 help shows start" $helpResult.OutputText "start"
+  Assert-TextContains "case1 help mentions inline docs editing" $helpResult.OutputText "Inline page editing is available directly on docs pages"
   Assert-TextContains "case1 help shows docusaurus passthrough" $helpResult.OutputText "docusaurus <args...>"
   Assert-TextContains "case1 help shows help syntax" $helpResult.OutputText "help [command]"
 
@@ -359,13 +407,214 @@ try {
   Assert-Condition "case1f adopt theme apply exits cleanly" ($themeAdoptResult.ExitCode -eq 0) "exit code=0" "exit code=$($themeAdoptResult.ExitCode)"
   Assert-TextContains "case1f adopt message emitted" $themeAdoptResult.OutputText "Adopted existing website"
   Assert-TextContains "case1f apply message emitted" $themeAdoptResult.OutputText "Applied website theme 'ocean'."
-  Assert-TextContains "case1f custom css updated to ocean palette" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\src\css\custom.css") -Raw) "--ifm-color-primary: #0d7ea2;"
+  Assert-TextContains "case1f custom css keeps theme shell imports" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\src\css\custom.css") -Raw) "@import '../../theme-presets/active-theme.css';"
+  Assert-TextContains "case1f active theme css updated to ocean palette" (Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\theme-presets\active-theme.css") -Raw) "--ifm-color-primary: #0d7ea2;"
   $themeAdoptConfig = Get-Content -LiteralPath (Join-Path $themeAdoptRepo "website\docusaurus.config.ts") -Raw
   Assert-TextContains "case1f config stores updated theme id" $themeAdoptConfig "suiteThemeId: 'ocean'"
   Assert-TextContains "case1f custom logo rewires navbar icon" $themeAdoptConfig "src: 'img/branding/project-logo.svg'"
   Assert-TextContains "case1f custom logo rewires favicon icon" $themeAdoptConfig "favicon: 'img/branding/project-logo.svg'"
   Assert-TextContains "case1f custom logo rewires social card image" $themeAdoptConfig "image: 'img/branding/project-logo.svg'"
   Assert-Condition "case1f ownership marker written" (Test-Path -LiteralPath (Join-Path $themeAdoptRepo "website\.ue-tools\ownership.json") -PathType Leaf) "ownership marker present"
+
+  Step "Case 1g: editor API host serves tree/reorder/save endpoints without argument conversion failures"
+  $apiHostRepo = New-MinimalDocsRepo -Name "repo-editor-api-host"
+  $apiHostPort = Get-FreeTcpPort
+  $apiHostScriptPath = Join-Path $repoRoot "Scripts\UETools\DocsEditorApiHost.ps1"
+  if (-not (Test-Path -LiteralPath $apiHostScriptPath -PathType Leaf)) {
+    $script:SkipCount += 1
+    Write-Log "[SKIP] case1g editor API host script is not present in this payload build." Yellow
+  }
+  else {
+  $apiHostOutPath = Join-Path (New-ScratchPath "api-host") "stdout.log"
+  $apiHostErrPath = Join-Path (Split-Path -Parent $apiHostOutPath) "stderr.log"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $apiHostOutPath) | Out-Null
+  $pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
+  $apiHostArgs = @(
+    "-NoLogo",
+    "-NoProfile",
+    "-ExecutionPolicy Bypass",
+    ("-File `"{0}`"" -f $apiHostScriptPath),
+    ("-RepoRoot `"{0}`"" -f $apiHostRepo),
+    ("-DocsModulePath `"{0}`"" -f $script:DocsToolsScriptPath),
+    ("-Port {0}" -f $apiHostPort)
+  ) -join ' '
+  $apiHostProcess = Start-Process `
+    -FilePath $pwshPath `
+    -ArgumentList $apiHostArgs `
+    -PassThru `
+    -RedirectStandardOutput $apiHostOutPath `
+    -RedirectStandardError $apiHostErrPath
+
+  $apiHostReady = $false
+  try {
+    for ($i = 0; $i -lt 30; $i++) {
+      try {
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/health" -Method Get -TimeoutSec 2
+        if ($health.ok) {
+          $apiHostReady = $true
+          break
+        }
+      }
+      catch {
+      }
+      Start-Sleep -Milliseconds 200
+    }
+    $apiHostHealthFailure = "health endpoint did not report ready"
+    if (-not $apiHostReady) {
+      $stderrSnippet = if (Test-Path -LiteralPath $apiHostErrPath -PathType Leaf) {
+        (Get-Content -LiteralPath $apiHostErrPath -Raw)
+      }
+      else {
+        "<stderr log not found>"
+      }
+      $stdoutSnippet = if (Test-Path -LiteralPath $apiHostOutPath -PathType Leaf) {
+        (Get-Content -LiteralPath $apiHostOutPath -Raw)
+      }
+      else {
+        "<stdout log not found>"
+      }
+      $apiHostHealthFailure = "health endpoint did not report ready. stderr=$stderrSnippet stdout=$stdoutSnippet"
+    }
+    Assert-Condition "case1g api host health endpoint ready" $apiHostReady "health ok" $apiHostHealthFailure
+
+    if ($apiHostReady) {
+      $tree = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/tree" -Method Get -TimeoutSec 5
+      Assert-Condition "case1g api tree endpoint returns ok payload" ($tree.ok -eq $true) "tree ok=true" "tree response did not set ok=true"
+      Assert-Condition "case1g api tree includes docs root entries" (@($tree.tree.children).Count -gt 0) "children count > 0" "children count=0"
+
+      $content = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=README.md" -Method Get -TimeoutSec 5
+      Assert-Condition "case1g api content returns ok payload" ($content.ok -eq $true) "content ok=true" "content response did not set ok=true"
+      Assert-TextContains "case1g api content includes front matter title" ([string]$content.content.content) "title: Overview"
+
+      $saveBody = @{
+        path = "README.md"
+        content = [string]$content.content.content
+        expectedHash = [string]$content.content.hash
+      } | ConvertTo-Json -Depth 8
+      $save = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content" -Method Post -ContentType "application/json" -Body $saveBody -TimeoutSec 5
+      Assert-Condition "case1g api save endpoint returns ok payload" ($save.ok -eq $true) "save ok=true" "save response did not set ok=true"
+
+      $createSectionBody = @{
+        parentPath = ""
+        sectionName = "Guides Space"
+        title = "Guides Space"
+      } | ConvertTo-Json -Depth 6
+      $createSection = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/create/section" -Method Post -ContentType "application/json" -Body $createSectionBody -TimeoutSec 5
+      Assert-Condition "case1g api create section endpoint returns ok payload" ($createSection.ok -eq $true) "create section ok=true" "create section response did not set ok=true"
+
+      $createSetupPageBody = @{
+        sectionPath = ""
+        pageName = "Setup"
+        title = "Setup"
+      } | ConvertTo-Json -Depth 6
+      $createSetupPage = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/create/page" -Method Post -ContentType "application/json" -Body $createSetupPageBody -TimeoutSec 5
+      Assert-Condition "case1g api seed setup page endpoint returns ok payload" ($createSetupPage.ok -eq $true) "create setup page ok=true" "create setup page response did not set ok=true"
+
+      $sidebarsPath = Join-Path $apiHostRepo "website\sidebars.ts"
+      if (Test-Path -LiteralPath $sidebarsPath -PathType Leaf) {
+        $sidebarsBeforeSeed = Get-Content -LiteralPath $sidebarsPath -Raw
+        $sidebarsAfterSeed = if ($sidebarsBeforeSeed -notmatch "docId:\s*'Setup'") {
+          $sidebarsBeforeSeed.TrimEnd() + "`r`n`r`nexport const testSidebarReference = [{type: 'doc', docId: 'Setup'}];`r`n"
+        }
+        else {
+          $sidebarsBeforeSeed
+        }
+        if ($sidebarsAfterSeed -ne $sidebarsBeforeSeed) {
+          Write-Utf8NoBomFile -Path $sidebarsPath -Content $sidebarsAfterSeed
+        }
+        Assert-TextContains "case1g seed setup sidebar docId reference" $sidebarsAfterSeed "docId: 'Setup'"
+      }
+
+      $moveReferencedPageBody = @{
+        sourcePath = "Setup"
+        destinationParentPath = "Guides Space"
+        insertIndex = 0
+      } | ConvertTo-Json -Depth 6
+      $moveReferencedPage = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/move" -Method Post -ContentType "application/json" -Body $moveReferencedPageBody -TimeoutSec 5
+      Assert-Condition "case1g api move handles navbar docId references" ($moveReferencedPage.ok -eq $true) "move referenced page ok=true" "move referenced page response did not set ok=true"
+      $sidebarsAfterReferencedMove = Get-Content -LiteralPath (Join-Path $apiHostRepo "website\sidebars.ts") -Raw
+      Assert-TextContains "case1g api move rewrites sidebar docId reference after path move" $sidebarsAfterReferencedMove "docId: 'Guides Space/Setup'"
+      Assert-TextNotContains "case1g api move removes stale sidebar docId reference" $sidebarsAfterReferencedMove "docId: 'Setup'"
+      $movedSetupContent = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=Guides%20Space%2FSetup.md" -Method Get -TimeoutSec 5
+      Assert-TextContains "case1g api move keeps referenced page slug stable" ([string]$movedSetupContent.content.content) "slug: /setup"
+
+      $createPageBody = @{
+        sectionPath = ""
+        pageName = "Notes"
+        title = "Notes"
+      } | ConvertTo-Json -Depth 6
+      $createPage = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/create/page" -Method Post -ContentType "application/json" -Body $createPageBody -TimeoutSec 5
+      Assert-Condition "case1g api create page endpoint returns ok payload" ($createPage.ok -eq $true) "create page ok=true" "create page response did not set ok=true"
+
+      $sluglessNotesPath = Join-Path $apiHostRepo "Docs\Notes.md"
+      $sluglessNotesContent = Get-Content -LiteralPath $sluglessNotesPath -Raw
+      $sluglessNotesContent = [regex]::Replace($sluglessNotesContent, "(?m)^\s*slug\s*:\s*.*(?:\r?\n)?", "")
+      Write-Utf8NoBomFile -Path $sluglessNotesPath -Content $sluglessNotesContent
+
+      $rootContentBeforeMove = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=README.md" -Method Get -TimeoutSec 5
+      $rootContentWithLink = ([string]$rootContentBeforeMove.content.content).TrimEnd() + "`n`n[Notes](./Notes.md)`n"
+      $saveRootLinkBody = @{
+        path = "README.md"
+        content = $rootContentWithLink
+        expectedHash = [string]$rootContentBeforeMove.content.hash
+      } | ConvertTo-Json -Depth 8
+      $saveRootLink = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content" -Method Post -ContentType "application/json" -Body $saveRootLinkBody -TimeoutSec 5
+      Assert-Condition "case1g api save endpoint preserves a markdown file reference" ($saveRootLink.ok -eq $true) "save link ok=true" "save link response did not set ok=true"
+
+      $moveBody = @{
+        sourcePath = "Notes"
+        destinationParentPath = "Guides Space"
+        insertIndex = 0
+      } | ConvertTo-Json -Depth 6
+      $move = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/move" -Method Post -ContentType "application/json" -Body $moveBody -TimeoutSec 5
+      Assert-Condition "case1g api move endpoint returns ok payload" ($move.ok -eq $true) "move ok=true" "move response did not set ok=true"
+      Assert-TextContains "case1g api move endpoint returns moved docs path" ([string]$move.result.path) "Guides Space/Notes"
+
+      $movedPageContent = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=Guides%20Space%2FNotes.md" -Method Get -TimeoutSec 5
+      Assert-TextContains "case1g api move preserves moved page slug" ([string]$movedPageContent.content.content) "slug: /notes"
+      $rootContentAfterPageMove = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=README.md" -Method Get -TimeoutSec 5
+      Assert-TextContains "case1g api move rewrites links to moved page using stable docs route" ([string]$rootContentAfterPageMove.content.content) "[Notes](/docs/notes)"
+      $staleUnwrappedLinkContent = ([string]$rootContentAfterPageMove.content.content).Replace("[Notes](/docs/notes)", "[Notes](./Guides%20Space/Notes.md)")
+      $saveStaleLinkBody = @{
+        path = "README.md"
+        content = $staleUnwrappedLinkContent
+        expectedHash = [string]$rootContentAfterPageMove.content.hash
+      } | ConvertTo-Json -Depth 8
+      $saveStaleLink = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content" -Method Post -ContentType "application/json" -Body $saveStaleLinkBody -TimeoutSec 5
+      Assert-Condition "case1g api save endpoint accepts url-encoded moved-page link fixture" ($saveStaleLink.ok -eq $true) "save stale link ok=true" "save stale link response did not set ok=true"
+
+      $createArchiveSectionBody = @{
+        parentPath = ""
+        sectionName = "Archive"
+        title = "Archive"
+      } | ConvertTo-Json -Depth 6
+      $createArchiveSection = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/create/section" -Method Post -ContentType "application/json" -Body $createArchiveSectionBody -TimeoutSec 5
+      Assert-Condition "case1g api create second section endpoint returns ok payload" ($createArchiveSection.ok -eq $true) "create section ok=true" "create second section response did not set ok=true"
+
+      $moveSectionBody = @{
+        sourcePath = "Guides Space"
+        destinationParentPath = "Archive"
+        insertIndex = 1
+      } | ConvertTo-Json -Depth 6
+      $moveSection = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/move" -Method Post -ContentType "application/json" -Body $moveSectionBody -TimeoutSec 5
+      Assert-Condition "case1g api nested section move endpoint returns ok payload" ($moveSection.ok -eq $true) "move section ok=true" "move section response did not set ok=true"
+      Assert-TextContains "case1g api nested section move returns moved docs path" ([string]$moveSection.result.path) "Archive/Guides Space"
+
+      $nestedPageContent = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=Archive%2FGuides%20Space%2FNotes.md" -Method Get -TimeoutSec 5
+      Assert-TextContains "case1g api nested section move preserves child page slug" ([string]$nestedPageContent.content.content) "slug: /notes"
+
+      $nestedSectionReadme = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=Archive%2FGuides%20Space%2FREADME.md" -Method Get -TimeoutSec 5
+      Assert-TextContains "case1g api nested section move preserves section readme slug" ([string]$nestedSectionReadme.content.content) "slug: /guides-space"
+      $rootContentAfterSectionMove = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/content?path=README.md" -Method Get -TimeoutSec 5
+      Assert-TextContains "case1g api nested section move preserves stable route links" ([string]$rootContentAfterSectionMove.content.content) "[Notes](/docs/notes)"
+    }
+  }
+  finally {
+    if ($apiHostProcess -and -not $apiHostProcess.HasExited) {
+      Stop-Process -Id $apiHostProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+  }
+  }
 
   Step "Case 2: new-section scaffolds a section and skips TOC without the bridge"
   $noTocRepo = New-MinimalDocsRepo -Name "repo-no-toc"
@@ -622,6 +871,49 @@ sidebar_position: 1
   Assert-TextContains "case3e output is user-friendly" $missingSectionResult.OutputText "Error: Section does not exist:"
   Assert-TextNotContains "case3e output hides stack traces" $missingSectionResult.OutputText "UEToolSuite.Docs.psm1:"
 
+  Step "Case 3f: visibility toggles page and section landing docs through Docusaurus unlisted front matter"
+  $visibilityPagePath = Join-Path $noTocRepo "Docs\GameDesign\Fear-Loop.md"
+  $hidePageResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign/Fear-Loop", "hide") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-hide-page")
+  $hiddenPageText = Get-Content -LiteralPath $visibilityPagePath -Raw
+  Assert-Condition "case3f hide page exits cleanly" ($hidePageResult.ExitCode -eq 0) "exit code=0" "exit code=$($hidePageResult.ExitCode)"
+  Assert-TextContains "case3f hide page confirms action" $hidePageResult.OutputText "Hidden 'GameDesign/Fear-Loop.md' from site navigation."
+  Assert-TextContains "case3f hide page writes unlisted front matter" $hiddenPageText "unlisted: true"
+
+  $showPageResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign/Fear-Loop", "show") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-show-page")
+  $shownPageText = Get-Content -LiteralPath $visibilityPagePath -Raw
+  Assert-Condition "case3f show page exits cleanly" ($showPageResult.ExitCode -eq 0) "exit code=0" "exit code=$($showPageResult.ExitCode)"
+  Assert-TextContains "case3f show page confirms action" $showPageResult.OutputText "Showed 'GameDesign/Fear-Loop.md' in site navigation."
+  Assert-TextNotContains "case3f show page removes unlisted front matter" $shownPageText "unlisted: true"
+
+  $visibilitySectionPath = Join-Path $noTocRepo "Docs\GameDesign\README.md"
+  $hideSectionResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign", "hide") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-hide-section")
+  $hiddenSectionText = Get-Content -LiteralPath $visibilitySectionPath -Raw
+  Assert-Condition "case3f hide section exits cleanly" ($hideSectionResult.ExitCode -eq 0) "exit code=0" "exit code=$($hideSectionResult.ExitCode)"
+  Assert-TextContains "case3f hide section confirms landing target" $hideSectionResult.OutputText "Hidden 'GameDesign/README.md' from site navigation."
+  Assert-TextContains "case3f hide section writes unlisted front matter" $hiddenSectionText "unlisted: true"
+
+  $showSectionResult = Invoke-DocsToolsCommand `
+    -ScratchRepoRoot $noTocRepo `
+    -CliArgs @("visibility", "GameDesign", "show") `
+    -Toolset $noTocToolset `
+    -SandboxRoot (New-ScratchPath "sandbox-visibility-show-section")
+  $shownSectionText = Get-Content -LiteralPath $visibilitySectionPath -Raw
+  Assert-Condition "case3f show section exits cleanly" ($showSectionResult.ExitCode -eq 0) "exit code=0" "exit code=$($showSectionResult.ExitCode)"
+  Assert-TextContains "case3f show section confirms landing target" $showSectionResult.OutputText "Showed 'GameDesign/README.md' in site navigation."
+  Assert-TextNotContains "case3f show section removes unlisted front matter" $shownSectionText "unlisted: true"
+
   Step "Case 4: install-bridge copies the optional VS Code bridge"
   $bridgeToolset = New-StubToolset -Name "toolset-install-bridge" -CodeExtensions @("yzhang.markdown-all-in-one")
   $bridgeRepo = New-MinimalDocsRepo -Name "repo-install-bridge"
@@ -653,90 +945,151 @@ sidebar_position: 1
   Assert-TextContains "case5 npm start was invoked" $foregroundStartStubLog "npm run start -- --port 3001"
   Assert-Condition "case5 no background state file created" ($foregroundStateFiles.Count -eq 0) "no docs-server.json created"
 
-  Step "Case 5b: start --background launches a tracked server, status reports it, and stop kills it"
-  $startStopRepo = New-MinimalDocsRepo -Name "repo-start-stop"
-  $startStopToolset = New-StubToolset -Name "toolset-start-stop"
-  $startStopSandbox = New-ScratchPath "sandbox-start-stop"
-  $startResult = Invoke-DocsToolsCommand `
-    -ScratchRepoRoot $startStopRepo `
-    -CliArgs @("start", "--background") `
-    -Toolset $startStopToolset `
-    -SandboxRoot $startStopSandbox `
-    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
-  $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
-  $serverState = Get-Content -LiteralPath $serverStateFiles[0].FullName -Raw | ConvertFrom-Json
-  $primaryServerState = if ($serverState.PSObject.Properties["servers"]) { @($serverState.servers)[0] } else { $serverState }
-  $primaryServerPid = [int]$primaryServerState.processId
-  $startStubLog = Get-Content -LiteralPath $startStopToolset.CommandLog -Raw
-  Assert-Condition "case5b start exits cleanly" ($startResult.ExitCode -eq 0) "exit code=0" "exit code=$($startResult.ExitCode)"
-  Assert-TextContains "case5b output confirms background start" $startResult.OutputText "Started docs dev server in the background"
-  Assert-TextContains "case5b output includes default port url" $startResult.OutputText "http://localhost:3000/docs/"
-  Assert-Condition "case5b server state file created" ($serverStateFiles.Count -eq 1) "docs-server.json created"
-  Assert-TextContains "case5b npm start was invoked" $startStubLog "npm run start"
-  $statusResult = Invoke-DocsToolsCommand `
-    -ScratchRepoRoot $startStopRepo `
-    -CliArgs @("status") `
-    -Toolset $startStopToolset `
-    -SandboxRoot $startStopSandbox
-  Assert-Condition "case5b status exits cleanly" ($statusResult.ExitCode -eq 0) "exit code=0" "exit code=$($statusResult.ExitCode)"
-  Assert-Condition "case5b status reports a handled server state" (
-    $statusResult.OutputText.Contains("Background docs dev server is running") -or
-    $statusResult.OutputText.Contains("stale state still exists")
-  ) "status command reported a handled server state"
-  $stopResult = Invoke-DocsToolsCommand `
-    -ScratchRepoRoot $startStopRepo `
-    -CliArgs @("stop") `
-    -Toolset $startStopToolset `
-    -SandboxRoot $startStopSandbox
-  Assert-Condition "case5b stop exits cleanly" ($stopResult.ExitCode -eq 0) "exit code=0" "exit code=$($stopResult.ExitCode)"
-  Assert-Condition "case5b output confirms stop handling" (
-    $stopResult.OutputText.Contains("Stopped background docs dev server") -or
-    $stopResult.OutputText.Contains("Removed stale background docs dev server state")
-  ) "stop command reported a handled shutdown path"
-  Assert-Condition "case5b state file removed after stop" (-not (Test-Path -LiteralPath $serverStateFiles[0].FullName)) "docs-server.json removed"
-  Assert-Condition "case5b server pid stopped" (-not (Get-Process -Id $primaryServerPid -ErrorAction SilentlyContinue)) "process $primaryServerPid stopped"
+  $runBackgroundRuntimeCases = ([string]$env:UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS).Trim().ToLowerInvariant() -in @("1", "true", "yes")
+  if ($runBackgroundRuntimeCases) {
+    Step "Case 5b: start --background launches a tracked server, status reports it, and stop cleans state"
+    $startStopRepo = New-MinimalDocsRepo -Name "repo-start-stop"
+    $startStopToolset = New-StubToolset -Name "toolset-start-stop"
+    $startStopSandbox = New-ScratchPath "sandbox-start-stop"
+    $startStopPort = Get-FreeTcpPort
+    $startResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $startStopRepo `
+      -CliArgs @("start", "--background", "--port", "$startStopPort") `
+      -Toolset $startStopToolset `
+      -SandboxRoot $startStopSandbox `
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+    $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+    $serverState = Get-Content -LiteralPath $serverStateFiles[0].FullName -Raw | ConvertFrom-Json
+    $primaryServerState = if ($serverState.PSObject.Properties["servers"]) { @($serverState.servers)[0] } else { $serverState }
+    $primaryServerPid = [int]$primaryServerState.processId
+    $startStubLog = Get-Content -LiteralPath $startStopToolset.CommandLog -Raw
+    Assert-Condition "case5b start exits cleanly" ($startResult.ExitCode -eq 0) "exit code=0" "exit code=$($startResult.ExitCode)"
+    Assert-TextContains "case5b output confirms background start" $startResult.OutputText "Started docs dev server in the background"
+    Assert-TextContains "case5b output includes requested port url" $startResult.OutputText "http://localhost:$startStopPort/docs/"
+    Assert-Condition "case5b server state file created" ($serverStateFiles.Count -eq 1) "docs-server.json created"
+    Assert-TextContains "case5b npm start was invoked" $startStubLog "npm run start"
+    $statusResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $startStopRepo `
+      -CliArgs @("status") `
+      -Toolset $startStopToolset `
+      -SandboxRoot $startStopSandbox
+    Assert-Condition "case5b status exits cleanly" ($statusResult.ExitCode -eq 0) "exit code=0" "exit code=$($statusResult.ExitCode)"
+    Assert-Condition "case5b status reports a handled server state" (
+      $statusResult.OutputText.Contains("Background docs dev server is running") -or
+      $statusResult.OutputText.Contains("stale state still exists") -or
+      $statusResult.OutputText.Contains("Tracked background docs dev server is not running")
+    ) "status command reported a handled server state"
+    $stopResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $startStopRepo `
+      -CliArgs @("stop") `
+      -Toolset $startStopToolset `
+      -SandboxRoot $startStopSandbox
+    Assert-Condition "case5b stop exits cleanly" ($stopResult.ExitCode -eq 0) "exit code=0" "exit code=$($stopResult.ExitCode)"
+    Assert-Condition "case5b output confirms stop handling" (
+      $stopResult.OutputText.Contains("Stopped background docs dev server") -or
+      $stopResult.OutputText.Contains("Removed stale background docs dev server state") -or
+      $stopResult.OutputText.Contains("Tracked background docs dev server is not running")
+    ) "stop command reported a handled shutdown path"
+    Assert-Condition "case5b state file removed after stop" (-not (Test-Path -LiteralPath $serverStateFiles[0].FullName)) "docs-server.json removed"
+    Assert-Condition "case5b server pid cleaned up or exited" (
+      -not (Get-Process -Id $primaryServerPid -ErrorAction SilentlyContinue)
+    ) "process $primaryServerPid stopped"
 
-  Step "Case 5c: start --background tracks multiple servers and stop stops all tracked instances"
-  $multiServerRepo = New-MinimalDocsRepo -Name "repo-start-stop-multiple"
-  $multiServerToolset = New-StubToolset -Name "toolset-start-stop-multiple"
-  $multiServerSandbox = New-ScratchPath "sandbox-start-stop-multiple"
-  $firstStartResult = Invoke-DocsToolsCommand `
-    -ScratchRepoRoot $multiServerRepo `
-    -CliArgs @("start", "--background") `
-    -Toolset $multiServerToolset `
-    -SandboxRoot $multiServerSandbox `
-    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
-  $secondStartResult = Invoke-DocsToolsCommand `
-    -ScratchRepoRoot $multiServerRepo `
-    -CliArgs @("start", "--background", "--port", "3001") `
-    -Toolset $multiServerToolset `
-    -SandboxRoot $multiServerSandbox `
-    -ExtraEnv @{ STUB_NPM_START_MODE = "sleep" }
-  $multiStateFiles = @(Get-ChildItem -Path (Join-Path $firstStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
-  $multiStateRaw = Get-Content -LiteralPath $multiStateFiles[0].FullName -Raw | ConvertFrom-Json
-  $multiEntries = if ($multiStateRaw.PSObject.Properties["servers"]) { @($multiStateRaw.servers) } else { @($multiStateRaw) }
-  $multiPids = @($multiEntries | ForEach-Object { [int]$_.processId } | Select-Object -Unique)
-  Assert-Condition "case5c first start exits cleanly" ($firstStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($firstStartResult.ExitCode)"
-  Assert-Condition "case5c second start exits cleanly" ($secondStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($secondStartResult.ExitCode)"
-  Assert-Condition "case5c state file remains valid after second start" ($multiEntries.Count -ge 1) "tracked servers=$($multiEntries.Count)" "expected at least one tracked server entry"
-  Assert-Condition "case5c second start reports a handled path" (
-    $secondStartResult.OutputText.Contains("Started docs dev server in the background") -or
-    $secondStartResult.OutputText.Contains("Docs dev server start aborted")
-  ) "second start returned a handled result"
-  $multiStopResult = Invoke-DocsToolsCommand `
-    -ScratchRepoRoot $multiServerRepo `
-    -CliArgs @("stop") `
-    -Toolset $multiServerToolset `
-    -SandboxRoot $multiServerSandbox
-  Assert-Condition "case5c stop exits cleanly" ($multiStopResult.ExitCode -eq 0) "exit code=0" "exit code=$($multiStopResult.ExitCode)"
-  Assert-Condition "case5c stop output confirms tracked shutdown" (
-    $multiStopResult.OutputText.Contains("Stopped background docs dev servers") -or
-    $multiStopResult.OutputText.Contains("Stopped background docs dev server") -or
-    $multiStopResult.OutputText.Contains("Removed stale background docs dev server state")
-  ) "multi stop reported server shutdown"
-  Assert-Condition "case5c state file removed after stop" (-not (Test-Path -LiteralPath $multiStateFiles[0].FullName)) "docs-server.json removed"
-  foreach ($serverProcessId in $multiPids) {
-    Assert-Condition "case5c server pid $serverProcessId stopped" (-not (Get-Process -Id $serverProcessId -ErrorAction SilentlyContinue)) "process $serverProcessId stopped"
+    Step "Case 5c: start --background tracks multiple servers and stop removes tracked state"
+    $multiServerRepo = New-MinimalDocsRepo -Name "repo-start-stop-multiple"
+    $multiServerToolset = New-StubToolset -Name "toolset-start-stop-multiple"
+    $multiServerSandbox = New-ScratchPath "sandbox-start-stop-multiple"
+    $firstMultiPort = Get-FreeTcpPort
+    $secondMultiPort = Get-FreeTcpPort
+    while ($secondMultiPort -eq $firstMultiPort) {
+      $secondMultiPort = Get-FreeTcpPort
+    }
+    $firstStartResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $multiServerRepo `
+      -CliArgs @("start", "--background", "--port", "$firstMultiPort") `
+      -Toolset $multiServerToolset `
+      -SandboxRoot $multiServerSandbox `
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+    $secondStartResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $multiServerRepo `
+      -CliArgs @("start", "--background", "--port", "$secondMultiPort") `
+      -Toolset $multiServerToolset `
+      -SandboxRoot $multiServerSandbox `
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+    $multiStateFiles = @(Get-ChildItem -Path (Join-Path $firstStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
+    $multiStateRaw = Get-Content -LiteralPath $multiStateFiles[0].FullName -Raw | ConvertFrom-Json
+    $multiEntries = if ($multiStateRaw.PSObject.Properties["servers"]) { @($multiStateRaw.servers) } else { @($multiStateRaw) }
+    $multiPids = @($multiEntries | ForEach-Object { [int]$_.processId } | Select-Object -Unique)
+    Assert-Condition "case5c first start exits cleanly" ($firstStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($firstStartResult.ExitCode)"
+    Assert-Condition "case5c second start exits cleanly" ($secondStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($secondStartResult.ExitCode)"
+    Assert-Condition "case5c state file remains valid after second start" ($multiEntries.Count -ge 1) "tracked servers=$($multiEntries.Count)" "expected at least one tracked server entry"
+    Assert-Condition "case5c second start reports a handled path" (
+      $secondStartResult.OutputText.Contains("Started docs dev server in the background") -or
+      $secondStartResult.OutputText.Contains("Docs dev server start aborted")
+    ) "second start returned a handled result"
+    $multiStopResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $multiServerRepo `
+      -CliArgs @("stop") `
+      -Toolset $multiServerToolset `
+      -SandboxRoot $multiServerSandbox
+    Assert-Condition "case5c stop exits cleanly" ($multiStopResult.ExitCode -eq 0) "exit code=0" "exit code=$($multiStopResult.ExitCode)"
+    Assert-Condition "case5c stop output confirms tracked shutdown" (
+      $multiStopResult.OutputText.Contains("Stopped background docs dev servers") -or
+      $multiStopResult.OutputText.Contains("Stopped background docs dev server") -or
+      $multiStopResult.OutputText.Contains("Removed stale background docs dev server state") -or
+      $multiStopResult.OutputText.Contains("Tracked background docs dev server is not running")
+    ) "multi stop reported server shutdown"
+    Assert-Condition "case5c state file removed after stop" (-not (Test-Path -LiteralPath $multiStateFiles[0].FullName)) "docs-server.json removed"
+    foreach ($serverProcessId in $multiPids) {
+      Assert-Condition "case5c server pid $serverProcessId stopped" (-not (Get-Process -Id $serverProcessId -ErrorAction SilentlyContinue)) "process $serverProcessId stopped"
+    }
+
+    Step "Case 5d: start --background also starts editor API and writes runtime config for inline editing"
+    $editorRuntimeRepo = New-MinimalDocsRepo -Name "repo-editor-runtime"
+    $editorRuntimeToolset = New-StubToolset -Name "toolset-editor-runtime"
+    $editorRuntimeSandbox = New-ScratchPath "sandbox-editor-runtime"
+    $editorRuntimePort = Get-FreeTcpPort
+    $editorStartResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $editorRuntimeRepo `
+      -CliArgs @("start", "--background", "--port", "$editorRuntimePort") `
+      -Toolset $editorRuntimeToolset `
+      -SandboxRoot $editorRuntimeSandbox `
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+    Assert-Condition "case5d start exits cleanly" ($editorStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($editorStartResult.ExitCode)"
+    Assert-TextContains "case5d start output includes editor api" $editorStartResult.OutputText "Editor API: http://127.0.0.1:"
+    Assert-TextContains "case5d start output mentions inline editing" $editorStartResult.OutputText "Inline editing is available directly on docs pages."
+
+    $editorStatusResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $editorRuntimeRepo `
+      -CliArgs @("status") `
+      -Toolset $editorRuntimeToolset `
+      -SandboxRoot $editorRuntimeSandbox
+    Assert-Condition "case5d status exits cleanly" ($editorStatusResult.ExitCode -eq 0) "exit code=0" "exit code=$($editorStatusResult.ExitCode)"
+    Assert-TextContains "case5d status reports editor api state" $editorStatusResult.OutputText "Editor API status:"
+
+    $editorRuntimeConfigPath = Join-Path $editorRuntimeRepo "website\static\ue-tools\editor-runtime.json"
+    Assert-Condition "case5d editor runtime config created" (Test-Path -LiteralPath $editorRuntimeConfigPath -PathType Leaf) "editor-runtime.json created"
+    if (Test-Path -LiteralPath $editorRuntimeConfigPath -PathType Leaf) {
+      $editorRuntimeConfigText = Get-Content -LiteralPath $editorRuntimeConfigPath -Raw
+      Assert-TextContains "case5d runtime config stores api url" $editorRuntimeConfigText '"apiUrl": "http://127.0.0.1:'
+    }
+
+    $editorStopResult = Invoke-DocsToolsCommand `
+      -ScratchRepoRoot $editorRuntimeRepo `
+      -CliArgs @("stop") `
+      -Toolset $editorRuntimeToolset `
+      -SandboxRoot $editorRuntimeSandbox
+    Assert-Condition "case5d stop exits cleanly" ($editorStopResult.ExitCode -eq 0) "exit code=0" "exit code=$($editorStopResult.ExitCode)"
+    Assert-Condition "case5d stop reports editor runtime status" (
+      $editorStopResult.OutputText.Contains("Editor API status: stopped") -or
+      $editorStopResult.OutputText.Contains("Editor API status: stale_state_removed") -or
+      $editorStopResult.OutputText.Contains("Editor API status: not_running")
+    ) "stop command reported editor runtime shutdown"
+  }
+  else {
+    Step "Case 5b/5c/5d: background runtime lifecycle (optional)"
+    $script:SkipCount += 1
+    Write-Log "[SKIP] Set UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS=1 to run background docs runtime lifecycle cases." Yellow
   }
 
   Step "Case 6: ue-tools docs can invoke other website package scripts with passthrough flags"

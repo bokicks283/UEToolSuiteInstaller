@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "theme": {
+    "themeId": "neutral",
+    "logoPath": "",
+    "faviconPath": "",
+    "socialCardPath": ""
+  },
+  "fileOverrides": []
+}

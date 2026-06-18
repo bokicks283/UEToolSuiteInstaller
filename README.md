@@ -25,6 +25,8 @@ Docs and website updates are preserve-first:
 - existing unmanaged `website/` folders are left untouched by default
 - managed docs defaults are only auto-updated when the file matches the last installed hash
 - customized/default-missing docs files are preserved and staged as candidates under `.ue-tools-installer-updates/<timestamp>/`
+- when init runs docs setup, website npm dependencies are synchronized deterministically (uses `npm ci` when `website/package-lock.json` is present, otherwise `npm install`)
+- dependency synchronization now validates required packages from `website/package.json` and re-runs npm when deps drift, not just when `website/node_modules` is missing
 
 By default, replaced managed content is backed up under:
 - `.ue-tools-installer-backups/<timestamp>/`
@@ -52,6 +54,12 @@ By default, replaced managed content is backed up under:
 The GUI installer now runs `-RunInit` with `-InitNonInteractive` by default, shows stage progress in a progress bar, and keeps terminal output available behind a `Show terminal output` toggle.
 The terminal panel starts hidden by default, can be toggled on demand, and is resizable when shown. After a successful install, the GUI asks whether to install into another project (Yes resets the form, No exits).
 Core installer controls include docs theme preset selection and optional SVG/PNG logo branding; advanced options remain hidden by default and expose all user-safe installer/init flags, including explicit `-SkipShellAliases` control.
+
+Docs dependency update policy:
+- `payload/website/package-lock.json` is committed and treated as the install contract.
+- Installer/init prefers `npm ci` against that lockfile to avoid unexpected dependency drift.
+- `.github/dependabot.yml` opens weekly dependency PRs for `payload/website`.
+- Dependency PRs should pass docs build + suite gates before merge.
 
 Website theme presets:
 - `neutral`, `graphite`, `ocean`, `forest`, `amber`, `violet`

@@ -168,6 +168,12 @@ Key switches:
 - `-SkipUnrealSync`, `-NoBuild`, `-NoRegen`
 - `-Config`, `-Platform`
 
+Docs dependency behavior:
+- Init no longer treats `website/node_modules` existence as sufficient.
+- It validates required packages from `website/package.json` and a dependency fingerprint (`package.json` + `package-lock.json`).
+- When sync is needed, it uses `npm ci` if `website/package-lock.json` exists; otherwise it uses `npm install`.
+- After successful sync it writes `website/node_modules/.ue-tools-docs-deps-state.json`.
+
 ### B) `ue-tools` command family
 
 Entrypoints:

@@ -1,10 +1,5 @@
 {
   // This file is not used in compilation. It is here just for a nice editor experience.
   "extends": "@docusaurus/tsconfig",
-  "compilerOptions": {
-    // TODO: Fix the usage of base url instead of just silencing warning.
-    "ignoreDeprecations": "6.0",
-    "baseUrl": "."
-  },
   "exclude": [".docusaurus", "build"]
 }

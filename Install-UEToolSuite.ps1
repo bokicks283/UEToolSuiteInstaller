@@ -5,8 +5,14 @@ param(
   [Parameter(Mandatory)][string]$TargetRepoRoot,
   [string]$PayloadRoot,
   [string]$TargetUProjectPath,
+  [ValidateSet("MergeExisting", "PreserveExisting", "ReplaceExisting")][string]$WebsiteInstallMode = "MergeExisting",
   [string]$WebsiteTheme = "neutral",
+  [string]$WebsiteGlobalIconPath,
   [string]$WebsiteLogoPath,
+  [string]$WebsiteFaviconPath,
+  [string]$WebsiteSocialCardPath,
+  [string[]]$WebsiteForceSuitePath = @(),
+  [string[]]$WebsiteForceProjectPath = @(),
   [switch]$AdoptExistingWebsite,
   [switch]$RunInit,
   [switch]$InitNonInteractive,
@@ -62,6 +68,74 @@ function Resolve-ExistingFile {
   }
 
   return (Resolve-Path -LiteralPath $resolved).Path
+}
+
+function Get-RelativePathCompat {
+  param(
+    [Parameter(Mandatory)][string]$BasePath,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $baseFull = [System.IO.Path]::GetFullPath($BasePath)
+  $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+  $trimmedBase = $baseFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $trimmedTarget = $targetFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  if ($trimmedBase.Equals($trimmedTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return "."
+  }
+
+  $baseUri = New-Object System.Uri(($trimmedBase + [System.IO.Path]::DirectorySeparatorChar))
+  $targetUri = New-Object System.Uri($targetFull)
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+  return $relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+}
+
+function ConvertTo-HashtableCompat {
+  param([AllowNull()]$Value)
+
+  if ($null -eq $Value) {
+    return $null
+  }
+
+  if ($Value -is [string] -or $Value -is [ValueType]) {
+    return $Value
+  }
+
+  if ($Value -is [System.Collections.IDictionary]) {
+    $table = @{}
+    foreach ($key in @($Value.Keys)) {
+      $table[[string]$key] = ConvertTo-HashtableCompat -Value $Value[$key]
+    }
+    return $table
+  }
+
+  if (($Value -is [System.Collections.IEnumerable]) -and -not ($Value -is [psobject])) {
+    $items = New-Object System.Collections.Generic.List[object]
+    foreach ($item in $Value) {
+      $items.Add((ConvertTo-HashtableCompat -Value $item)) | Out-Null
+    }
+    return @($items.ToArray())
+  }
+
+  if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [pscustomobject]) {
+    $items = New-Object System.Collections.Generic.List[object]
+    foreach ($item in $Value) {
+      $items.Add((ConvertTo-HashtableCompat -Value $item)) | Out-Null
+    }
+    return @($items.ToArray())
+  }
+
+  $properties = $Value.PSObject.Properties
+  if ($properties.Count -gt 0) {
+    $table = @{}
+    foreach ($property in $properties) {
+      $table[$property.Name] = ConvertTo-HashtableCompat -Value $property.Value
+    }
+    return $table
+  }
+
+  return $Value
 }
 
 function Get-DefaultPayloadRoot {
@@ -129,6 +203,7 @@ function Read-UEToolSuitePayloadManifest {
     ManifestPath = $manifestPath
     PayloadVersion = [string]$manifest.payloadVersion
     DocsManagedFileIndexPath = [string]$manifest.docsManagedFileIndexPath
+    WebsiteManagedFileIndexPath = [string]$manifest.websiteManagedFileIndexPath
     ManagedTextItems = ConvertTo-StringArray -Value $manifest.managedTextItems -Name "managedTextItems"
     ManagedBaseItems = $baseItems
     ManagedArtToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.artTools -Name "managedItems.artTools"
@@ -196,7 +271,8 @@ function Copy-ToBackup {
     [Parameter(Mandatory)][string]$TargetRoot,
     [Parameter(Mandatory)][string]$RelativePath,
     [Parameter(Mandatory)][string]$ExistingPath,
-    [Parameter(Mandatory)][string]$BackupRoot
+    [Parameter(Mandatory)][string]$BackupRoot,
+    [string[]]$ExcludeDirectoryPrefixes = @()
   )
 
   if ($NoBackup) { return }
@@ -207,7 +283,43 @@ function Copy-ToBackup {
     New-Item -ItemType Directory -Force -Path $backupParent | Out-Null
   }
 
-  Copy-Item -LiteralPath $ExistingPath -Destination $backupPath -Recurse -Force
+  $sourceIsDirectory = Test-Path -LiteralPath $ExistingPath -PathType Container
+  $normalizedExcludes = @($ExcludeDirectoryPrefixes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Replace("/", "\").TrimStart("\") })
+  if (-not $sourceIsDirectory -or $normalizedExcludes.Count -eq 0) {
+    Copy-Item -LiteralPath $ExistingPath -Destination $backupPath -Recurse -Force
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $backupPath -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $backupPath | Out-Null
+  }
+
+  $sourceRoot = [System.IO.Path]::GetFullPath($ExistingPath)
+  Get-ChildItem -LiteralPath $ExistingPath -Recurse -Force | ForEach-Object {
+    $relativeChildPath = Get-RelativePathCompat -BasePath $sourceRoot -TargetPath $_.FullName
+    if ($relativeChildPath -eq ".") {
+      return
+    }
+
+    $normalizedRelativeChildPath = $relativeChildPath.Replace("/", "\").TrimStart("\")
+    foreach ($prefix in $normalizedExcludes) {
+      if ($normalizedRelativeChildPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+      }
+    }
+
+    $destinationPath = Join-Path $backupPath $relativeChildPath
+    if ($_.PSIsContainer) {
+      New-Item -ItemType Directory -Force -Path $destinationPath | Out-Null
+      return
+    }
+
+    $destinationParent = Split-Path -Path $destinationPath -Parent
+    if ($destinationParent) {
+      New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
+    }
+    Copy-Item -LiteralPath $_.FullName -Destination $destinationPath -Force
+  }
 }
 
 function Write-Utf8NoBomFile {
@@ -338,13 +450,195 @@ function Resolve-WebsiteThemeEntry {
   throw "Unknown website theme '$themeId'. Allowed themes: $($allowed -join ', ')."
 }
 
+function Convert-DocsDirectoryNameToLabel {
+  param([Parameter(Mandatory)][string]$Name)
+
+  $normalized = $Name.Trim()
+  if ([string]::IsNullOrWhiteSpace($normalized)) {
+    return $Name
+  }
+
+  $normalized = [regex]::Replace($normalized, '([a-z0-9])([A-Z])', '$1 $2')
+  $normalized = $normalized -replace '[_\-]+', ' '
+  $normalized = [regex]::Replace($normalized, '\s+', ' ').Trim()
+
+  $textInfo = [System.Globalization.CultureInfo]::InvariantCulture.TextInfo
+  return $textInfo.ToTitleCase($normalized.ToLowerInvariant())
+}
+
+function Get-DocsDirectoryDisplayLabel {
+  param(
+    [Parameter(Mandatory)][string]$DirectoryPath,
+    [Parameter(Mandatory)][string]$FallbackName
+  )
+
+  $readmePath = Join-Path $DirectoryPath "README.md"
+  if (Test-Path -LiteralPath $readmePath -PathType Leaf) {
+    try {
+      $readmeText = Get-Content -LiteralPath $readmePath -Raw
+      $frontMatterMatch = [regex]::Match($readmeText, '(?s)\A---\s*\r?\n(?<frontMatter>.*?)\r?\n---')
+      if ($frontMatterMatch.Success) {
+        $frontMatter = $frontMatterMatch.Groups['frontMatter'].Value
+        $titleMatch = [regex]::Match($frontMatter, '(?m)^\s*title\s*:\s*(?<title>.+?)\s*$')
+        if ($titleMatch.Success) {
+          $title = $titleMatch.Groups['title'].Value.Trim().Trim('"', "'")
+          if (-not [string]::IsNullOrWhiteSpace($title)) {
+            return $title
+          }
+        }
+      }
+
+      $headingMatch = [regex]::Match($readmeText, '(?m)^\#\s+(?<title>.+?)\s*$')
+      if ($headingMatch.Success) {
+        $title = $headingMatch.Groups['title'].Value.Trim()
+        if (-not [string]::IsNullOrWhiteSpace($title)) {
+          return $title
+        }
+      }
+    }
+    catch {
+    }
+  }
+
+  return (Convert-DocsDirectoryNameToLabel -Name $FallbackName)
+}
+
+function Get-DocsDirectoryCategoryPosition {
+  param([Parameter(Mandatory)][string]$DirectoryPath)
+
+  $categoryPath = Join-Path $DirectoryPath "_category_.json"
+  if (-not (Test-Path -LiteralPath $categoryPath -PathType Leaf)) {
+    return $null
+  }
+
+  try {
+    $categoryJson = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
+    if ($null -eq $categoryJson.position) {
+      return $null
+    }
+
+    $parsed = 0.0
+    if ([double]::TryParse("$($categoryJson.position)", [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+      return $parsed
+    }
+  }
+  catch {
+  }
+
+  return $null
+}
+
+function Test-DocsDirectoryNeedsCategoryFile {
+  param([Parameter(Mandatory)][string]$DirectoryPath)
+
+  if (-not (Test-Path -LiteralPath $DirectoryPath -PathType Container)) {
+    return $false
+  }
+
+  if (Test-Path -LiteralPath (Join-Path $DirectoryPath "_category_.json") -PathType Leaf) {
+    return $false
+  }
+
+  $directMarkdown = @(Get-ChildItem -LiteralPath $DirectoryPath -File -Filter *.md -ErrorAction SilentlyContinue)
+  if ($directMarkdown.Count -gt 0) {
+    return $true
+  }
+
+  foreach ($childDir in @(Get-ChildItem -LiteralPath $DirectoryPath -Directory -ErrorAction SilentlyContinue)) {
+    if (Test-DocsDirectoryNeedsCategoryFile -DirectoryPath $childDir.FullName) {
+      return $true
+    }
+    if (Test-Path -LiteralPath (Join-Path $childDir.FullName "_category_.json") -PathType Leaf) {
+      return $true
+    }
+    $childMarkdown = Get-ChildItem -LiteralPath $childDir.FullName -Recurse -File -Filter *.md -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $childMarkdown) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Ensure-DocsCategoryMetadataFiles {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)]$InstalledList
+  )
+
+  $docsRoot = Join-Path $TargetRoot "Docs"
+  if (-not (Test-Path -LiteralPath $docsRoot -PathType Container)) {
+    return @()
+  }
+
+  $created = New-Object System.Collections.Generic.List[string]
+
+  function Ensure-DocsCategoryMetadataChildren {
+    param(
+      [Parameter(Mandatory)][string]$DocsRootPath,
+      [Parameter(Mandatory)][string]$ParentDir,
+      [AllowEmptyCollection()][System.Collections.Generic.List[string]]$CreatedList
+    )
+
+    $existingMax = 0.0
+    foreach ($childDir in @(Get-ChildItem -LiteralPath $ParentDir -Directory -ErrorAction SilentlyContinue)) {
+      $position = Get-DocsDirectoryCategoryPosition -DirectoryPath $childDir.FullName
+      if ($null -ne $position -and [double]$position -gt $existingMax) {
+        $existingMax = [double]$position
+      }
+    }
+    $nextPosition = [math]::Floor($existingMax) + 1
+
+    foreach ($childDir in @(Get-ChildItem -LiteralPath $ParentDir -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
+      if (-not (Test-DocsDirectoryNeedsCategoryFile -DirectoryPath $childDir.FullName)) {
+        continue
+      }
+
+      $categoryPath = Join-Path $childDir.FullName "_category_.json"
+      if (-not (Test-Path -LiteralPath $categoryPath -PathType Leaf)) {
+        $label = Get-DocsDirectoryDisplayLabel -DirectoryPath $childDir.FullName -FallbackName $childDir.Name
+        $metadata = [ordered]@{
+          label = $label
+          position = [int]$nextPosition
+        }
+
+        $readmePath = Join-Path $childDir.FullName "README.md"
+        if (Test-Path -LiteralPath $readmePath -PathType Leaf) {
+          $docId = (Get-RelativePathCompat -BasePath $DocsRootPath -TargetPath $readmePath).Replace('\', '/')
+          if ($docId.EndsWith('.md', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $docId = $docId.Substring(0, $docId.Length - 3)
+          }
+          $metadata.link = [ordered]@{
+            type = "doc"
+            id = $docId
+          }
+        }
+
+        Write-Utf8NoBomFile -Path $categoryPath -Content (($metadata | ConvertTo-Json -Depth 10) + "`r`n")
+        $relativeCategoryPath = (Get-RelativePathCompat -BasePath $TargetRoot -TargetPath $categoryPath).Replace('\', '/')
+        $CreatedList.Add($relativeCategoryPath) | Out-Null
+        $InstalledList.Add($relativeCategoryPath) | Out-Null
+        $nextPosition += 1
+      }
+
+      Ensure-DocsCategoryMetadataChildren -DocsRootPath $DocsRootPath -ParentDir $childDir.FullName -CreatedList $CreatedList
+    }
+  }
+
+  Ensure-DocsCategoryMetadataChildren -DocsRootPath $docsRoot -ParentDir $docsRoot -CreatedList $created
+  return @($created.ToArray())
+}
+
 function Apply-WebsiteThemeAndBranding {
   param(
     [Parameter(Mandatory)][string]$PayloadRoot,
     [Parameter(Mandatory)][string]$TargetRoot,
     [Parameter(Mandatory)][string]$TargetUProjectPath,
     [string]$RequestedTheme,
-    [string]$LogoPath
+    [string]$GlobalIconPath,
+    [string]$LogoPath,
+    [string]$FaviconPath,
+    [string]$SocialCardPath
   )
 
   $websiteRoot = Join-Path $TargetRoot "website"
@@ -378,7 +672,7 @@ function Apply-WebsiteThemeAndBranding {
     }
   }
 
-  $themeDestinationPath = Join-Path $websiteRoot "src\css\custom.css"
+  $themeDestinationPath = Join-Path $websiteRoot "theme-presets\active-theme.css"
   $themeDestinationParent = Split-Path -Path $themeDestinationPath -Parent
   if ($themeDestinationParent -and $PSCmdlet.ShouldProcess($themeDestinationParent, "Ensure website theme destination directory")) {
     New-Item -ItemType Directory -Force -Path $themeDestinationParent | Out-Null
@@ -387,20 +681,25 @@ function Apply-WebsiteThemeAndBranding {
     Copy-Item -LiteralPath $themeSourcePath -Destination $themeDestinationPath -Force
   }
 
+  $effectiveLogoPath = if (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $LogoPath } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { $GlobalIconPath } else { "" }
+  $effectiveFaviconPath = if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) { $FaviconPath } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { $GlobalIconPath } elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $LogoPath } else { "" }
+  $effectiveSocialCardPath = if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) { $SocialCardPath } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { $GlobalIconPath } elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $LogoPath } else { "" }
+
   $resolvedLogoPath = $null
+  $resolvedFaviconPath = $null
+  $resolvedSocialCardPath = $null
   $logoRelativePath = [string]$themeEntry.logoPath
   $faviconRelativePath = [string]$themeEntry.faviconPath
   $socialCardRelativePath = [string]$themeEntry.socialCardPath
-  if (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
-    $resolvedLogoPath = Resolve-ExistingFile -Path $LogoPath -Name "WebsiteLogoPath"
-    $logoExtension = ([System.IO.Path]::GetExtension($resolvedLogoPath) ?? "").ToLowerInvariant()
+  if (-not [string]::IsNullOrWhiteSpace($effectiveLogoPath)) {
+    $resolvedLogoPath = Resolve-ExistingFile -Path $effectiveLogoPath -Name $(if (-not [string]::IsNullOrWhiteSpace($LogoPath)) { "WebsiteLogoPath" } else { "WebsiteGlobalIconPath" })
+    $logoExtension = [string]([System.IO.Path]::GetExtension($resolvedLogoPath))
+    $logoExtension = $logoExtension.ToLowerInvariant()
     if (($logoExtension -ne ".svg") -and ($logoExtension -ne ".png")) {
-      throw "WebsiteLogoPath must use .svg or .png. Received: $resolvedLogoPath"
+      throw "$(if (-not [string]::IsNullOrWhiteSpace($LogoPath)) { "WebsiteLogoPath" } else { "WebsiteGlobalIconPath" }) must use .svg or .png. Received: $resolvedLogoPath"
     }
 
     $logoRelativePath = "img/branding/project-logo$logoExtension"
-    $faviconRelativePath = $logoRelativePath
-    $socialCardRelativePath = $logoRelativePath
     $logoDestination = Join-Path $websiteRoot ("static\" + $logoRelativePath.Replace("/", "\"))
     $logoDestinationParent = Split-Path -Path $logoDestination -Parent
     if ($logoDestinationParent -and $PSCmdlet.ShouldProcess($logoDestinationParent, "Ensure website branding directory")) {
@@ -409,6 +708,49 @@ function Apply-WebsiteThemeAndBranding {
     if ($PSCmdlet.ShouldProcess($logoDestination, "Install website logo asset")) {
       Copy-Item -LiteralPath $resolvedLogoPath -Destination $logoDestination -Force
     }
+  }
+  if (-not [string]::IsNullOrWhiteSpace($effectiveFaviconPath)) {
+    $resolvedFaviconPath = Resolve-ExistingFile -Path $effectiveFaviconPath -Name $(if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) { "WebsiteFaviconPath" } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { "WebsiteGlobalIconPath" } else { "WebsiteLogoPath" })
+    $faviconExtension = [string]([System.IO.Path]::GetExtension($resolvedFaviconPath))
+    $faviconExtension = $faviconExtension.ToLowerInvariant()
+    if (($faviconExtension -ne ".svg") -and ($faviconExtension -ne ".png") -and ($faviconExtension -ne ".ico")) {
+      throw "$(if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) { "WebsiteFaviconPath" } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { "WebsiteGlobalIconPath" } else { "WebsiteLogoPath" }) must use .svg, .png, or .ico. Received: $resolvedFaviconPath"
+    }
+
+    $faviconRelativePath = "img/branding/project-favicon$faviconExtension"
+    $faviconDestination = Join-Path $websiteRoot ("static\" + $faviconRelativePath.Replace("/", "\"))
+    $faviconDestinationParent = Split-Path -Path $faviconDestination -Parent
+    if ($faviconDestinationParent -and $PSCmdlet.ShouldProcess($faviconDestinationParent, "Ensure website branding directory")) {
+      New-Item -ItemType Directory -Force -Path $faviconDestinationParent | Out-Null
+    }
+    if ($PSCmdlet.ShouldProcess($faviconDestination, "Install website favicon asset")) {
+      Copy-Item -LiteralPath $resolvedFaviconPath -Destination $faviconDestination -Force
+    }
+  }
+  elseif ($resolvedLogoPath) {
+    $faviconRelativePath = $logoRelativePath
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($effectiveSocialCardPath)) {
+    $resolvedSocialCardPath = Resolve-ExistingFile -Path $effectiveSocialCardPath -Name $(if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) { "WebsiteSocialCardPath" } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { "WebsiteGlobalIconPath" } else { "WebsiteLogoPath" })
+    $socialExtension = [string]([System.IO.Path]::GetExtension($resolvedSocialCardPath))
+    $socialExtension = $socialExtension.ToLowerInvariant()
+    if (($socialExtension -ne ".svg") -and ($socialExtension -ne ".png") -and ($socialExtension -ne ".jpg") -and ($socialExtension -ne ".jpeg") -and ($socialExtension -ne ".webp")) {
+      throw "$(if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) { "WebsiteSocialCardPath" } elseif (-not [string]::IsNullOrWhiteSpace($GlobalIconPath)) { "WebsiteGlobalIconPath" } else { "WebsiteLogoPath" }) must use .svg, .png, .jpg, .jpeg, or .webp. Received: $resolvedSocialCardPath"
+    }
+
+    $socialCardRelativePath = "img/branding/project-social-card$socialExtension"
+    $socialCardDestination = Join-Path $websiteRoot ("static\" + $socialCardRelativePath.Replace("/", "\"))
+    $socialCardDestinationParent = Split-Path -Path $socialCardDestination -Parent
+    if ($socialCardDestinationParent -and $PSCmdlet.ShouldProcess($socialCardDestinationParent, "Ensure website branding directory")) {
+      New-Item -ItemType Directory -Force -Path $socialCardDestinationParent | Out-Null
+    }
+    if ($PSCmdlet.ShouldProcess($socialCardDestination, "Install website social card asset")) {
+      Copy-Item -LiteralPath $resolvedSocialCardPath -Destination $socialCardDestination -Force
+    }
+  }
+  elseif ($resolvedLogoPath) {
+    $socialCardRelativePath = $logoRelativePath
   }
 
   $projectName = [System.IO.Path]::GetFileNameWithoutExtension($TargetUProjectPath)
@@ -442,6 +784,9 @@ function Apply-WebsiteThemeAndBranding {
   return [pscustomobject]@{
     ThemeId = $themeEntry.id
     ProjectName = $projectName
+    LogoPath = $logoRelativePath
+    FaviconPath = $faviconRelativePath
+    SocialCardPath = $socialCardRelativePath
   }
 }
 
@@ -609,6 +954,323 @@ function Read-DocsManagedFileIndex {
   }
 }
 
+function Get-WebsiteSiteOverridesRelativePath {
+  return "website/.ue-tools/site-overrides.json"
+}
+
+function Get-WebsiteSiteOverridesPath {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $relativePath = Get-WebsiteSiteOverridesRelativePath
+  return (Join-Path $TargetRoot ($relativePath -replace "/", "\"))
+}
+
+function Get-DefaultWebsiteOverrideDocument {
+  param(
+    [string]$ThemeId = "neutral",
+    [string]$LogoPath = "",
+    [string]$FaviconPath = "",
+    [string]$SocialCardPath = ""
+  )
+
+  return [ordered]@{
+    schemaVersion = 1
+    theme = [ordered]@{
+      themeId = $ThemeId
+      logoPath = $LogoPath
+      faviconPath = $FaviconPath
+      socialCardPath = $SocialCardPath
+    }
+    fileOverrides = @()
+  }
+}
+
+function Get-WebsiteOverrideCandidatePaths {
+  return @(
+    "website/docusaurus.config.ts",
+    "website/src/css/custom.css",
+    "website/src/pages/index.tsx",
+    "website/src/pages/index.module.css",
+    "Docs/README.md"
+  )
+}
+
+function Read-WebsiteSiteOverrides {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $overridesPath = Get-WebsiteSiteOverridesPath -TargetRoot $TargetRoot
+  $defaultDocument = Get-DefaultWebsiteOverrideDocument
+  if (-not (Test-Path -LiteralPath $overridesPath -PathType Leaf)) {
+    return [pscustomobject]@{
+      OverridesPath = $overridesPath
+      Document = $defaultDocument
+    }
+  }
+
+  try {
+    $parsed = (Get-Content -LiteralPath $overridesPath -Raw) | ConvertFrom-Json
+  }
+  catch {
+    Warn "Website override config is invalid and will be reset: $overridesPath"
+    return [pscustomobject]@{
+      OverridesPath = $overridesPath
+      Document = $defaultDocument
+    }
+  }
+
+  $theme = $parsed.theme
+  $themeId = [string]$theme.themeId
+  $logoPath = [string]$theme.logoPath
+  $faviconPath = [string]$theme.faviconPath
+  $socialCardPath = [string]$theme.socialCardPath
+
+  $fileOverrides = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in @($parsed.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    $relativePath = [string]$entry.path
+    $mode = [string]$entry.mode
+    if ([string]::IsNullOrWhiteSpace($relativePath) -or [string]::IsNullOrWhiteSpace($mode)) {
+      continue
+    }
+
+    $normalizedPath = ConvertTo-RelativeForwardSlashPath -RelativePath $relativePath
+    $normalizedMode = $mode.Trim().ToLowerInvariant()
+    if ($normalizedMode -notin @("suite", "project")) {
+      continue
+    }
+
+    $fileOverrides.Add([ordered]@{
+      path = $normalizedPath
+      mode = $normalizedMode
+    }) | Out-Null
+  }
+
+  return [pscustomobject]@{
+    OverridesPath = $overridesPath
+    Document = [ordered]@{
+      schemaVersion = 1
+      theme = [ordered]@{
+        themeId = if ([string]::IsNullOrWhiteSpace($themeId)) { "neutral" } else { $themeId.Trim() }
+        logoPath = if ($null -eq $logoPath) { "" } else { $logoPath }
+        faviconPath = if ($null -eq $faviconPath) { "" } else { $faviconPath }
+        socialCardPath = if ($null -eq $socialCardPath) { "" } else { $socialCardPath }
+      }
+      fileOverrides = @($fileOverrides.ToArray())
+    }
+  }
+}
+
+function Write-WebsiteSiteOverrides {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)]$Document
+  )
+
+  $overridesPath = Get-WebsiteSiteOverridesPath -TargetRoot $TargetRoot
+  if ($PSCmdlet.ShouldProcess($overridesPath, "Write website override config")) {
+    Write-Utf8NoBomFile -Path $overridesPath -Content ($Document | ConvertTo-Json -Depth 10)
+  }
+}
+
+function Resolve-WebsiteOverrideMap {
+  param(
+    [Parameter(Mandatory)]$PersistedOverrideDocument,
+    [string[]]$ForceSuitePaths = @(),
+    [string[]]$ForceProjectPaths = @()
+  )
+
+  $entries = @{}
+  foreach ($entry in @($PersistedOverrideDocument.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    $relativePath = [string]$entry.path
+    $mode = [string]$entry.mode
+    if ([string]::IsNullOrWhiteSpace($relativePath) -or [string]::IsNullOrWhiteSpace($mode)) {
+      continue
+    }
+
+    $entries[(ConvertTo-RelativeForwardSlashPath -RelativePath $relativePath)] = $mode.Trim().ToLowerInvariant()
+  }
+
+  foreach ($relativePath in @($ForceProjectPaths)) {
+    if ([string]::IsNullOrWhiteSpace($relativePath)) { continue }
+    $entries[(ConvertTo-RelativeForwardSlashPath -RelativePath $relativePath)] = "project"
+  }
+  foreach ($relativePath in @($ForceSuitePaths)) {
+    if ([string]::IsNullOrWhiteSpace($relativePath)) { continue }
+    $entries[(ConvertTo-RelativeForwardSlashPath -RelativePath $relativePath)] = "suite"
+  }
+
+  return $entries
+}
+
+function Get-WebsiteOverrideModeForPath {
+  param(
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][hashtable]$OverrideMap,
+    [string]$DefaultMode = "suite"
+  )
+
+  $normalizedPath = ConvertTo-RelativeForwardSlashPath -RelativePath $RelativePath
+  if ($OverrideMap.ContainsKey($normalizedPath)) {
+    return [string]$OverrideMap[$normalizedPath]
+  }
+
+  foreach ($key in @($OverrideMap.Keys | Sort-Object Length -Descending)) {
+    $normalizedKey = ConvertTo-RelativeForwardSlashPath -RelativePath ([string]$key)
+    if ($normalizedPath.StartsWith($normalizedKey.TrimEnd("/") + "/", [System.StringComparison]::OrdinalIgnoreCase)) {
+      return [string]$OverrideMap[$normalizedKey]
+    }
+  }
+
+  return $DefaultMode
+}
+
+function Get-ManagedWebsiteLedgerPath {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  return (Join-Path $TargetRoot ".ue-tools\state\website-managed-ledger.json")
+}
+
+function Read-ManagedWebsiteLedger {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $ledgerPath = Get-ManagedWebsiteLedgerPath -TargetRoot $TargetRoot
+  $entries = @{}
+  if (-not (Test-Path -LiteralPath $ledgerPath -PathType Leaf)) {
+    return [pscustomobject]@{
+      LedgerPath = $ledgerPath
+      EntriesByPath = $entries
+    }
+  }
+
+  try {
+    $parsed = (Get-Content -LiteralPath $ledgerPath -Raw) | ConvertFrom-Json
+  }
+  catch {
+    Warn "Website managed ledger is invalid and will be ignored: $ledgerPath"
+    return [pscustomobject]@{
+      LedgerPath = $ledgerPath
+      EntriesByPath = $entries
+    }
+  }
+
+  foreach ($entry in @($parsed.files)) {
+    if ($null -eq $entry) { continue }
+    $relativePath = [string]$entry.relativePath
+    $installedHash = [string]$entry.installedHash
+    if ([string]::IsNullOrWhiteSpace($relativePath) -or [string]::IsNullOrWhiteSpace($installedHash)) {
+      continue
+    }
+
+    $normalizedPath = ConvertTo-RelativeForwardSlashPath -RelativePath $relativePath
+    $entries[$normalizedPath] = [pscustomobject]@{
+      relativePath = $normalizedPath
+      installedPayloadVersion = [string]$entry.installedPayloadVersion
+      installedHash = $installedHash.ToLowerInvariant()
+      updatedUtc = [string]$entry.updatedUtc
+      category = [string]$entry.category
+    }
+  }
+
+  return [pscustomobject]@{
+    LedgerPath = $ledgerPath
+    EntriesByPath = $entries
+  }
+}
+
+function Write-ManagedWebsiteLedger {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][hashtable]$EntriesByPath,
+    [Parameter(Mandatory)][string]$PayloadVersion
+  )
+
+  $ledgerPath = Get-ManagedWebsiteLedgerPath -TargetRoot $TargetRoot
+  $entries = @()
+  foreach ($path in @($EntriesByPath.Keys | Sort-Object)) {
+    $entry = $EntriesByPath[$path]
+    if ($null -eq $entry) { continue }
+    $entries += [ordered]@{
+      relativePath = $path
+      installedPayloadVersion = [string]$entry.installedPayloadVersion
+      installedHash = [string]$entry.installedHash
+      updatedUtc = [string]$entry.updatedUtc
+      category = [string]$entry.category
+    }
+  }
+
+  $ledgerDocument = [ordered]@{
+    schemaVersion = 1
+    payloadVersion = $PayloadVersion
+    updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    files = $entries
+  }
+
+  if ($PSCmdlet.ShouldProcess($ledgerPath, "Write managed website ledger")) {
+    Write-Utf8NoBomFile -Path $ledgerPath -Content ($ledgerDocument | ConvertTo-Json -Depth 10)
+  }
+}
+
+function Resolve-WebsiteManagedFileIndexPath {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)]$PayloadManifest
+  )
+
+  $configured = [string]$PayloadManifest.WebsiteManagedFileIndexPath
+  $relativePath = if ([string]::IsNullOrWhiteSpace($configured)) { "website-managed-file-index.json" } else { $configured.Trim() }
+  return (Join-Path $PayloadRoot ($relativePath -replace "/", "\"))
+}
+
+function Read-WebsiteManagedFileIndex {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)]$PayloadManifest
+  )
+
+  $indexPath = Resolve-WebsiteManagedFileIndexPath -PayloadRoot $PayloadRoot -PayloadManifest $PayloadManifest
+  if (-not (Test-Path -LiteralPath $indexPath -PathType Leaf)) {
+    throw "Website managed file index is missing: $indexPath"
+  }
+
+  try {
+    $parsed = (Get-Content -LiteralPath $indexPath -Raw) | ConvertFrom-Json
+  }
+  catch {
+    throw "Website managed file index is not valid JSON: $indexPath"
+  }
+
+  if (-not $parsed.files) {
+    throw "Website managed file index is missing required array 'files': $indexPath"
+  }
+
+  $normalizedFiles = New-Object System.Collections.Generic.List[object]
+  foreach ($file in @($parsed.files)) {
+    if ($null -eq $file) { continue }
+    $relativePath = ConvertTo-RelativeForwardSlashPath -RelativePath ([string]$file.relativePath)
+    $category = ([string]$file.category).Trim()
+    $sha256 = ([string]$file.sha256).ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($category) -or [string]::IsNullOrWhiteSpace($sha256)) {
+      throw "Website managed file index entry is missing required category/hash: $indexPath"
+    }
+    if ($sha256 -notmatch "^[0-9a-f]{64}$") {
+      throw "Website managed file index entry has invalid sha256 for '$relativePath': $sha256"
+    }
+
+    $normalizedFiles.Add([pscustomobject]@{
+      relativePath = $relativePath
+      category = $category
+      sha256 = $sha256
+    }) | Out-Null
+  }
+
+  return [pscustomobject]@{
+    IndexPath = $indexPath
+    PayloadVersion = [string]$parsed.payloadVersion
+    Files = @($normalizedFiles.ToArray())
+  }
+}
+
 function Get-WebsiteOwnershipMarkerRelativePath {
   return "website/.ue-tools/ownership.json"
 }
@@ -633,17 +1295,31 @@ function Write-WebsiteOwnershipMarker {
     [Parameter(Mandatory)][string]$PayloadVersion,
     [Parameter(Mandatory)][string]$ProjectName,
     [Parameter(Mandatory)][string]$InstallMode,
-    [Parameter(Mandatory)][string]$ThemeId
+    [Parameter(Mandatory)][string]$ThemeId,
+    [string]$LogoPath,
+    [string]$FaviconPath,
+    [string]$SocialCardPath,
+    [int]$OverrideSchemaVersion = 1,
+    [string]$OverrideSource = "site-overrides.json"
   )
 
   $markerPath = Get-WebsiteOwnershipMarkerPath -TargetRoot $TargetRoot
   $marker = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     managedBy = "UEToolSuiteInstaller"
     payloadVersion = $PayloadVersion
     projectName = $ProjectName
     installMode = $InstallMode
-    themeId = $ThemeId
+    theme = [ordered]@{
+      themeId = $ThemeId
+      logoPath = $LogoPath
+      faviconPath = $FaviconPath
+      socialCardPath = $SocialCardPath
+    }
+    overridePolicy = [ordered]@{
+      schemaVersion = $OverrideSchemaVersion
+      source = $OverrideSource
+    }
     updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   }
 
@@ -655,7 +1331,9 @@ function Write-WebsiteOwnershipMarker {
 function Resolve-WebsiteInstallMode {
   param(
     [Parameter(Mandatory)][string]$TargetRoot,
-    [switch]$AdoptExisting
+    [Parameter(Mandatory)][string]$RequestedInstallMode,
+    [switch]$AdoptExisting,
+    [switch]$WebsiteWasExplicitlyRequested
   )
 
   $websitePath = Join-Path $TargetRoot "website"
@@ -663,15 +1341,286 @@ function Resolve-WebsiteInstallMode {
     return "install_new"
   }
 
-  if (Test-WebsiteOwnershipMarkerInstalled -TargetRoot $TargetRoot) {
-    return "managed_update"
+  $normalizedRequestedMode = if ([string]::IsNullOrWhiteSpace($RequestedInstallMode)) { "MergeExisting" } else { $RequestedInstallMode.Trim() }
+  if ($AdoptExisting -and ($WebsiteWasExplicitlyRequested -and -not $normalizedRequestedMode.Equals("MergeExisting", [System.StringComparison]::OrdinalIgnoreCase))) {
+    Warn "-AdoptExistingWebsite is deprecated and only maps to MergeExisting. The explicit -WebsiteInstallMode '$normalizedRequestedMode' will be used."
+  }
+  elseif ($AdoptExisting -and (-not $WebsiteWasExplicitlyRequested)) {
+    Warn "-AdoptExistingWebsite is deprecated. Using -WebsiteInstallMode MergeExisting."
+    $normalizedRequestedMode = "MergeExisting"
   }
 
-  if ($AdoptExisting) {
-    return "adopt_existing"
+  switch ($normalizedRequestedMode.ToLowerInvariant()) {
+    "mergeexisting" {
+      if (Test-WebsiteOwnershipMarkerInstalled -TargetRoot $TargetRoot) {
+        return "managed_update"
+      }
+      return "merge_existing"
+    }
+    "replaceexisting" {
+      return "replace_existing"
+    }
+    "preserveexisting" {
+      return "preserve_existing"
+    }
+    default {
+      throw "Unsupported WebsiteInstallMode '$RequestedInstallMode'."
+    }
+  }
+}
+
+function Merge-WebsitePackageJson {
+  param(
+    [Parameter(Mandatory)][string]$SourcePath,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $source = ConvertTo-HashtableCompat -Value ((Get-Content -LiteralPath $SourcePath -Raw) | ConvertFrom-Json)
+  $target = if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
+    try {
+      ConvertTo-HashtableCompat -Value ((Get-Content -LiteralPath $TargetPath -Raw) | ConvertFrom-Json)
+    }
+    catch {
+      @{}
+    }
+  }
+  else {
+    @{}
   }
 
-  return "preserve_existing"
+  $merged = [ordered]@{}
+  foreach ($key in @($target.Keys)) {
+    $merged[$key] = $target[$key]
+  }
+
+  foreach ($key in @($source.Keys)) {
+    if ($key -in @("scripts", "dependencies", "devDependencies", "peerDependencies", "browserslist", "engines")) {
+      $targetSection = @{}
+      if ($target.ContainsKey($key) -and $target[$key] -is [hashtable]) {
+        $targetSection = $target[$key]
+      }
+
+      $section = [ordered]@{}
+      foreach ($sectionKey in @($targetSection.Keys)) {
+        $section[$sectionKey] = $targetSection[$sectionKey]
+      }
+      foreach ($sectionKey in @($source[$key].Keys)) {
+        $section[$sectionKey] = $source[$key][$sectionKey]
+      }
+      $merged[$key] = $section
+      continue
+    }
+
+    if ($key -in @("name", "version", "private")) {
+      $merged[$key] = $source[$key]
+      continue
+    }
+
+    if (-not $merged.Contains($key)) {
+      $merged[$key] = $source[$key]
+    }
+  }
+
+  return ($merged | ConvertTo-Json -Depth 20)
+}
+
+function Copy-ManagedWebsiteIndexedFile {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$BackupRoot
+  )
+
+  $sourcePath = Join-Path $PayloadRoot ($RelativePath -replace "/", "\")
+  $targetPath = Join-Path $TargetRoot ($RelativePath -replace "/", "\")
+  if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+    throw "Managed website source file is missing: $sourcePath"
+  }
+
+  if (Test-Path -LiteralPath $targetPath) {
+    Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $RelativePath -ExistingPath $targetPath -BackupRoot $BackupRoot
+  }
+
+  $parent = Split-Path -Path $targetPath -Parent
+  if (-not [string]::IsNullOrWhiteSpace($parent)) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  }
+
+  Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+}
+
+function Write-WebsiteMergeReport {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [Parameter(Mandatory)][hashtable]$Report
+  )
+
+  $reportRoot = Join-Path $TargetRoot (".ue-tools-installer-updates\" + $InstallStamp)
+  if (-not (Test-Path -LiteralPath $reportRoot -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $reportRoot | Out-Null
+  }
+
+  $markdownPath = Join-Path $reportRoot "Website-Update-Report.md"
+  $jsonPath = Join-Path $reportRoot "website-update-report.json"
+
+  $jsonDocument = [ordered]@{
+    schemaVersion = 1
+    generatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    installMode = $Report.InstallMode
+    installedNew = @($Report.InstalledNew)
+    replacedSuiteManaged = @($Report.ReplacedSuiteManaged)
+    preservedProjectOverrides = @($Report.PreservedProjectOverrides)
+    mergedConfigs = @($Report.MergedConfigs)
+    restoredProjectOverrides = @($Report.RestoredProjectOverrides)
+  }
+  Write-Utf8NoBomFile -Path $jsonPath -Content ($jsonDocument | ConvertTo-Json -Depth 20)
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add("# UE Tool Suite Website Merge Report") | Out-Null
+  $lines.Add("") | Out-Null
+  $lines.Add("- Install mode: $($Report.InstallMode)") | Out-Null
+  $lines.Add("- Installed new files: $($Report.InstalledNew.Count)") | Out-Null
+  $lines.Add("- Replaced suite-managed files: $($Report.ReplacedSuiteManaged.Count)") | Out-Null
+  $lines.Add("- Preserved project overrides: $($Report.PreservedProjectOverrides.Count)") | Out-Null
+  $lines.Add("- Structured merges: $($Report.MergedConfigs.Count)") | Out-Null
+  $lines.Add("- Restored project overrides after replace: $($Report.RestoredProjectOverrides.Count)") | Out-Null
+  $lines.Add("") | Out-Null
+
+  foreach ($section in @(
+      [pscustomobject]@{ Title = "Installed New Files"; Items = @($Report.InstalledNew) },
+      [pscustomobject]@{ Title = "Replaced Suite-Managed Files"; Items = @($Report.ReplacedSuiteManaged) },
+      [pscustomobject]@{ Title = "Preserved Project Overrides"; Items = @($Report.PreservedProjectOverrides) },
+      [pscustomobject]@{ Title = "Structured Merges"; Items = @($Report.MergedConfigs) },
+      [pscustomobject]@{ Title = "Restored Project Overrides"; Items = @($Report.RestoredProjectOverrides) }
+    )) {
+    if ($section.Items.Count -eq 0) { continue }
+    $lines.Add("## $($section.Title)") | Out-Null
+    foreach ($item in @($section.Items)) {
+      $lines.Add("- $item") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  Write-Utf8NoBomFile -Path $markdownPath -Content ($lines -join [Environment]::NewLine)
+  return $markdownPath
+}
+
+function Invoke-ManagedWebsiteUpdate {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$BackupRoot,
+    [Parameter(Mandatory)]$PayloadManifest,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [Parameter(Mandatory)][string]$RequestedMode,
+    [Parameter(Mandatory)][hashtable]$OverrideMap
+  )
+
+  $index = Read-WebsiteManagedFileIndex -PayloadRoot $PayloadRoot -PayloadManifest $PayloadManifest
+  $websiteRoot = Join-Path $TargetRoot "website"
+  $report = @{
+    InstallMode = $RequestedMode
+    InstalledNew = New-Object System.Collections.Generic.List[string]
+    ReplacedSuiteManaged = New-Object System.Collections.Generic.List[string]
+    PreservedProjectOverrides = New-Object System.Collections.Generic.List[string]
+    MergedConfigs = New-Object System.Collections.Generic.List[string]
+    RestoredProjectOverrides = New-Object System.Collections.Generic.List[string]
+  }
+
+  $ledger = Read-ManagedWebsiteLedger -TargetRoot $TargetRoot
+  $nextEntries = @{}
+  $replaceSnapshotRoot = $null
+
+  if ($RequestedMode -eq "replace_existing" -and (Test-Path -LiteralPath $websiteRoot -PathType Container)) {
+    $replaceSnapshotRoot = Join-Path $BackupRoot "website-replace-snapshot"
+    Copy-ToBackup `
+      -TargetRoot $TargetRoot `
+      -RelativePath "website-replace-snapshot" `
+      -ExistingPath $websiteRoot `
+      -BackupRoot $BackupRoot `
+      -ExcludeDirectoryPrefixes @("node_modules\", "build\", ".docusaurus\", ".cache\")
+
+    if ($PSCmdlet.ShouldProcess($websiteRoot, "Replace existing website shell")) {
+      Remove-Item -LiteralPath $websiteRoot -Recurse -Force
+    }
+  }
+
+  foreach ($file in @($index.Files)) {
+    $relativePath = [string]$file.relativePath
+    $category = [string]$file.category
+    $sourcePath = Join-Path $PayloadRoot ($relativePath -replace "/", "\")
+    $targetPath = Join-Path $TargetRoot ($relativePath -replace "/", "\")
+    $defaultMode = if ($category -eq "overridable") { "suite" } else { "suite" }
+    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode $defaultMode
+
+    if ($category -eq "structured") {
+      $parent = Split-Path -Path $targetPath -Parent
+      if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+      }
+
+      if ([System.IO.Path]::GetFileName($targetPath).Equals("package.json", [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-Path -LiteralPath $targetPath) {
+          Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $relativePath -ExistingPath $targetPath -BackupRoot $BackupRoot
+        }
+        $mergedPackage = Merge-WebsitePackageJson -SourcePath $sourcePath -TargetPath $targetPath
+        Write-Utf8NoBomFile -Path $targetPath -Content $mergedPackage
+        $report.MergedConfigs.Add($relativePath) | Out-Null
+      }
+      else {
+        if (Test-Path -LiteralPath $targetPath) {
+          Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $relativePath -ExistingPath $targetPath -BackupRoot $BackupRoot
+        }
+        Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+        $report.MergedConfigs.Add($relativePath) | Out-Null
+      }
+    }
+    elseif ($overrideMode -eq "project" -and (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
+      $report.PreservedProjectOverrides.Add($relativePath) | Out-Null
+    }
+    else {
+      $existing = Test-Path -LiteralPath $targetPath -PathType Leaf
+      Copy-ManagedWebsiteIndexedFile -PayloadRoot $PayloadRoot -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
+      if ($existing) {
+        $report.ReplacedSuiteManaged.Add($relativePath) | Out-Null
+      }
+      else {
+        $report.InstalledNew.Add($relativePath) | Out-Null
+      }
+    }
+
+    if ($RequestedMode -eq "replace_existing" -and $overrideMode -eq "project" -and $replaceSnapshotRoot) {
+      $snapshotPath = Join-Path $replaceSnapshotRoot ($relativePath -replace "/", "\")
+      if (Test-Path -LiteralPath $snapshotPath -PathType Leaf) {
+        $targetParent = Split-Path -Path $targetPath -Parent
+        if (-not [string]::IsNullOrWhiteSpace($targetParent)) {
+          New-Item -ItemType Directory -Force -Path $targetParent | Out-Null
+        }
+        Copy-Item -LiteralPath $snapshotPath -Destination $targetPath -Force
+        $report.RestoredProjectOverrides.Add($relativePath) | Out-Null
+      }
+    }
+
+    if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
+      $nextEntries[$relativePath] = [pscustomobject]@{
+        relativePath = $relativePath
+        installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+        installedHash = (Get-FileSha256 -Path $targetPath)
+        updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        category = $category
+      }
+    }
+  }
+
+  Write-ManagedWebsiteLedger -TargetRoot $TargetRoot -EntriesByPath $nextEntries -PayloadVersion ([string]$PayloadManifest.PayloadVersion)
+  $reportPath = Write-WebsiteMergeReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -Report $report
+
+  return [pscustomobject]@{
+    LedgerEntries = $nextEntries
+    ReportPath = $reportPath
+  }
 }
 
 function Write-DocsSmartUpdateReport {
@@ -696,7 +1645,7 @@ function Write-DocsSmartUpdateReport {
   $jsonDocument = [pscustomobject]@{
     schemaVersion = 1
     generatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    reportRoot = [System.IO.Path]::GetRelativePath($TargetRoot, $ReportRoot).Replace("\", "/")
+    reportRoot = (Get-RelativePathCompat -BasePath $TargetRoot -TargetPath $ReportRoot).Replace("\", "/")
     autoUpdated = $autoUpdated
     installedNew = $installedNew
     alreadyCurrent = $alreadyCurrent
@@ -768,7 +1717,7 @@ function Copy-DocsUpdateCandidate {
     Copy-Item -LiteralPath $SourcePath -Destination $candidatePath -Force
   }
 
-  return [System.IO.Path]::GetRelativePath($TargetRoot, $candidatePath).Replace("\", "/")
+  return (Get-RelativePathCompat -BasePath $TargetRoot -TargetPath $candidatePath).Replace("\", "/")
 }
 
 function Invoke-ManagedDocsSmartUpdate {
@@ -779,12 +1728,14 @@ function Invoke-ManagedDocsSmartUpdate {
     [Parameter(Mandatory)]$PayloadManifest,
     [Parameter(Mandatory)][string]$InstallStamp,
     [Parameter(Mandatory)]$InstalledList,
+    [hashtable]$OverrideMap = @{},
     [switch]$IncludeCodingStandards
   )
 
   $index = Read-DocsManagedFileIndex -PayloadRoot $PayloadRoot -PayloadManifest $PayloadManifest
   $selectedFiles = @($index.Files | Where-Object {
       $_.category.Equals("docs", [System.StringComparison]::OrdinalIgnoreCase) -or
+      $_.category.Equals("docsShell", [System.StringComparison]::OrdinalIgnoreCase) -or
       ($IncludeCodingStandards -and $_.category.Equals("codingStandards", [System.StringComparison]::OrdinalIgnoreCase))
     })
   if ($selectedFiles.Count -eq 0) {
@@ -805,6 +1756,14 @@ function Invoke-ManagedDocsSmartUpdate {
     MissingPreserved = New-Object System.Collections.Generic.List[object]
   }
   $reportRoot = Join-Path $TargetRoot ".ue-tools-installer-updates\$InstallStamp"
+  $docsRoot = Join-Path $TargetRoot "Docs"
+  $targetHasExistingDocsTree = $false
+  if (Test-Path -LiteralPath $docsRoot -PathType Container) {
+    $existingDocsArtifacts = @(Get-ChildItem -LiteralPath $docsRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+        $_.Extension -in @(".md", ".mdx", ".json") -or $_.Name.Equals("_category_.json", [System.StringComparison]::OrdinalIgnoreCase)
+      })
+    $targetHasExistingDocsTree = $existingDocsArtifacts.Count -gt 0
+  }
 
   foreach ($file in $selectedFiles) {
     $relativePath = ConvertTo-RelativeForwardSlashPath -RelativePath ([string]$file.relativePath)
@@ -821,10 +1780,29 @@ function Invoke-ManagedDocsSmartUpdate {
     $payloadHash = ([string]$file.sha256).ToLowerInvariant()
     $nowUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     $category = [string]$file.category
+    $isDocsShell = $category.Equals("docsShell", [System.StringComparison]::OrdinalIgnoreCase)
     $ledgerEntry = $entriesByPath[$relativePath]
+    $overrideMode = if ($OverrideMap.ContainsKey($relativePath)) { [string]$OverrideMap[$relativePath] } else { "" }
 
     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
       $currentHash = Get-FileSha256 -Path $targetPath
+
+      if ($overrideMode -eq "suite" -and -not $currentHash.Equals($payloadHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Copy-ToBackup -TargetRoot $TargetRoot -RelativePath ($relativePath -replace "/", "\") -ExistingPath $targetPath -BackupRoot $BackupRoot
+        if ($PSCmdlet.ShouldProcess($targetPath, "Force suite-managed docs file update")) {
+          Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+        }
+        $entriesByPath[$relativePath] = [pscustomobject]@{
+          relativePath = $relativePath
+          installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+          installedHash = $payloadHash
+          updatedUtc = $nowUtc
+          category = $category
+        }
+        $InstalledList.Add($relativePath) | Out-Null
+        $report.AutoUpdated.Add([pscustomobject]@{ relativePath = $relativePath }) | Out-Null
+        continue
+      }
 
       if ($currentHash.Equals($payloadHash, [System.StringComparison]::OrdinalIgnoreCase)) {
         $entriesByPath[$relativePath] = [pscustomobject]@{
@@ -835,6 +1813,16 @@ function Invoke-ManagedDocsSmartUpdate {
           category = $category
         }
         $report.AlreadyCurrent.Add([pscustomobject]@{ relativePath = $relativePath }) | Out-Null
+        continue
+      }
+
+      if ($overrideMode -eq "project") {
+        $candidateRelative = Copy-DocsUpdateCandidate -ReportRoot $reportRoot -RelativePath $relativePath -SourcePath $sourcePath -TargetRoot $TargetRoot
+        $report.PreservedCustomized.Add([pscustomobject]@{
+          relativePath = $relativePath
+          reason = "explicit-project-override"
+          candidateRelativePath = $candidateRelative
+        }) | Out-Null
         continue
       }
 
@@ -889,6 +1877,16 @@ function Invoke-ManagedDocsSmartUpdate {
       $report.MissingPreserved.Add([pscustomobject]@{
         relativePath = $relativePath
         reason = "missing-from-target"
+        candidateRelativePath = $candidateRelative
+      }) | Out-Null
+      continue
+    }
+
+    if ($targetHasExistingDocsTree -and -not $isDocsShell -and $overrideMode -ne "suite") {
+      $candidateRelative = Copy-DocsUpdateCandidate -ReportRoot $reportRoot -RelativePath $relativePath -SourcePath $sourcePath -TargetRoot $TargetRoot
+      $report.MissingPreserved.Add([pscustomobject]@{
+        relativePath = $relativePath
+        reason = "existing-project-docs-tree"
         candidateRelativePath = $candidateRelative
       }) | Out-Null
       continue
@@ -1231,7 +2229,7 @@ function Copy-ManagedItem {
 
     $sourceDirectories = @(Get-ChildItem -LiteralPath $source -Recurse -Directory -Force)
     foreach ($sourceDirectory in $sourceDirectories) {
-      $childRelativePath = [System.IO.Path]::GetRelativePath($source, $sourceDirectory.FullName)
+      $childRelativePath = Get-RelativePathCompat -BasePath $source -TargetPath $sourceDirectory.FullName
       $childRelativePathNormalized = ($childRelativePath.Replace("/", "\").Trim("\")).ToLowerInvariant()
       if ($excludeDirectoryPrefixes.Count -gt 0) {
         $shouldExcludeDirectory = $false
@@ -1268,7 +2266,7 @@ function Copy-ManagedItem {
 
     $sourceFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force)
     foreach ($sourceFile in $sourceFiles) {
-      $childRelativePath = [System.IO.Path]::GetRelativePath($source, $sourceFile.FullName)
+      $childRelativePath = Get-RelativePathCompat -BasePath $source -TargetPath $sourceFile.FullName
       $childRelativePathNormalized = ($childRelativePath.Replace("/", "\").Trim("\")).ToLowerInvariant()
       if ($excludeDirectoryPrefixes.Count -gt 0) {
         $shouldExcludeFile = $false
@@ -1367,14 +2365,28 @@ if (-not $NoBackup) { Info "Backup root for replaced paths: $backupRoot" }
 $payloadManifest = Read-UEToolSuitePayloadManifest -PayloadRoot $resolvedPayloadRoot
 Info "Payload manifest: $($payloadManifest.ManifestPath)"
 
-$websiteInstallMode = $null
+$resolvedWebsiteInstallMode = $null
+$websiteRequestedModeWasExplicit = $PSBoundParameters.ContainsKey("WebsiteInstallMode")
+$websiteOverridesState = $null
+$websiteOverrideMap = @{}
 if (-not $SkipWebsite) {
-  $websiteInstallMode = Resolve-WebsiteInstallMode -TargetRoot $resolvedTargetRoot -AdoptExisting:$AdoptExistingWebsite
-  if ($websiteInstallMode -eq "preserve_existing") {
+  $resolvedWebsiteInstallMode = Resolve-WebsiteInstallMode `
+    -TargetRoot $resolvedTargetRoot `
+    -RequestedInstallMode $WebsiteInstallMode `
+    -AdoptExisting:$AdoptExistingWebsite `
+    -WebsiteWasExplicitlyRequested:$websiteRequestedModeWasExplicit
+  if ($resolvedWebsiteInstallMode -eq "preserve_existing") {
     Warn "Existing website directory is not managed by this installer. Preserving current Docusaurus site; website payload and theme override are skipped."
-    if (-not [string]::IsNullOrWhiteSpace($WebsiteTheme) -or -not [string]::IsNullOrWhiteSpace($WebsiteLogoPath)) {
-      Warn "WebsiteTheme/WebsiteLogoPath were provided but are blocked for unmanaged sites. Re-run with -AdoptExistingWebsite to adopt + override now, or run 'ue-tools docs theme apply -Theme <id> --adopt-existing' later."
+    if (-not [string]::IsNullOrWhiteSpace($WebsiteTheme) -or -not [string]::IsNullOrWhiteSpace($WebsiteLogoPath) -or -not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath) -or -not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) {
+      Warn "Website theme/branding overrides were provided but are blocked for unmanaged sites. Re-run with -WebsiteInstallMode MergeExisting or run 'ue-tools docs theme apply -Theme <id> --adopt-existing' later."
     }
+  }
+  else {
+    $websiteOverridesState = Read-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot
+    $websiteOverrideMap = Resolve-WebsiteOverrideMap `
+      -PersistedOverrideDocument $websiteOverridesState.Document `
+      -ForceSuitePaths $WebsiteForceSuitePath `
+      -ForceProjectPaths $WebsiteForceProjectPath
   }
 }
 
@@ -1405,17 +2417,21 @@ if ((-not $SkipWebsite) -or (-not $SkipDocs)) {
   }
 }
 
-if (-not $SkipWebsite -and $websiteInstallMode -ne "preserve_existing") {
-  foreach ($item in @($payloadManifest.ManagedWebsiteItems)) {
-    [void]$managedItems.Add($item)
-  }
-}
-
-if ($websiteInstallMode -eq "adopt_existing") {
+if ($resolvedWebsiteInstallMode -in @("merge_existing", "replace_existing")) {
   $existingWebsitePath = Join-Path $resolvedTargetRoot "website"
   if (Test-Path -LiteralPath $existingWebsitePath) {
-    Copy-ToBackup -TargetRoot $resolvedTargetRoot -RelativePath "website-adopt-snapshot" -ExistingPath $existingWebsitePath -BackupRoot $backupRoot
-    Info "Backed up existing website before adoption: $existingWebsitePath"
+    Copy-ToBackup `
+      -TargetRoot $resolvedTargetRoot `
+      -RelativePath "website-merge-snapshot" `
+      -ExistingPath $existingWebsitePath `
+      -BackupRoot $backupRoot `
+      -ExcludeDirectoryPrefixes @(
+        "node_modules\",
+        "build\",
+        ".docusaurus\",
+        ".cache\"
+      )
+    Info "Backed up existing website before merge: $existingWebsitePath"
   }
 }
 
@@ -1432,6 +2448,20 @@ foreach ($item in @($managedItems.ToArray() | Sort-Object -Unique)) {
   }
 }
 
+if (-not $SkipWebsite -and $resolvedWebsiteInstallMode -ne "preserve_existing") {
+  $websiteUpdateResult = Invoke-ManagedWebsiteUpdate `
+    -PayloadRoot $resolvedPayloadRoot `
+    -TargetRoot $resolvedTargetRoot `
+    -BackupRoot $backupRoot `
+    -PayloadManifest $payloadManifest `
+    -InstallStamp $installStamp `
+    -RequestedMode $resolvedWebsiteInstallMode `
+    -OverrideMap $websiteOverrideMap
+  if ($websiteUpdateResult.ReportPath) {
+    Info "Website merge report: $($websiteUpdateResult.ReportPath)"
+  }
+}
+
 if (-not $SkipDocs) {
   Invoke-ManagedDocsSmartUpdate `
     -PayloadRoot $resolvedPayloadRoot `
@@ -1440,24 +2470,56 @@ if (-not $SkipDocs) {
     -PayloadManifest $payloadManifest `
     -InstallStamp $installStamp `
     -InstalledList $installed `
+    -OverrideMap $websiteOverrideMap `
     -IncludeCodingStandards:(-not $SkipCodingStandardsTools)
+
+  $createdCategoryFiles = @(Ensure-DocsCategoryMetadataFiles -TargetRoot $resolvedTargetRoot -InstalledList $installed)
+  if ($createdCategoryFiles.Count -gt 0) {
+    Info "Created docs category metadata files: $($createdCategoryFiles.Count)"
+  }
 }
 
-if (-not $SkipWebsite -and $websiteInstallMode -ne "preserve_existing") {
+if (-not $SkipWebsite -and $resolvedWebsiteInstallMode -ne "preserve_existing") {
   $themeResult = Apply-WebsiteThemeAndBranding `
     -PayloadRoot $resolvedPayloadRoot `
     -TargetRoot $resolvedTargetRoot `
     -TargetUProjectPath $targetUProject `
     -RequestedTheme $WebsiteTheme `
-    -LogoPath $WebsiteLogoPath
+    -GlobalIconPath $WebsiteGlobalIconPath `
+    -LogoPath $WebsiteLogoPath `
+    -FaviconPath $WebsiteFaviconPath `
+    -SocialCardPath $WebsiteSocialCardPath
 
   if ($null -ne $themeResult) {
+    if ($null -eq $websiteOverridesState) {
+      $websiteOverridesState = Read-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot
+    }
+    if ($null -eq $websiteOverridesState.Document.theme) {
+      $websiteOverridesState.Document.theme = [ordered]@{}
+    }
+    $websiteOverridesState.Document.theme.themeId = [string]$themeResult.ThemeId
+    $websiteOverridesState.Document.theme.logoPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.LogoPath } else { "" }
+    $websiteOverridesState.Document.theme.faviconPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.FaviconPath } else { "" }
+    $websiteOverridesState.Document.theme.socialCardPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.SocialCardPath } else { "" }
+    $websiteOverridesState.Document.fileOverrides = @(
+      foreach ($key in @($websiteOverrideMap.Keys | Sort-Object)) {
+        [ordered]@{
+          path = $key
+          mode = [string]$websiteOverrideMap[$key]
+        }
+      }
+    )
+    Write-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot -Document $websiteOverridesState.Document
+
     Write-WebsiteOwnershipMarker `
       -TargetRoot $resolvedTargetRoot `
       -PayloadVersion ([string]$payloadManifest.PayloadVersion) `
       -ProjectName ([string]$themeResult.ProjectName) `
-      -InstallMode ([string]$websiteInstallMode) `
-      -ThemeId ([string]$themeResult.ThemeId)
+      -InstallMode ([string]$resolvedWebsiteInstallMode) `
+      -ThemeId ([string]$themeResult.ThemeId) `
+      -LogoPath ([string]$themeResult.LogoPath) `
+      -FaviconPath ([string]$themeResult.FaviconPath) `
+      -SocialCardPath ([string]$themeResult.SocialCardPath)
   }
 }
 

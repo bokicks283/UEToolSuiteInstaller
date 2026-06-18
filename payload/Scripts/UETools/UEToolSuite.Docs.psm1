@@ -91,9 +91,10 @@ Create:
   new-section, create-section   Create a docs section
   new-page, create-page         Create a page at Docs root or inside a section
   reorder                       Reorder a page or section and shift sibling positions
+  visibility                    Hide/show a doc page from site navigation using front matter
 
 Run:
-  start                         Start Docusaurus in the current terminal
+  start                         Start Docusaurus (and the editor API) in the current terminal
   stop                          Stop the tracked background Docusaurus server
   status                        Show tracked background server status
   check                         Validate docs and run the production build
@@ -115,6 +116,7 @@ Examples:
   ue-tools docs create-page Setup -Title "Setup"
   ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
   ue-tools docs reorder Art-Source 4
+  ue-tools docs visibility Workflow/README hide
   ue-tools docs start --port 3001
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
@@ -123,6 +125,7 @@ Examples:
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
+  - Inline page editing is available directly on docs pages when the local editor API is running.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
   - Use ue-tools docs help <command> for detailed option help.
 "@
@@ -458,6 +461,103 @@ function Get-DocsWebsiteOwnershipMarkerPath {
   return (Join-Path (Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot) ".ue-tools\ownership.json")
 }
 
+function Get-DocsWebsiteOverridesPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  return (Join-Path (Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot) ".ue-tools\site-overrides.json")
+}
+
+function Get-DefaultDocsWebsiteOverridesDocument {
+  param(
+    [string]$ThemeId = "neutral",
+    [string]$LogoPath = "",
+    [string]$FaviconPath = "",
+    [string]$SocialCardPath = ""
+  )
+
+  return [ordered]@{
+    schemaVersion = 1
+    theme = [ordered]@{
+      themeId = $ThemeId
+      logoPath = $LogoPath
+      faviconPath = $FaviconPath
+      socialCardPath = $SocialCardPath
+    }
+    fileOverrides = @()
+  }
+}
+
+function Get-DocsWebsiteOverrideCandidatePaths {
+  return @(
+    "website/docusaurus.config.ts",
+    "website/src/css/project-overrides.css",
+    "website/src/pages/index.tsx",
+    "website/src/pages/index.module.css",
+    "Docs/README.md"
+  )
+}
+
+function Read-DocsWebsiteOverrides {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $path = Get-DocsWebsiteOverridesPath -ResolvedRepoRoot $ResolvedRepoRoot
+  $defaultDocument = Get-DefaultDocsWebsiteOverridesDocument
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return [pscustomobject]@{
+      Path = $path
+      Document = $defaultDocument
+    }
+  }
+
+  try {
+    $parsed = (Get-Content -LiteralPath $path -Raw) | ConvertFrom-Json
+  }
+  catch {
+    return [pscustomobject]@{
+      Path = $path
+      Document = $defaultDocument
+    }
+  }
+
+  $fileOverrides = @()
+  foreach ($entry in @($parsed.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    $relativePath = [string]$entry.path
+    $mode = ([string]$entry.mode).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($relativePath) -or $mode -notin @("suite", "project")) {
+      continue
+    }
+    $fileOverrides += [ordered]@{
+      path = $relativePath.Replace("\", "/").TrimStart("/")
+      mode = $mode
+    }
+  }
+
+  return [pscustomobject]@{
+    Path = $path
+    Document = [ordered]@{
+      schemaVersion = 1
+      theme = [ordered]@{
+        themeId = if ([string]::IsNullOrWhiteSpace([string]$parsed.theme.themeId)) { "neutral" } else { [string]$parsed.theme.themeId }
+        logoPath = [string]$parsed.theme.logoPath
+        faviconPath = [string]$parsed.theme.faviconPath
+        socialCardPath = [string]$parsed.theme.socialCardPath
+      }
+      fileOverrides = $fileOverrides
+    }
+  }
+}
+
+function Write-DocsWebsiteOverrides {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)]$Document
+  )
+
+  $path = Get-DocsWebsiteOverridesPath -ResolvedRepoRoot $ResolvedRepoRoot
+  Write-DocsThemeUtf8NoBomFile -Path $path -Content ($Document | ConvertTo-Json -Depth 10)
+}
+
 function Test-DocsWebsiteManaged {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
@@ -469,17 +569,31 @@ function Write-DocsWebsiteOwnershipMarker {
   param(
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
     [Parameter(Mandatory)][string]$ThemeId,
+    [string]$InstallMode = "managed_update",
+    [string]$LogoPath = "",
+    [string]$FaviconPath = "",
+    [string]$SocialCardPath = "",
     [switch]$Adopted
   )
 
   $markerPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
   $projectName = Split-Path -Leaf $ResolvedRepoRoot
   $marker = [ordered]@{
-    schemaVersion = 1
-    managedBy = "UEToolSuiteDocs"
+    schemaVersion = 2
+    managedBy = "UEToolSuiteInstaller"
     projectName = $projectName
-    themeId = $ThemeId
-    adoptedViaDocsTheme = [bool]$Adopted
+    installMode = $InstallMode
+    theme = [ordered]@{
+      themeId = $ThemeId
+      logoPath = $LogoPath
+      faviconPath = $FaviconPath
+      socialCardPath = $SocialCardPath
+    }
+    overridePolicy = [ordered]@{
+      schemaVersion = 1
+      source = "site-overrides.json"
+      adoptedViaDocsTheme = [bool]$Adopted
+    }
     updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   }
 
@@ -566,6 +680,8 @@ function Invoke-DocsThemeApply {
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
     [string]$ThemeId,
     [string]$LogoPath,
+    [string]$FaviconPath,
+    [string]$SocialCardPath,
     [switch]$AdoptExisting
   )
 
@@ -576,7 +692,7 @@ function Invoke-DocsThemeApply {
 
   $isManaged = Test-DocsWebsiteManaged -ResolvedRepoRoot $ResolvedRepoRoot
   if (-not $isManaged -and -not $AdoptExisting) {
-    throw "Website is unmanaged. Theme overrides are blocked by default. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -AdoptExistingWebsite."
+    throw "Website is unmanaged. Theme overrides are blocked by default. Re-run with 'ue-tools docs theme apply --adopt-existing' or use installer -WebsiteInstallMode MergeExisting."
   }
 
   $configPath = Join-Path $websiteRoot "docusaurus.config.ts"
@@ -606,7 +722,7 @@ function Invoke-DocsThemeApply {
     }
   }
 
-  $themeDestination = Join-Path $websiteRoot "src\css\custom.css"
+  $themeDestination = Join-Path $websiteRoot "theme-presets\active-theme.css"
   $themeDestinationParent = Split-Path -Path $themeDestination -Parent
   if (-not [string]::IsNullOrWhiteSpace($themeDestinationParent)) {
     New-Item -ItemType Directory -Force -Path $themeDestinationParent | Out-Null
@@ -640,6 +756,45 @@ function Invoke-DocsThemeApply {
     }
     Copy-Item -LiteralPath $LogoPath -Destination $logoDestination -Force
   }
+  if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) {
+    if (-not (Test-Path -LiteralPath $FaviconPath -PathType Leaf)) {
+      throw "FaviconPath does not exist or is not a file: $FaviconPath"
+    }
+    $extension = [System.IO.Path]::GetExtension($FaviconPath).ToLowerInvariant()
+    if ($extension -notin @(".svg", ".png", ".ico")) {
+      throw "FaviconPath must end with .svg, .png, or .ico. Received: $FaviconPath"
+    }
+    $faviconRelativePath = "img/branding/project-favicon$extension"
+    $faviconDestination = Join-Path $websiteRoot ("static\" + $faviconRelativePath.Replace("/", "\"))
+    $faviconParent = Split-Path -Path $faviconDestination -Parent
+    if (-not [string]::IsNullOrWhiteSpace($faviconParent)) {
+      New-Item -ItemType Directory -Force -Path $faviconParent | Out-Null
+    }
+    Copy-Item -LiteralPath $FaviconPath -Destination $faviconDestination -Force
+  }
+  elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
+    $faviconRelativePath = $logoRelativePath
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) {
+    if (-not (Test-Path -LiteralPath $SocialCardPath -PathType Leaf)) {
+      throw "SocialCardPath does not exist or is not a file: $SocialCardPath"
+    }
+    $extension = [System.IO.Path]::GetExtension($SocialCardPath).ToLowerInvariant()
+    if ($extension -notin @(".svg", ".png", ".jpg", ".jpeg", ".webp")) {
+      throw "SocialCardPath must end with .svg, .png, .jpg, .jpeg, or .webp. Received: $SocialCardPath"
+    }
+    $socialCardRelativePath = "img/branding/project-social-card$extension"
+    $socialCardDestination = Join-Path $websiteRoot ("static\" + $socialCardRelativePath.Replace("/", "\"))
+    $socialCardParent = Split-Path -Path $socialCardDestination -Parent
+    if (-not [string]::IsNullOrWhiteSpace($socialCardParent)) {
+      New-Item -ItemType Directory -Force -Path $socialCardParent | Out-Null
+    }
+    Copy-Item -LiteralPath $SocialCardPath -Destination $socialCardDestination -Force
+  }
+  elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) {
+    $socialCardRelativePath = $logoRelativePath
+  }
 
   $configText = Get-Content -LiteralPath $configPath -Raw
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $configText -Pattern "(?m)^(\s*title:\s*)'[^']*'," -Value $docsTitle -PropertyDisplayName "config title"
@@ -654,7 +809,26 @@ function Invoke-DocsThemeApply {
   $updatedConfig = Set-DocsThemeSingleQuotedProperty -Text $updatedConfig -Pattern "(?m)^(\s*suiteThemeId:\s*)'[^']*'," -Value $themeEntry.id -PropertyDisplayName "customFields.suiteThemeId"
   Write-DocsThemeUtf8NoBomFile -Path $configPath -Content $updatedConfig
 
-  Write-DocsWebsiteOwnershipMarker -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeEntry.id -Adopted:$AdoptExisting
+  $overridesState = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $overridesState.Document.theme.themeId = $themeEntry.id
+  $overridesState.Document.theme.logoPath = if (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $logoRelativePath } else { "" }
+  $overridesState.Document.theme.faviconPath = if (-not [string]::IsNullOrWhiteSpace($FaviconPath)) { $faviconRelativePath } elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $faviconRelativePath } else { "" }
+  $overridesState.Document.theme.socialCardPath = if (-not [string]::IsNullOrWhiteSpace($SocialCardPath)) { $socialCardRelativePath } elseif (-not [string]::IsNullOrWhiteSpace($LogoPath)) { $socialCardRelativePath } else { "" }
+  Write-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot -Document $overridesState.Document
+
+  $installMode = "managed_update"
+  if ($AdoptExisting -and -not $isManaged) {
+    $installMode = "merge_existing"
+  }
+
+  Write-DocsWebsiteOwnershipMarker `
+    -ResolvedRepoRoot $ResolvedRepoRoot `
+    -ThemeId $themeEntry.id `
+    -InstallMode $installMode `
+    -LogoPath $logoRelativePath `
+    -FaviconPath $faviconRelativePath `
+    -SocialCardPath $socialCardRelativePath `
+    -Adopted:$AdoptExisting
   if ($AdoptExisting -and -not $isManaged) {
     Write-Output ("Adopted existing website for suite-managed theme updates.")
   }
@@ -688,8 +862,10 @@ function Invoke-DocsThemeCommand {
     "apply" {
       $themeId = $null
       $logoPath = $null
+      $faviconPath = $null
+      $socialCardPath = $null
       $adoptExisting = $false
-      $tokens = if ($argsList.Count -gt 1) { @($argsList[1..($argsList.Count - 1)]) } else { @() }
+      $tokens = if ($argsList.Count -gt 1) { @(Get-NormalizedArgumentTail -Values $argsList -Skip 1) } else { @() }
       for ($i = 0; $i -lt $tokens.Count; $i++) {
         $token = [string]$tokens[$i]
         $normalizedToken = $token.Trim().ToLowerInvariant()
@@ -705,6 +881,20 @@ function Invoke-DocsThemeCommand {
         if ($normalizedToken -eq "-logopath" -or $normalizedToken -eq "--logo-path") {
           if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
           $logoPath = [string]$tokens[$i + 1]
+          $i++
+          continue
+        }
+
+        if ($normalizedToken -eq "-faviconpath" -or $normalizedToken -eq "--favicon-path") {
+          if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
+          $faviconPath = [string]$tokens[$i + 1]
+          $i++
+          continue
+        }
+
+        if ($normalizedToken -eq "-socialcardpath" -or $normalizedToken -eq "--social-card-path") {
+          if (($i + 1) -ge $tokens.Count) { throw "Missing value for $token." }
+          $socialCardPath = [string]$tokens[$i + 1]
           $i++
           continue
         }
@@ -725,11 +915,181 @@ function Invoke-DocsThemeCommand {
         $themeId = $token
       }
 
-      Invoke-DocsThemeApply -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeId -LogoPath $logoPath -AdoptExisting:$adoptExisting
+      Invoke-DocsThemeApply -ResolvedRepoRoot $ResolvedRepoRoot -ThemeId $themeId -LogoPath $logoPath -FaviconPath $faviconPath -SocialCardPath $socialCardPath -AdoptExisting:$adoptExisting
       return
     }
     default {
       throw "Unknown ue-tools docs theme command '$subcommand'. Run 'ue-tools docs help theme'."
+    }
+  }
+}
+
+function Read-DocsWebsiteOwnershipMarker {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $path = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return $null
+  }
+
+  try {
+    return ((Get-Content -LiteralPath $path -Raw) | ConvertFrom-Json)
+  }
+  catch {
+    return $null
+  }
+}
+
+function Invoke-DocsSiteStatus {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $ownership = Read-DocsWebsiteOwnershipMarker -ResolvedRepoRoot $ResolvedRepoRoot
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $themeId = [string]$overrides.Document.theme.themeId
+  if ([string]::IsNullOrWhiteSpace($themeId) -and $ownership -and $ownership.theme.themeId) {
+    $themeId = [string]$ownership.theme.themeId
+  }
+
+  return [pscustomobject]@{
+    Managed = [bool]($null -ne $ownership)
+    OwnershipPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+    OverridesPath = $overrides.Path
+    InstallMode = if ($ownership) { [string]$ownership.installMode } else { "unmanaged" }
+    ThemeId = $themeId
+    LogoPath = [string]$overrides.Document.theme.logoPath
+    FaviconPath = [string]$overrides.Document.theme.faviconPath
+    SocialCardPath = [string]$overrides.Document.theme.socialCardPath
+    OverrideCount = @($overrides.Document.fileOverrides).Count
+    OverridePaths = @($overrides.Document.fileOverrides | ForEach-Object { [string]$_.path })
+  }
+}
+
+function Invoke-DocsSiteOverrideList {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  return @($overrides.Document.fileOverrides)
+}
+
+function Invoke-DocsSiteOverrideSet {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$Mode
+  )
+
+  $normalizedPath = $RelativePath.Replace("\", "/").Trim().TrimStart("/")
+  $normalizedMode = $Mode.Trim().ToLowerInvariant()
+  if ($normalizedMode -notin @("suite", "project")) {
+    throw "Mode must be 'suite' or 'project'."
+  }
+
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $remaining = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in @($overrides.Document.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    if ([string]$entry.path -eq $normalizedPath) {
+      continue
+    }
+    $remaining.Add($entry) | Out-Null
+  }
+  $remaining.Add([ordered]@{ path = $normalizedPath; mode = $normalizedMode }) | Out-Null
+  $overrides.Document.fileOverrides = @($remaining.ToArray() | Sort-Object path)
+  Write-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot -Document $overrides.Document
+
+  return [pscustomobject]@{
+    Path = $normalizedPath
+    Mode = $normalizedMode
+  }
+}
+
+function Invoke-DocsSiteOverrideClear {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$RelativePath
+  )
+
+  $normalizedPath = $RelativePath.Replace("\", "/").Trim().TrimStart("/")
+  $overrides = Read-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot
+  $remaining = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in @($overrides.Document.fileOverrides)) {
+    if ($null -eq $entry) { continue }
+    if ([string]$entry.path -eq $normalizedPath) {
+      continue
+    }
+    $remaining.Add($entry) | Out-Null
+  }
+  $overrides.Document.fileOverrides = @($remaining.ToArray() | Sort-Object path)
+  Write-DocsWebsiteOverrides -ResolvedRepoRoot $ResolvedRepoRoot -Document $overrides.Document
+
+  return [pscustomobject]@{
+    Path = $normalizedPath
+  }
+}
+
+function Invoke-DocsSiteCommand {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments
+  )
+
+  $argsList = @(Get-NormalizedArgumentList -Values $CommandArguments)
+  if ($argsList.Count -eq 0) {
+    Write-Output (Get-DocsToolsCommandHelp -CommandName "site")
+    return
+  }
+
+  $subcommand = [string]$argsList[0]
+  if (Test-DocsToolsHelpToken -Token $subcommand) {
+    Write-Output (Get-DocsToolsCommandHelp -CommandName "site")
+    return
+  }
+
+  switch ($subcommand.Trim().ToLowerInvariant()) {
+    "status" {
+      $result = Invoke-DocsSiteStatus -ResolvedRepoRoot $ResolvedRepoRoot
+      Write-Output ("Managed: {0}" -f $result.Managed)
+      Write-Output ("Install mode: {0}" -f $result.InstallMode)
+      Write-Output ("Theme: {0}" -f $result.ThemeId)
+      Write-Output ("Logo path: {0}" -f $result.LogoPath)
+      Write-Output ("Favicon path: {0}" -f $result.FaviconPath)
+      Write-Output ("Social card path: {0}" -f $result.SocialCardPath)
+      Write-Output ("Overrides path: {0}" -f $result.OverridesPath)
+      Write-Output ("Override count: {0}" -f $result.OverrideCount)
+      return
+    }
+    "override" {
+      if ($argsList.Count -lt 2) {
+        throw "Missing site override subcommand. Run 'ue-tools docs help site'."
+      }
+      $overrideCommand = [string]$argsList[1]
+      $remaining = if ($argsList.Count -gt 2) { @(Get-NormalizedArgumentTail -Values $argsList -Skip 2) } else { @() }
+      switch ($overrideCommand.Trim().ToLowerInvariant()) {
+        "list" {
+          foreach ($entry in @(Invoke-DocsSiteOverrideList -ResolvedRepoRoot $ResolvedRepoRoot)) {
+            Write-Output ("- {0}: {1}" -f [string]$entry.path, [string]$entry.mode)
+          }
+          return
+        }
+        "set" {
+          $parsed = Parse-SubcommandArguments -CommandArguments $remaining -ValueNames @("path", "mode")
+          $result = Invoke-DocsSiteOverrideSet -ResolvedRepoRoot $ResolvedRepoRoot -RelativePath ([string]$parsed.Values["path"]) -Mode ([string]$parsed.Values["mode"])
+          Write-Output ("Set override: {0} -> {1}" -f $result.Path, $result.Mode)
+          return
+        }
+        "clear" {
+          $parsed = Parse-SubcommandArguments -CommandArguments $remaining -ValueNames @("path")
+          $result = Invoke-DocsSiteOverrideClear -ResolvedRepoRoot $ResolvedRepoRoot -RelativePath ([string]$parsed.Values["path"])
+          Write-Output ("Cleared override: {0}" -f $result.Path)
+          return
+        }
+        default {
+          throw "Unknown ue-tools docs site override command '$overrideCommand'. Run 'ue-tools docs help site'."
+        }
+      }
+    }
+    default {
+      throw "Unknown ue-tools docs site command '$subcommand'. Run 'ue-tools docs help site'."
     }
   }
 }
@@ -742,6 +1102,20 @@ function Get-DocsToolsRuntimeDirectory {
 function Get-DocsServerStatePath {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
   return (Join-Path (Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot) "docs-server.json")
+}
+
+function Get-DocsEditorRuntimeConfigPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Join-Path $websiteRoot "static\ue-tools\editor-runtime.json")
+}
+
+function Get-LegacyDocsEditorRuntimeConfigPath {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  return (Join-Path $websiteRoot "static\.ue-tools\editor-runtime.json")
 }
 
 function ConvertTo-CmdArgument {
@@ -788,6 +1162,37 @@ function Get-NormalizedArgumentList {
   }
 
   return $normalized.ToArray()
+}
+
+function Get-NormalizedArgumentTail {
+  param(
+    [AllowNull()][string[]]$Values,
+    [int]$Skip = 1
+  )
+
+  if ($null -eq $Values) {
+    return @()
+  }
+
+  if ($Skip -lt 0) {
+    $Skip = 0
+  }
+
+  $tail = New-Object System.Collections.Generic.List[string]
+  foreach ($value in @($Values | Select-Object -Skip $Skip)) {
+    if ($null -eq $value) {
+      continue
+    }
+
+    $stringValue = [string]$value
+    if ([string]::IsNullOrWhiteSpace($stringValue)) {
+      continue
+    }
+
+    $tail.Add($stringValue) | Out-Null
+  }
+
+  return ,($tail.ToArray())
 }
 
 function Resolve-DocsToolsCommandAlias {
@@ -957,16 +1362,112 @@ function Save-DocsServerEntries {
     [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Entries
   )
 
-  if (@($Entries).Count -eq 0) {
+  $existingState = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  $existingEditorEntry = $null
+  if ($existingState -and $existingState.PSObject.Properties["editorApi"]) {
+    $existingEditorEntry = $existingState.editorApi
+  }
+
+  $payload = [ordered]@{
+    version = if ($null -ne $existingEditorEntry) { 3 } else { 2 }
+    servers = @($Entries)
+  }
+  if ($null -ne $existingEditorEntry) {
+    $payload.editorApi = $existingEditorEntry
+  }
+
+  if (@($Entries).Count -eq 0 -and $null -eq $existingEditorEntry) {
+    Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+    return $null
+  }
+
+  return (Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $payload)
+}
+
+function Save-DocsServerCompositeState {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [AllowEmptyCollection()][object[]]$ServerEntries = @(),
+    [AllowNull()]$EditorApiEntry = $null
+  )
+
+  $servers = @($ServerEntries)
+  if ($servers.Count -eq 0 -and $null -eq $EditorApiEntry) {
     Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
     return $null
   }
 
   $payload = [ordered]@{
-    version = 2
-    servers = @($Entries)
+    version = if ($null -ne $EditorApiEntry) { 3 } else { 2 }
+    servers = $servers
   }
+  if ($null -ne $EditorApiEntry) {
+    $payload.editorApi = $EditorApiEntry
+  }
+
   return (Save-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot -State $payload)
+}
+
+function Get-DocsEditorApiEntry {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $state = Get-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not $state) {
+    return $null
+  }
+
+  if ($state.PSObject.Properties["editorApi"]) {
+    return $state.editorApi
+  }
+
+  return $null
+}
+
+function Save-DocsEditorApiEntry {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [AllowNull()]$Entry = $null
+  )
+
+  $serverEntries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  return (Save-DocsServerCompositeState -ResolvedRepoRoot $ResolvedRepoRoot -ServerEntries $serverEntries -EditorApiEntry $Entry)
+}
+
+function Write-DocsEditorRuntimeConfig {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [Parameter(Mandatory)][string]$ApiUrl
+  )
+
+  $configPath = Get-DocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  $parent = Split-Path -Path $configPath -Parent
+  if (-not [string]::IsNullOrWhiteSpace($parent)) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  }
+
+  $payload = [ordered]@{
+    apiUrl = $ApiUrl
+    generatedAt = (Get-Date).ToString("o")
+  }
+  Write-Utf8NoBomFile -Path $configPath -Content ($payload | ConvertTo-Json -Depth 5)
+  $legacyConfigPath = Get-LegacyDocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyConfigPath -Force
+  }
+  return $configPath
+}
+
+function Remove-DocsEditorRuntimeConfig {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $configPath = Get-DocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+    Remove-Item -LiteralPath $configPath -Force
+  }
+  $legacyConfigPath = Get-LegacyDocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
+  if (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf) {
+    Remove-Item -LiteralPath $legacyConfigPath -Force
+  }
 }
 
 function Test-DocsStartPromptAvailable {
@@ -985,21 +1486,18 @@ function Test-DocsStartPromptAvailable {
 function Read-DocsStartContinueChoice {
   param([Parameter(Mandatory)][string]$Prompt)
 
-  if (-not (Test-DocsStartPromptAvailable)) {
-    return $true
-  }
-
-  while ($true) {
-    $response = ([string](Read-Host "$Prompt [Y/n]")).Trim().ToLowerInvariant()
-    if ([string]::IsNullOrWhiteSpace($response)) { return $true }
-    switch ($response) {
-      "y" { return $true }
-      "yes" { return $true }
-      "n" { return $false }
-      "no" { return $false }
-      default { Write-Output "Please enter y or n." }
+  $forceChoice = [string]$env:UE_TOOLS_DOCS_START_CONTINUE
+  if (-not [string]::IsNullOrWhiteSpace($forceChoice)) {
+    $normalizedForceChoice = $forceChoice.Trim().ToLowerInvariant()
+    if ($normalizedForceChoice -in @("1", "y", "yes", "true")) {
+      return $true
+    }
+    if ($normalizedForceChoice -in @("0", "n", "no", "false")) {
+      return $false
     }
   }
+
+  return $true
 }
 
 function Get-DocsStartPort {
@@ -1071,7 +1569,7 @@ Create:
   reorder                       Reorder a page or section and shift sibling positions
 
 Run:
-  start                         Start Docusaurus in the current terminal
+  start                         Start Docusaurus (and the editor API) in the current terminal
   stop                          Stop the tracked background Docusaurus server
   status                        Show tracked background server status
   check                         Validate docs and run the production build
@@ -1101,6 +1599,7 @@ Examples:
 
 Notes:
   - Docs are authored in Docs/ and rendered by website/.
+  - Inline page editing is available directly on docs pages when the local editor API is running.
   - TOC generation is optional and only runs when the bridge + Markdown All in One are installed.
   - Use 'ue-tools docs help <command>' for detailed option help.
 "@
@@ -1268,9 +1767,10 @@ Usage:
   ue-tools docs start [--background] [docusaurus start args]
 
 Default behavior runs `npm run start -- <args...>` in website/ attached to the current terminal so stdout/stderr stream live.
+The local editor API is started automatically so inline docs-page editing works while the docs runtime is active.
 
 Options:
-  --background                  Run detached and track the server for `status` and `stop`
+  --background                  Run detached and track docs + editor API for `status` and `stop`
 
 Examples:
   ue-tools docs start
@@ -1305,6 +1805,29 @@ Examples:
 "@
       return
     }
+    "visibility" {
+@"
+ue-tools docs visibility
+
+Usage:
+  ue-tools docs visibility <TargetPath> <show|hide>
+
+Required:
+  <TargetPath>                  Docs-relative page path or section/domain path with a landing doc
+                                Examples: Setup, Workflow/Daily-Flow, Workflow, ProjectDocs
+  <show|hide>                   show clears unlisted; hide sets unlisted: true
+
+Behavior:
+  - Keeps the file on disk
+  - Uses Docusaurus-native unlisted front matter
+  - Hidden pages stay directly routable but drop out of normal site navigation
+
+Examples:
+  ue-tools docs visibility Workflow/Daily-Flow hide
+  ue-tools docs visibility Workflow show
+"@
+      return
+    }
     "docusaurus" {
 @"
 ue-tools docs docusaurus
@@ -1330,7 +1853,10 @@ Validates docs metadata, catches common docs-site mistakes, and runs the Docusau
 @"
 ue-tools docs status
 
-Shows whether the tracked background docs dev server is running and prints the URL/log paths when state exists.
+Shows tracked docs runtime status:
+  - Docusaurus server process state
+  - Editor API process state
+  - Docs URLs and log paths when available
 "@
       return
     }
@@ -1338,7 +1864,10 @@ Shows whether the tracked background docs dev server is running and prints the U
 @"
 ue-tools docs stop
 
-Stops the tracked background docs dev server process tree and removes its saved state.
+Stops the tracked background docs runtime:
+  - Docusaurus server process tree
+  - Editor API process tree
+and removes saved runtime state.
 "@
       return
     }
@@ -1353,6 +1882,7 @@ Checks common local docs prerequisites:
   - Markdown All in One installation
   - docs bridge installation
   - tracked docs dev server state
+  - tracked editor API state
 "@
       return
     }
@@ -1370,16 +1900,36 @@ ue-tools docs theme
 
 Usage:
   ue-tools docs theme list
-  ue-tools docs theme apply <id> [-LogoPath <path>] [--adopt-existing]
+  ue-tools docs theme apply <id> [-LogoPath <path>] [-FaviconPath <path>] [-SocialCardPath <path>] [--adopt-existing]
 
 Commands:
   list                           Show available website theme presets from website/theme-presets/theme-catalog.json
-  apply                          Apply a theme preset to website/src/css/custom.css and update branding fields in website/docusaurus.config.ts
+  apply                          Apply a theme preset to website/theme-presets/active-theme.css and update branding fields in website/docusaurus.config.ts
 
 Notes:
   - Theme apply is preserve-first: unmanaged websites are not overridden by default.
   - Use --adopt-existing to write the marker for an existing unmanaged website before applying.
   - LogoPath accepts .svg or .png files.
+  - FaviconPath accepts .svg, .png, or .ico files.
+  - SocialCardPath accepts .svg, .png, .jpg, .jpeg, or .webp files.
+"@
+      return
+    }
+    "site" {
+@"
+ue-tools docs site
+
+Usage:
+  ue-tools docs site status
+  ue-tools docs site override list
+  ue-tools docs site override set -Path <relative> -Mode <suite|project>
+  ue-tools docs site override clear -Path <relative>
+
+Commands:
+  status                         Show current website ownership, install mode, branding, and override summary
+  override list                  Show persisted file override entries
+  override set                   Persist a file override mode for a managed docs/site file
+  override clear                 Remove a persisted file override entry
 "@
       return
     }
@@ -1448,8 +1998,29 @@ function Get-RelativeDocPath {
     [Parameter(Mandatory)][string]$FullPath
   )
 
-  $relative = [System.IO.Path]::GetRelativePath($DocsRoot, $FullPath)
+  $relative = Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $FullPath
   return ($relative -replace '\\', '/')
+}
+
+function Get-UEToolSuiteRelativePath {
+  param(
+    [Parameter(Mandatory)][string]$BasePath,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $baseFull = [System.IO.Path]::GetFullPath($BasePath)
+  $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+  $trimmedBase = $baseFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $trimmedTarget = $targetFull.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  if ($trimmedBase.Equals($trimmedTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return "."
+  }
+
+  $baseUri = New-Object System.Uri(($trimmedBase + [System.IO.Path]::DirectorySeparatorChar))
+  $targetUri = New-Object System.Uri($targetFull)
+  $relativeUri = $baseUri.MakeRelativeUri($targetUri)
+  $relativePath = [System.Uri]::UnescapeDataString($relativeUri.ToString())
+  return $relativePath.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
 }
 
 function Get-DocIdForPath {
@@ -2217,7 +2788,7 @@ function Invoke-NewSection {
 
   if ($sectionSegments.Count -gt 1) {
     $parentSegments = @($sectionSegments[0..($sectionSegments.Count - 2)])
-    $parentDir = Join-Path $docsRoot ([System.IO.Path]::Combine($parentSegments))
+    $parentDir = Join-Path $docsRoot (($parentSegments -join [System.IO.Path]::DirectorySeparatorChar))
     Assert-PathInsideRoot -RootPath $docsRoot -TargetPath $parentDir
 
     if (-not (Test-DocsSectionExists -SectionDir $parentDir)) {
@@ -2225,7 +2796,7 @@ function Invoke-NewSection {
     }
   }
 
-  $sectionDir = Join-Path $docsRoot ([System.IO.Path]::Combine($sectionSegments))
+  $sectionDir = Join-Path $docsRoot (($sectionSegments -join [System.IO.Path]::DirectorySeparatorChar))
   Assert-PathInsideRoot -RootPath $docsRoot -TargetPath $sectionDir
   $position = if ($parsed.Values.ContainsKey("position")) { ConvertTo-NumericValue -Value $parsed.Values["position"] -OptionName "Position" } else { Get-NextSectionPosition -DocsRoot $docsRoot -SectionPath $sectionPath }
 
@@ -2234,6 +2805,12 @@ function Invoke-NewSection {
   $docSlug = if ($parsed.Values.ContainsKey("slug")) { $parsed.Values["slug"] } else { Get-SlugForSectionPath -SectionPath $sectionPath }
   $bridgeStatus = Get-BridgeStatus
   $includeToc = (-not $noToc) -and $bridgeStatus.TocReady
+  $linkType = if ($parsed.Values.ContainsKey("linktype")) { $parsed.Values["linktype"] } else { "doc" }
+  $normalizedLinkType = [string]$linkType
+  if (-not [string]::IsNullOrWhiteSpace($normalizedLinkType)) {
+    $normalizedLinkType = $normalizedLinkType.Trim().ToLowerInvariant()
+  }
+  $createsReadme = ($normalizedLinkType -eq "doc")
 
   if ((Test-Path -LiteralPath $sectionDir) -and (-not $force)) {
     throw "Section directory already exists: $sectionDir"
@@ -2241,17 +2818,21 @@ function Invoke-NewSection {
 
   New-Item -ItemType Directory -Force -Path $sectionDir | Out-Null
 
-  $docSidebarPosition = if ($parsed.Values.ContainsKey("docsidebarposition")) { ConvertTo-NumericValue -Value $parsed.Values["docsidebarposition"] -OptionName "DocSidebarPosition" } else { 1 }
-  $readmeFrontMatter = New-DocFrontMatter -Title $title -Slug $docSlug -SidebarPosition $docSidebarPosition
-  Apply-CommonDocOptionValues -FrontMatter $readmeFrontMatter -Values $parsed.Values
-  Apply-KeyValueAssignmentsToMap `
-    -Map $readmeFrontMatter `
-    -Assignments @($parsed.MultiValues["docfield"]) `
-    -JsonAssignments @($parsed.MultiValues["docfieldjson"])
+  $docId = ""
+  $readmeContent = ""
+  if ($createsReadme) {
+    $docSidebarPosition = if ($parsed.Values.ContainsKey("docsidebarposition")) { ConvertTo-NumericValue -Value $parsed.Values["docsidebarposition"] -OptionName "DocSidebarPosition" } else { 1 }
+    $readmeFrontMatter = New-DocFrontMatter -Title $title -Slug $docSlug -SidebarPosition $docSidebarPosition
+    Apply-CommonDocOptionValues -FrontMatter $readmeFrontMatter -Values $parsed.Values
+    Apply-KeyValueAssignmentsToMap `
+      -Map $readmeFrontMatter `
+      -Assignments @($parsed.MultiValues["docfield"]) `
+      -JsonAssignments @($parsed.MultiValues["docfieldjson"])
 
-  $readmeContent = Build-ScaffoldDocContent -FrontMatter $readmeFrontMatter -HeadingTitle $title -IncludeToc:$includeToc -OverviewNoun "section"
-  $docId = Get-DocIdForPath -DocsRoot $docsRoot -FullPath $readmePath
-  $linkType = if ($parsed.Values.ContainsKey("linktype")) { $parsed.Values["linktype"] } else { "doc" }
+    $readmeContent = Build-ScaffoldDocContent -FrontMatter $readmeFrontMatter -HeadingTitle $title -IncludeToc:$includeToc -OverviewNoun "section"
+    $docId = Get-DocIdForPath -DocsRoot $docsRoot -FullPath $readmePath
+  }
+
   $linkDocId = if ($parsed.Values.ContainsKey("linkid")) { $parsed.Values["linkid"] } else { $docId }
   $generatedIndexTitle = if ($parsed.Values.ContainsKey("generatedindextitle")) { $parsed.Values["generatedindextitle"] } else { $label }
   $generatedIndexSlug = if ($parsed.Values.ContainsKey("generatedindexslug")) { $parsed.Values["generatedindexslug"] } else { $docSlug }
@@ -2278,19 +2859,22 @@ function Invoke-NewSection {
     -JsonAssignments @($parsed.MultiValues["categoryjson"])
   $categoryContent = Build-CategoryMetadataContent -Metadata $categoryMetadata
 
-  Write-Utf8NoBomFile -Path $readmePath -Content $readmeContent
+  if ($createsReadme) {
+    Write-Utf8NoBomFile -Path $readmePath -Content $readmeContent
+  }
   Write-Utf8NoBomFile -Path $categoryPath -Content $categoryContent
 
-  if ($includeToc) {
+  if ($createsReadme -and $includeToc) {
     $null = Queue-TocRequest -ResolvedRepoRoot $ResolvedRepoRoot -FilePath $readmePath
     [void](Open-PathInVSCode -ResolvedRepoRoot $ResolvedRepoRoot -FilePath $readmePath)
   }
 
   [pscustomobject]@{
     Command = "new-section"
-    Path = $readmePath
+    Path = $sectionDir
+    ReadmePath = $(if ($createsReadme) { $readmePath } else { "" })
     CategoryPath = $categoryPath
-    TocQueued = $includeToc
+    TocQueued = ($createsReadme -and $includeToc)
     BridgeStatus = $bridgeStatus
   }
 }
@@ -2334,7 +2918,7 @@ function Invoke-NewPage {
       throw "Section path must not be empty."
     }
 
-    $sectionDir = Join-Path $docsRoot ([System.IO.Path]::Combine($sectionSegments))
+    $sectionDir = Join-Path $docsRoot (($sectionSegments -join [System.IO.Path]::DirectorySeparatorChar))
     Assert-PathInsideRoot -RootPath $docsRoot -TargetPath $sectionDir
 
     if (-not (Test-DocsSectionExists -SectionDir $sectionDir)) {
@@ -2475,7 +3059,7 @@ function Get-NextSectionPosition {
   }
   else {
     $parentSegments = @($sectionSegments[0..($sectionSegments.Count - 2)])
-    $parentDir = Join-Path $DocsRoot ([System.IO.Path]::Combine($parentSegments))
+    $parentDir = Join-Path $DocsRoot (($parentSegments -join [System.IO.Path]::DirectorySeparatorChar))
   }
 
   $positions = New-Object System.Collections.Generic.List[double]
@@ -2548,7 +3132,7 @@ function Get-DocsItemRelativePath {
     return (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $ItemPath)
   }
 
-  return ([System.IO.Path]::GetRelativePath($DocsRoot, $ItemPath) -replace '\\', '/')
+  return ((Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $ItemPath) -replace '\\', '/')
 }
 
 function Resolve-DocsNavigationTarget {
@@ -2808,6 +3392,126 @@ function Invoke-DocsReorder {
   }
 }
 
+function Resolve-DocsVisibilityTarget {
+  param(
+    [Parameter(Mandatory)][string]$DocsRoot,
+    [Parameter(Mandatory)][string]$TargetPath
+  )
+
+  $normalized = Normalize-DocsTargetPath -TargetPath $TargetPath
+
+  $directoryCandidate = Join-Path $DocsRoot $normalized
+  Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $directoryCandidate
+  if (Test-Path -LiteralPath $directoryCandidate -PathType Container) {
+    foreach ($candidateName in @("README.md", "README.mdx", "index.md", "index.mdx")) {
+      $candidatePath = Join-Path $directoryCandidate $candidateName
+      if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+        return [pscustomobject]@{
+          FullPath = $candidatePath
+          RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $candidatePath)
+        }
+      }
+    }
+
+    throw "No landing document exists for '$TargetPath'."
+  }
+
+  foreach ($extension in @(".md", ".mdx")) {
+    $fileCandidate = Join-Path $DocsRoot ($normalized + $extension)
+    Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $fileCandidate
+    if (Test-Path -LiteralPath $fileCandidate -PathType Leaf) {
+      return [pscustomobject]@{
+        FullPath = $fileCandidate
+        RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $fileCandidate)
+      }
+    }
+  }
+
+  $directCandidate = Join-Path $DocsRoot $normalized
+  Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $directCandidate
+  if (Test-Path -LiteralPath $directCandidate -PathType Leaf) {
+    return [pscustomobject]@{
+      FullPath = $directCandidate
+      RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $directCandidate)
+    }
+  }
+
+  throw "Docs page or landing document not found: $TargetPath"
+}
+
+function Invoke-DocsVisibility {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments = @()
+  )
+
+  $argumentList = @($CommandArguments)
+  if ($argumentList.Count -lt 2) {
+    throw "Usage: ue-tools docs visibility <TargetPath> <show|hide>. Run 'ue-tools docs help visibility'."
+  }
+  if ($argumentList.Count -gt 2) {
+    throw "Too many arguments for visibility. Usage: ue-tools docs visibility <TargetPath> <show|hide>."
+  }
+
+  $mode = ([string]$argumentList[1]).Trim().ToLowerInvariant()
+  if ($mode -notin @("show", "hide")) {
+    throw "Visibility mode must be 'show' or 'hide'."
+  }
+
+  $docsRoot = Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  $target = Resolve-DocsVisibilityTarget -DocsRoot $docsRoot -TargetPath $argumentList[0]
+  $content = Get-Content -LiteralPath $target.FullPath -Raw
+  $newline = if ($content.Contains("`r`n")) { "`r`n" } else { "`n" }
+  $match = [regex]::Match($content, '(?s)\A---\s*\r?\n(?<frontMatter>.*?)\r?\n---(?<rest>(?:\r?\n|$).*)\z')
+  $hide = $mode -eq "hide"
+
+  if ($match.Success) {
+    $frontMatter = $match.Groups['frontMatter'].Value
+    $rest = $match.Groups['rest'].Value
+    if ($hide) {
+      if ($frontMatter -match '(?mi)^\s*unlisted\s*:') {
+        $updatedFrontMatter = [regex]::Replace($frontMatter, '(?mi)^\s*unlisted\s*:\s*.+$', 'unlisted: true', 1)
+      }
+      else {
+        $updatedFrontMatter = if ([string]::IsNullOrWhiteSpace($frontMatter.Trim())) {
+          'unlisted: true'
+        }
+        else {
+          $frontMatter.TrimEnd("`r", "`n") + $newline + 'unlisted: true'
+        }
+      }
+    }
+    else {
+      $updatedFrontMatter = [regex]::Replace($frontMatter, '(?mi)^\s*unlisted\s*:\s*.+(?:\r?\n)?', '')
+      $updatedFrontMatter = $updatedFrontMatter.TrimEnd("`r", "`n")
+    }
+
+    $updatedContent = if ([string]::IsNullOrWhiteSpace($updatedFrontMatter)) {
+      $rest.TrimStart("`r", "`n")
+    }
+    else {
+      "---$newline$updatedFrontMatter$newline---$rest"
+    }
+    Write-Utf8NoBomFile -Path $target.FullPath -Content $updatedContent
+  }
+  elseif ($hide) {
+    $updatedContent = @(
+      '---'
+      'unlisted: true'
+      '---'
+      ''
+      $content.TrimStart("`r", "`n")
+    ) -join $newline
+    Write-Utf8NoBomFile -Path $target.FullPath -Content $updatedContent
+  }
+
+  return [pscustomobject]@{
+    Command = "visibility"
+    Target = $target.RelativePath
+    Hidden = $hide
+  }
+}
+
 function Invoke-DocsCheck {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
@@ -2960,6 +3664,255 @@ function Split-DocsStartArguments {
   }
 }
 
+function Get-DocsEditorApiDefaultPort {
+  return 38473
+}
+
+function Resolve-DocsEditorApiPort {
+  param([int]$PreferredPort = 0)
+
+  $candidatePorts = New-Object System.Collections.Generic.List[int]
+  if ($PreferredPort -gt 0) {
+    $candidatePorts.Add($PreferredPort) | Out-Null
+  }
+
+  $defaultPort = Get-DocsEditorApiDefaultPort
+  if ($defaultPort -gt 0 -and -not $candidatePorts.Contains($defaultPort)) {
+    $candidatePorts.Add($defaultPort) | Out-Null
+  }
+
+  for ($port = 38474; $port -le 38490; $port++) {
+    if (-not $candidatePorts.Contains($port)) {
+      $candidatePorts.Add($port) | Out-Null
+    }
+  }
+
+  foreach ($port in $candidatePorts) {
+    if (-not (Test-DocsStartPortInUse -Port $port)) {
+      return $port
+    }
+  }
+
+  throw "No free local port found for docs editor API (tried $($candidatePorts -join ', '))."
+}
+
+function Resolve-DocsPwshPath {
+  [CmdletBinding()]
+  param()
+
+  $candidatePaths = New-Object System.Collections.Generic.List[string]
+
+  try {
+    $currentProcessPath = (Get-Process -Id $PID -ErrorAction Stop).Path
+    if (-not [string]::IsNullOrWhiteSpace($currentProcessPath)) {
+      $candidatePaths.Add($currentProcessPath) | Out-Null
+    }
+  }
+  catch {
+    # no-op
+  }
+
+  $psHomePwsh = Join-Path $PSHOME "pwsh.exe"
+  if (-not [string]::IsNullOrWhiteSpace($psHomePwsh)) {
+    $candidatePaths.Add($psHomePwsh) | Out-Null
+  }
+
+  foreach ($commandName in @("pwsh", "powershell")) {
+    $resolvedCommand = Get-Command -Name $commandName -ErrorAction SilentlyContinue
+    if ($resolvedCommand -and -not [string]::IsNullOrWhiteSpace([string]$resolvedCommand.Source)) {
+      $candidatePaths.Add([string]$resolvedCommand.Source) | Out-Null
+    }
+  }
+
+  foreach ($candidate in @($candidatePaths | Select-Object -Unique)) {
+    if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+      return $candidate
+    }
+  }
+
+  throw "Unable to resolve a PowerShell executable path for docs runtime startup."
+}
+
+function Get-DocsEditorApiStatus {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $entry = Get-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot
+  if ($null -eq $entry) {
+    return [pscustomobject]@{
+      Status = "not_running"
+    }
+  }
+
+  $processId = [int]$entry.processId
+  $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+  $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
+  if (-not $isRunning) {
+    return [pscustomobject]@{
+      Status = "stale_state"
+      ProcessId = $processId
+      RootProcessId = $rootProcessId
+      Url = [string]$entry.url
+      LogPath = [string]$entry.logPath
+      ErrorLogPath = [string]$entry.errorLogPath
+    }
+  }
+
+  return [pscustomobject]@{
+    Status = "running"
+    ProcessId = $processId
+    RootProcessId = $rootProcessId
+    Url = [string]$entry.url
+    LogPath = [string]$entry.logPath
+    ErrorLogPath = [string]$entry.errorLogPath
+    StartedAt = [string]$entry.startedAt
+  }
+}
+
+function Start-DocsEditorApiBackground {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [int]$PreferredPort = 0
+  )
+
+  $existingStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+  if ($existingStatus.Status -eq "running") {
+    [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $existingStatus.Url)
+    return [pscustomobject]@{
+      AlreadyRunning = $true
+      ProcessId = $existingStatus.ProcessId
+      RootProcessId = $existingStatus.RootProcessId
+      Url = $existingStatus.Url
+      LogPath = $existingStatus.LogPath
+      ErrorLogPath = $existingStatus.ErrorLogPath
+      StartedAt = $existingStatus.StartedAt
+    }
+  }
+
+  if ($existingStatus.Status -eq "stale_state") {
+    [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+  }
+
+  $resolvedPort = Resolve-DocsEditorApiPort -PreferredPort $PreferredPort
+  $url = "http://127.0.0.1:$resolvedPort/"
+  $runtimeDir = Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $ResolvedRepoRoot
+  New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+  $scriptPath = Join-Path $PSScriptRoot "DocsEditorApiHost.ps1"
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "Docs editor API host script not found: $scriptPath"
+  }
+
+  $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
+  $stdoutPath = Join-Path $runtimeDir "docs-editor-api-$stamp.stdout.log"
+  $stderrPath = Join-Path $runtimeDir "docs-editor-api-$stamp.stderr.log"
+
+  $pwshPath = Resolve-DocsPwshPath
+  $modulePath = $MyInvocation.MyCommand.Module.Path
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    $modulePath = $PSCommandPath
+  }
+  if ([string]::IsNullOrWhiteSpace($modulePath)) {
+    throw "Unable to resolve docs module path for editor API startup."
+  }
+  $commandParts = @(
+    (ConvertTo-CmdArgument -Value "-NoLogo")
+    (ConvertTo-CmdArgument -Value "-NoProfile")
+    (ConvertTo-CmdArgument -Value "-ExecutionPolicy")
+    (ConvertTo-CmdArgument -Value "Bypass")
+    (ConvertTo-CmdArgument -Value "-File")
+    (ConvertTo-CmdArgument -Value $scriptPath)
+    (ConvertTo-CmdArgument -Value "-RepoRoot")
+    (ConvertTo-CmdArgument -Value $ResolvedRepoRoot)
+    (ConvertTo-CmdArgument -Value "-DocsModulePath")
+    (ConvertTo-CmdArgument -Value $modulePath)
+    (ConvertTo-CmdArgument -Value "-Port")
+    (ConvertTo-CmdArgument -Value "$resolvedPort")
+  )
+  $commandLine = ($commandParts -join ' ')
+
+  $process = Start-Process `
+    -FilePath $pwshPath `
+    -ArgumentList $commandLine `
+    -WorkingDirectory $ResolvedRepoRoot `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput $stdoutPath `
+    -RedirectStandardError $stderrPath `
+    -PassThru
+
+  Start-Sleep -Milliseconds 1200
+  $trackedProcessId = if (Test-ProcessRunning -ProcessId $process.Id) { $process.Id } else { Get-DescendantProcessId -RootProcessId $process.Id }
+  if ($null -eq $trackedProcessId) {
+    $errorText = ""
+    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) {
+      $errorText = (Get-Content -LiteralPath $stderrPath -Raw).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($errorText) -and (Test-Path -LiteralPath $stdoutPath -PathType Leaf)) {
+      $errorText = (Get-Content -LiteralPath $stdoutPath -Raw).Trim()
+    }
+    $details = if ([string]::IsNullOrWhiteSpace($errorText)) { "Check $stdoutPath and $stderrPath." } else { $errorText }
+    throw "Docs editor API exited immediately. $details"
+  }
+
+  $entry = [ordered]@{
+    version = 1
+    rootProcessId = $process.Id
+    processId = $trackedProcessId
+    startedAt = (Get-Date).ToString("o")
+    url = $url
+    port = $resolvedPort
+    logPath = $stdoutPath
+    errorLogPath = $stderrPath
+    scriptPath = $scriptPath
+    commandLine = $commandLine
+  }
+  [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $entry)
+  [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $url)
+
+  return [pscustomobject]@{
+    AlreadyRunning = $false
+    ProcessId = $trackedProcessId
+    RootProcessId = $process.Id
+    Url = $url
+    LogPath = $stdoutPath
+    ErrorLogPath = $stderrPath
+  }
+}
+
+function Stop-DocsEditorApiBackground {
+  param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
+
+  $entry = Get-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot
+  if ($null -eq $entry) {
+    Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+    return [pscustomobject]@{
+      Status = "not_running"
+    }
+  }
+
+  $processId = [int]$entry.processId
+  $rootProcessId = if ($null -ne $entry.rootProcessId) { [int]$entry.rootProcessId } else { $processId }
+  $wasRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
+
+  if ($wasRunning) {
+    $targetPid = if (Test-ProcessRunning -ProcessId $rootProcessId) { $rootProcessId } else { $processId }
+    $taskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
+    if (Test-Path -LiteralPath $taskKillPath -PathType Leaf) {
+      & $taskKillPath /PID $targetPid /T /F | Out-Null
+    }
+    else {
+      Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+  Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+  return [pscustomobject]@{
+    Status = if ($wasRunning) { "stopped" } else { "stale_state_removed" }
+    ProcessId = $processId
+    RootProcessId = $rootProcessId
+  }
+}
+
 function Invoke-DocsStartForeground {
   param(
     [Parameter(Mandatory)][string]$ResolvedRepoRoot,
@@ -2969,9 +3922,11 @@ function Invoke-DocsStartForeground {
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
   $url = Get-DocsStartUrl -StartArgs $normalizedStartArgs
   $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  $editorApi = Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
 
   Write-Output "Starting docs dev server in the current terminal."
   Write-Output "URL: $url"
+  Write-Output "Editor API: $($editorApi.Url)"
 
   Push-Location $websiteRoot
   try {
@@ -2987,6 +3942,9 @@ function Invoke-DocsStartForeground {
     }
   }
   finally {
+    if (-not $editorApi.AlreadyRunning) {
+      [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
+    }
     Pop-Location
   }
 }
@@ -2998,6 +3956,7 @@ function Invoke-DocsStartBackground {
   )
 
   $normalizedStartArgs = @(Get-NormalizedArgumentList -Values $StartArgs)
+  $editorApi = Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
   $existingEntries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
   $runningEntries = New-Object System.Collections.Generic.List[object]
   foreach ($entry in $existingEntries) {
@@ -3028,11 +3987,15 @@ function Invoke-DocsStartBackground {
 
     $shouldContinue = Read-DocsStartContinueChoice -Prompt "Start another docs server instance?"
     if (-not $shouldContinue) {
+      if (-not $editorApi.AlreadyRunning) {
+        [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
+      }
       return [pscustomobject]@{
         Command = "start"
         Aborted = $true
         AlreadyRunning = ($runningEntries.Count -gt 0)
         ExistingCount = $runningEntries.Count
+        EditorApiUrl = $editorApi.Url
       }
     }
   }
@@ -3052,7 +4015,7 @@ function Invoke-DocsStartBackground {
   }
 
   $commandLine = (@($npmCommandParts) | ForEach-Object { ConvertTo-CmdArgument "$_" }) -join ' '
-  $pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
+  $pwshPath = Resolve-DocsPwshPath
   $process = Start-Process `
     -FilePath $pwshPath `
     -ArgumentList @("-NoLogo", "-NoProfile", "-Command", $commandLine) `
@@ -3075,6 +4038,9 @@ function Invoke-DocsStartBackground {
     }
 
     $details = if ([string]::IsNullOrWhiteSpace($errorText)) { "Check $stdoutPath and $stderrPath." } else { $errorText }
+    if (-not $editorApi.AlreadyRunning) {
+      [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
+    }
     throw "Docs dev server exited immediately. $details"
   }
 
@@ -3104,6 +4070,9 @@ function Invoke-DocsStartBackground {
     ErrorLogPath = $stderrPath
     StatePath = $statePath
     Url = $url
+    EditorApiUrl = $editorApi.Url
+    EditorApiLogPath = $editorApi.LogPath
+    EditorApiErrorLogPath = $editorApi.ErrorLogPath
     NpmCommandLine = $commandLine
     TrackedServerCount = $updatedEntries.Count
   }
@@ -3113,7 +4082,17 @@ function Invoke-DocsStop {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
   $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
+  $editorStopResult = $null
+
   if ($entries.Count -eq 0) {
+    $editorStopResult = Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
+    if ($editorStopResult.Status -ne "not_running") {
+      return [pscustomobject]@{
+        Command = "stop"
+        Status = "editor_only_stopped"
+        EditorStatus = $editorStopResult.Status
+      }
+    }
     return [pscustomobject]@{
       Command = "stop"
       Status = "not_running"
@@ -3156,7 +4135,8 @@ function Invoke-DocsStop {
     $stoppedCount += 1
   }
 
-  Remove-DocsServerState -ResolvedRepoRoot $ResolvedRepoRoot
+  $editorStopResult = Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
+  [void](Save-DocsServerCompositeState -ResolvedRepoRoot $ResolvedRepoRoot -ServerEntries @() -EditorApiEntry $null)
 
   $status = if ($stoppedCount -gt 0) {
     if ($stoppedCount -gt 1) { "stopped_multiple" } else { "stopped" }
@@ -3171,17 +4151,33 @@ function Invoke-DocsStop {
     ProcessId = $firstProcessId
     StoppedCount = $stoppedCount
     StaleCount = $staleCount
+    EditorStatus = if ($null -ne $editorStopResult) { $editorStopResult.Status } else { "not_running" }
   }
 }
 
 function Invoke-DocsStatus {
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
+  $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
   $entries = @(Get-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot)
   if ($entries.Count -eq 0) {
+    if ($editorStatus.Status -eq "stale_state") {
+      [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+      Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+      $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+    }
+
+    if ($editorStatus.Status -eq "running") {
+      [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
+    }
+
     return [pscustomobject]@{
       Command = "status"
-      Status = "not_running"
+      Status = if ($editorStatus.Status -eq "running") { "editor_running_only" } else { "not_running" }
+      EditorStatus = $editorStatus.Status
+      EditorUrl = $editorStatus.Url
+      EditorLogPath = $editorStatus.LogPath
+      EditorErrorLogPath = $editorStatus.ErrorLogPath
     }
   }
 
@@ -3207,6 +4203,14 @@ function Invoke-DocsStatus {
     $firstStale = $staleEntries[0]
     $processId = [int]$firstStale.processId
     $rootProcessId = if ($null -ne $firstStale.rootProcessId) { [int]$firstStale.rootProcessId } else { $processId }
+    if ($editorStatus.Status -eq "stale_state") {
+      [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+      Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
+      $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+    }
+    if ($editorStatus.Status -eq "running") {
+      [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
+    }
     return [pscustomobject]@{
       Command = "status"
       Status = if ($staleEntries.Count -gt 1) { "stale_state_multiple" } else { "stale_state" }
@@ -3216,12 +4220,25 @@ function Invoke-DocsStatus {
       ErrorLogPath = [string]$firstStale.errorLogPath
       Url = [string]$firstStale.url
       StaleCount = $staleEntries.Count
+      EditorStatus = $editorStatus.Status
+      EditorUrl = $editorStatus.Url
+      EditorLogPath = $editorStatus.LogPath
+      EditorErrorLogPath = $editorStatus.ErrorLogPath
     }
   }
 
   $firstRunning = $runningEntries[0]
   $processId = [int]$firstRunning.processId
   $rootProcessId = if ($null -ne $firstRunning.rootProcessId) { [int]$firstRunning.rootProcessId } else { $processId }
+  if ($editorStatus.Status -eq "stale_state") {
+    [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
+    $editorStatus = Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
+    $editorStatus = Get-DocsEditorApiStatus -ResolvedRepoRoot $ResolvedRepoRoot
+  }
+  if ($editorStatus.Status -eq "running") {
+    [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
+  }
+
   return [pscustomobject]@{
     Command = "status"
     Status = if ($runningEntries.Count -gt 1) { "running_multiple" } else { "running" }
@@ -3235,6 +4252,10 @@ function Invoke-DocsStatus {
     RunningCount = $runningEntries.Count
     StaleCount = $staleEntries.Count
     RunningEntries = @($runningEntries.ToArray())
+    EditorStatus = $editorStatus.Status
+    EditorUrl = $editorStatus.Url
+    EditorLogPath = $editorStatus.LogPath
+    EditorErrorLogPath = $editorStatus.ErrorLogPath
   }
 }
 
@@ -3262,6 +4283,10 @@ function Invoke-DocsDoctor {
     ServerUrl = $status.Url
     ServerLogPath = $status.LogPath
     ServerErrorLogPath = $status.ErrorLogPath
+    EditorStatus = $status.EditorStatus
+    EditorApiUrl = $status.EditorUrl
+    EditorApiLogPath = $status.EditorLogPath
+    EditorApiErrorLogPath = $status.EditorErrorLogPath
   }
 }
 
@@ -3336,7 +4361,7 @@ function Invoke-DocsToolsMain {
 
   $command = Resolve-DocsToolsCommandAlias -CommandName ([string]$allArgs[0])
 
-  $remaining = if ($allArgs.Count -gt 1) { @($allArgs[1..($allArgs.Count - 1)]) } else { @() }
+  $remaining = if ($allArgs.Count -gt 1) { @(Get-NormalizedArgumentTail -Values $allArgs -Skip 1) } else { @() }
   if ($remaining.Count -gt 0 -and (Test-DocsToolsHelpToken -Token ([string]$remaining[0]))) {
     Write-Output (Get-DocsToolsCommandHelp -CommandName $command)
     return
@@ -3384,8 +4409,22 @@ function Invoke-DocsToolsMain {
       }
       return
     }
+    "visibility" {
+      $result = Invoke-DocsVisibility -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
+      if ($result.Hidden) {
+        Write-Output "Hidden '$($result.Target)' from site navigation."
+      }
+      else {
+        Write-Output "Showed '$($result.Target)' in site navigation."
+      }
+      return
+    }
     "theme" {
       Invoke-DocsThemeCommand -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
+      return
+    }
+    "site" {
+      Invoke-DocsSiteCommand -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
       return
     }
     "preview" {
@@ -3409,6 +4448,9 @@ function Invoke-DocsToolsMain {
       }
       Write-Output "Stdout log: $($result.LogPath)"
       Write-Output "Stderr log: $($result.ErrorLogPath)"
+      if ($result.EditorApiUrl) {
+        Write-Output "Editor API: $($result.EditorApiUrl)"
+      }
       return
     }
     "start" {
@@ -3439,6 +4481,15 @@ function Invoke-DocsToolsMain {
         }
         Write-Output "Stdout log: $($result.LogPath)"
         Write-Output "Stderr log: $($result.ErrorLogPath)"
+        if ($result.EditorApiUrl) {
+          Write-Output "Editor API: $($result.EditorApiUrl)"
+          if (-not [string]::IsNullOrWhiteSpace([string]$result.EditorApiLogPath)) {
+            Write-Output "Editor stdout log: $($result.EditorApiLogPath)"
+          }
+          if (-not [string]::IsNullOrWhiteSpace([string]$result.EditorApiErrorLogPath)) {
+            Write-Output "Editor stderr log: $($result.EditorApiErrorLogPath)"
+          }
+        }
         return
       }
 
@@ -3449,10 +4500,14 @@ function Invoke-DocsToolsMain {
       $result = Invoke-DocsStop -ResolvedRepoRoot $ResolvedRepoRoot
       switch ($result.Status) {
         "not_running" { Write-Output "Tracked background docs dev server is not running." }
+        "editor_only_stopped" { Write-Output "Stopped docs editor API runtime." }
         "stale_state_removed" { Write-Output "Removed stale background docs dev server state for PID $($result.ProcessId)." }
         "stale_state_removed_multiple" { Write-Output "Removed stale background docs dev server state entries ($($result.StaleCount))." }
         "stopped_multiple" { Write-Output "Stopped background docs dev servers ($($result.StoppedCount))." }
         default { Write-Output "Stopped background docs dev server (PID $($result.ProcessId))." }
+      }
+      if ($result.EditorStatus) {
+        Write-Output "Editor API status: $($result.EditorStatus)"
       }
       return
     }
@@ -3460,6 +4515,18 @@ function Invoke-DocsToolsMain {
       $result = Invoke-DocsStatus -ResolvedRepoRoot $ResolvedRepoRoot
       switch ($result.Status) {
         "not_running" { Write-Output "Tracked background docs dev server is not running." }
+        "editor_running_only" {
+          Write-Output "Docs server is not running, but editor API is active."
+          if ($result.EditorUrl) {
+            Write-Output "Editor API: $($result.EditorUrl)"
+          }
+          if ($result.EditorLogPath) {
+            Write-Output "Editor stdout log: $($result.EditorLogPath)"
+          }
+          if ($result.EditorErrorLogPath) {
+            Write-Output "Editor stderr log: $($result.EditorErrorLogPath)"
+          }
+        }
         "stale_state" {
           Write-Output "Background docs dev server is not running, but stale state still exists for PID $($result.ProcessId)."
           Write-Output "URL: $($result.Url)"
@@ -3486,6 +4553,18 @@ function Invoke-DocsToolsMain {
           Write-Output "Started: $($result.StartedAt)"
           Write-Output "Stdout log: $($result.LogPath)"
           Write-Output "Stderr log: $($result.ErrorLogPath)"
+        }
+      }
+      if ($result.EditorStatus) {
+        Write-Output "Editor API status: $($result.EditorStatus)"
+        if ($result.EditorUrl) {
+          Write-Output "Editor API: $($result.EditorUrl)"
+        }
+        if ($result.EditorLogPath) {
+          Write-Output "Editor stdout log: $($result.EditorLogPath)"
+        }
+        if ($result.EditorErrorLogPath) {
+          Write-Output "Editor stderr log: $($result.EditorErrorLogPath)"
         }
       }
       return
@@ -3518,6 +4597,16 @@ function Invoke-DocsToolsMain {
       }
       if ($result.ServerErrorLogPath) {
         Write-Output "Background docs dev server stderr log: $($result.ServerErrorLogPath)"
+      }
+      Write-Output "Editor API status: $($result.EditorStatus)"
+      if ($result.EditorApiUrl) {
+        Write-Output "Editor API URL: $($result.EditorApiUrl)"
+      }
+      if ($result.EditorApiLogPath) {
+        Write-Output "Editor API stdout log: $($result.EditorApiLogPath)"
+      }
+      if ($result.EditorApiErrorLogPath) {
+        Write-Output "Editor API stderr log: $($result.EditorApiErrorLogPath)"
       }
       return
     }

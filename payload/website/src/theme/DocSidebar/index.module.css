@@ -1,0 +1,228 @@
+.sidebarAuthoring {
+  position: relative;
+  box-sizing: border-box;
+  padding: 0.24rem 0.45rem 0.62rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  min-block-size: 100%;
+  max-block-size: 100%;
+}
+
+:global(.theme-doc-sidebar-container) {
+  margin-top: 0 !important;
+  height: auto;
+  min-height: calc(100dvh - var(--ifm-navbar-height));
+  max-height: none;
+  align-self: stretch;
+}
+
+:global(.theme-doc-sidebar-container [class^='sidebarViewport_']),
+:global(.theme-doc-sidebar-container [class*=' sidebarViewport_']) {
+  top: 0;
+  height: calc(100dvh - var(--ifm-navbar-height));
+  max-height: calc(100dvh - var(--ifm-navbar-height));
+}
+
+.sidebarAuthoring :global(.theme-doc-sidebar-menu) {
+  margin-top: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding-top: 0;
+  padding-bottom: 0.28rem;
+}
+
+.sidebarAuthoring :global(.menu__list-item[data-ue-docs-path]) {
+  position: relative;
+}
+
+.sidebarAuthoring :global(.menu__list-item-collapsible) {
+  position: relative;
+}
+
+.sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__link),
+.sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__list-item-collapsible > .menu__link) {
+  font-size: 1rem;
+  line-height: 1.26;
+  font-weight: 600;
+  padding-right: 5.4rem;
+}
+
+.sidebarAuthoring :global(.menu__list-item-collapsible > .menu__caret) {
+  align-self: center;
+  width: 1.08rem;
+  height: 1.08rem;
+  min-width: 1.08rem;
+  margin-right: 0.45rem;
+  padding: 0;
+  background-size: 0.62rem 0.62rem;
+  border-radius: 5px;
+}
+
+.sidebarAuthoring :global(.menu__list-item-collapsible > .menu__caret:hover) {
+  background-color: color-mix(in srgb, var(--ifm-color-primary) 10%, transparent);
+}
+
+@media (min-width: 997px) and (max-width: 1200px) {
+  .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__link),
+  .sidebarAuthoring :global(.menu__list-item[data-ue-docs-path] > .menu__list-item-collapsible > .menu__link) {
+    font-size: 0.94rem;
+    line-height: 1.22;
+    padding-right: 4.85rem;
+  }
+
+  .sidebarAuthoring :global(.menu__list-item-collapsible > .menu__caret) {
+    width: 1rem;
+    height: 1rem;
+    min-width: 1rem;
+    margin-right: 0.36rem;
+  }
+}
+
+.rowActions {
+  position: absolute;
+  top: 50%;
+  right: 2.5rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  z-index: 8;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.rowActionsVisible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.58rem;
+  height: 1.58rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 6px;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  cursor: pointer;
+  padding: 0;
+}
+
+.actionButton:hover {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+  background: color-mix(in srgb, var(--ifm-color-primary) 10%, transparent);
+}
+
+.actionButton:disabled {
+  opacity: 0.56;
+  cursor: default;
+}
+
+.actionIcon {
+  width: 0.92rem;
+  height: 0.92rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.caretExpanded {
+  transform: rotate(0deg);
+}
+
+.caretCollapsed {
+  transform: rotate(-90deg);
+}
+
+.statusText {
+  margin: 0.6rem 0.5rem 0;
+  font-size: 0.72rem;
+  color: var(--ifm-font-color-base);
+  opacity: 0.82;
+}
+
+.errorText {
+  margin: 0.6rem 0.5rem 0;
+  font-size: 0.72rem;
+  color: #b42318;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, #0f172a 52%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.dialogCard {
+  width: min(30rem, 92vw);
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 10px;
+  background: var(--ifm-background-surface-color);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.28);
+  padding: 0.9rem;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.dialogBody {
+  margin: 0.45rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.dialogInput {
+  width: 100%;
+  min-height: 2rem;
+  margin-top: 0.7rem;
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 7px;
+  padding: 0 0.58rem;
+  font-size: 0.84rem;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+
+.dialogLabel {
+  display: block;
+  margin-top: 0.7rem;
+}
+
+.dialogLabel span {
+  display: block;
+  margin-bottom: 0.28rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.dialogInput:focus {
+  border-color: var(--ifm-color-primary);
+  outline: 2px solid color-mix(in srgb, var(--ifm-color-primary) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.dialogActions {
+  margin-top: 0.8rem;
+  display: inline-flex;
+  gap: 0.25rem;
+}
