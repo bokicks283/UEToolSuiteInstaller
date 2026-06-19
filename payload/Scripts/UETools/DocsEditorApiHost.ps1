@@ -3190,8 +3190,8 @@ function Move-DocsNode {
     [string]$section.FullPath
   }
 
-  $sourceFullPath = Normalize-DocsFullPath ([string]$source.FullPath)
-  $destinationParentFullPath = Normalize-DocsFullPath $destinationParentDir
+  $sourceFullPath = Get-Normalized-DocsFullPath ([string]$source.FullPath)
+  $destinationParentFullPath = Get-Normalized-DocsFullPath $destinationParentDir
 
   $separator = [string][System.IO.Path]::DirectorySeparatorChar
 
