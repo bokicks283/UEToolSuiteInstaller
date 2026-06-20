@@ -130,6 +130,59 @@ function Write-TestPngFile {
   [System.IO.File]::WriteAllBytes($Path, $pngBytes)
 }
 
+function New-LegacyDocsSectionFixture {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  New-Item -ItemType Directory -Force -Path (Join-Path $TargetRoot "Docs\WorkflowStandards\ProjectStructure") | Out-Null
+  Write-Utf8NoBomFile -Path (Join-Path $TargetRoot "Docs\_domains.json") -Content @'
+{
+  "schemaVersion": 1,
+  "domains": [
+    {
+      "key": "workflow-standards",
+      "dirName": "WorkflowStandards",
+      "sidebarId": "workflow-standards-sidebar",
+      "label": "Workflow & Standards",
+      "position": 10,
+      "landingDoc": "WorkflowStandards/README",
+      "showLandingInSidebar": false,
+      "ownedRoots": ["WorkflowStandards"],
+      "ownedDocs": [],
+      "catchAll": false
+    }
+  ]
+}
+'@
+  Write-Utf8NoBomFile -Path (Join-Path $TargetRoot "Docs\WorkflowStandards\README.md") -Content @'
+---
+title: Workflow And Standards
+slug: /workflow-standards
+sidebar_position: 1
+---
+
+# Workflow And Standards
+'@
+  Write-Utf8NoBomFile -Path (Join-Path $TargetRoot "Docs\WorkflowStandards\_category_.json") -Content @'
+{
+  "label": "Workflow & Standards",
+  "position": 1,
+  "link": {
+    "type": "doc",
+    "id": "WorkflowStandards/README"
+  }
+}
+'@
+  Write-Utf8NoBomFile -Path (Join-Path $TargetRoot "Docs\WorkflowStandards\ProjectStructure\Target-Structure.md") -Content @'
+---
+title: Target Structure
+slug: /target-structure
+sidebar_position: 1
+---
+
+# Target Structure
+'@
+}
+
 try {
   Step "UE tool suite installer tests ($stamp)"
   Write-Log "Installer: $installerScript" Cyan
@@ -151,9 +204,9 @@ try {
       "Scripts\UETools\UEToolSuite.Aliases.psm1",
       "Scripts\UETools\UEToolSuite.Unreal.psm1",
       "Scripts\UETools\UEToolSuite.Docs.psm1",
-      "Docs\Setup.md",
-      "Docs\Pipeline\README.md",
-      "Docs\DocsSite\Docusaurus-Setup.md",
+      "Docs\WorkflowStandards\Setup.md",
+      "Docs\WorkflowStandards\Pipeline\README.md",
+      "Docs\WorkflowStandards\DocsSite\Docusaurus-Setup.md",
       "website\package.json",
       "website\docusaurus.config.ts",
       "website\.gitignore",
@@ -169,7 +222,8 @@ try {
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
   Assert-FileContains "case1 installed binary guard uasset rule" (Join-Path $targetRepo ".gitattributes") "*.uasset filter=lfs diff=lfs merge=binary -text"
-  Assert-FileContains "case1 default website theme is neutral" (Join-Path $targetRepo "website\src\css\custom.css") "--ifm-color-primary: #3a6ea5;"
+  Assert-FileContains "case1 default website custom css imports active theme" (Join-Path $targetRepo "website\src\css\custom.css") "@import '../../theme-presets/active-theme.css';"
+  Assert-FileContains "case1 default website theme is neutral" (Join-Path $targetRepo "website\theme-presets\active-theme.css") "--ifm-color-primary: #3a6ea5;"
   Assert-FileContains "case1 website title uses project name" (Join-Path $targetRepo "website\docusaurus.config.ts") "title: 'PortableSample Docs'"
   Assert-FileContains "case1 website custom field project name uses .uproject stem" (Join-Path $targetRepo "website\docusaurus.config.ts") "suiteProjectName: 'PortableSample'"
   Assert-FileContains "case1 website custom field theme id is neutral" (Join-Path $targetRepo "website\docusaurus.config.ts") "suiteThemeId: 'neutral'"
@@ -195,9 +249,9 @@ try {
   $docsLedgerPath = Join-Path $targetRepo ".ue-tools\state\docs-managed-ledger.json"
   Assert-PathExists "case2 docs ledger exists before update" $docsLedgerPath
   $docsLedger = Get-Content -LiteralPath $docsLedgerPath -Raw | ConvertFrom-Json
-  $autoUpdateRelativePath = "Docs/Pipeline/README.md"
-  $preservedRelativePath = "Docs/DocsSite/Authoring.md"
-  $missingRelativePath = "Docs/AI/README.md"
+  $autoUpdateRelativePath = "Docs/WorkflowStandards/Pipeline/README.md"
+  $preservedRelativePath = "Docs/WorkflowStandards/DocsSite/Authoring.md"
+  $missingRelativePath = "Docs/WorkflowStandards/AI/README.md"
   $autoUpdateTargetPath = Join-Path $targetRepo ($autoUpdateRelativePath -replace "/", "\")
   $preservedTargetPath = Join-Path $targetRepo ($preservedRelativePath -replace "/", "\")
   $missingTargetPath = Join-Path $targetRepo ($missingRelativePath -replace "/", "\")
@@ -219,9 +273,9 @@ try {
   Remove-Item -LiteralPath (Join-Path $targetRepo "website\src\css") -Recurse -Force
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "website\src\css") -Content "stale file blocking managed directory`n"
   $projectSpecificFiles = @(
-    [pscustomobject]@{ RelativePath = "Docs\AI\Project-Context.md"; Content = "project-specific ai context should survive`n" },
-    [pscustomobject]@{ RelativePath = "Docs\Pipeline\Project-Pipeline-Notes.md"; Content = "project-specific pipeline notes should survive`n" },
-    [pscustomobject]@{ RelativePath = "Docs\DocsSite\Local-DocsSite-Notes.md"; Content = "project-specific docs site notes should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\WorkflowStandards\AI\Project-Context.md"; Content = "project-specific ai context should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\WorkflowStandards\Pipeline\Project-Pipeline-Notes.md"; Content = "project-specific pipeline notes should survive`n" },
+    [pscustomobject]@{ RelativePath = "Docs\WorkflowStandards\DocsSite\Local-DocsSite-Notes.md"; Content = "project-specific docs site notes should survive`n" },
     [pscustomobject]@{ RelativePath = "website\src\pages\local-project-page.tsx"; Content = "project-specific docs page should survive`n" }
   )
   foreach ($projectSpecificFile in $projectSpecificFiles) {
@@ -282,7 +336,47 @@ try {
     Assert-PathExists "case2c candidate generated for preserved legacy docs file" (Join-Path $legacyReport[0].Directory.FullName "candidates\Docs\README.md")
   }
 
-  Step "Case 2d: managed git metadata removes duplicate unmanaged payload entries and reruns idempotently"
+  Step "Case 2d: install migrates legacy docs sections without RunInit"
+  $migrationInstallRepo = New-TargetRepo "legacy migration target"
+  New-LegacyDocsSectionFixture -TargetRoot $migrationInstallRepo
+  $legacySectionHashBeforeInstall = (Get-FileHash -LiteralPath (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\Target-Structure.md") -Algorithm SHA256).Hash
+  $migrationInstallResult = Invoke-Installer -TargetRoot $migrationInstallRepo -ExtraArgs @("-SkipTests", "-SkipWebsite")
+  Assert-Condition "case2d legacy migration install exits cleanly" ($migrationInstallResult.Code -eq 0) "exit=0" "exit=$($migrationInstallResult.Code)"
+  Assert-PathExists "case2d legacy migration category created" (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\_category_.json")
+  Assert-PathMissing "case2d legacy migration does not create readme" (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\README.md")
+  Assert-Condition "case2d child markdown hash preserved" ((Get-FileHash -LiteralPath (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\Target-Structure.md") -Algorithm SHA256).Hash -eq $legacySectionHashBeforeInstall) "hash preserved" "Target-Structure.md changed during install migration"
+  $migrationInstallCategoryText = Get-Content -LiteralPath (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\_category_.json") -Raw
+  Assert-FileContains "case2d migration category label preserved" (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\_category_.json") '"label": "ProjectStructure"'
+  Assert-Condition "case2d migration category omits link" ($migrationInstallCategoryText -notlike '*"link":*') "link omitted" "unexpected link generated"
+  $migrationReport = @(Get-ChildItem -LiteralPath (Join-Path $migrationInstallRepo ".ue-tools-installer-updates") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "Docs-Section-Migration.md" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+  Assert-Condition "case2d docs section migration report emitted" ($migrationReport.Count -eq 1) "report written" "migration report missing"
+  if ($migrationReport.Count -eq 1) {
+    $migrationReportText = Get-Content -LiteralPath $migrationReport[0].FullName -Raw
+    Assert-Condition "case2d migration report lists normalized section" ($migrationReportText -like "*WorkflowStandards/ProjectStructure*") "legacy section listed" "legacy section missing from migration report"
+  }
+  $migrationLedgerText = Get-Content -LiteralPath (Join-Path $migrationInstallRepo ".ue-tools\state\docs-managed-ledger.json") -Raw
+  Assert-Condition "case2d project migration category not added to managed ledger" ($migrationLedgerText -notlike "*WorkflowStandards/ProjectStructure/_category_.json*") "legacy category absent from ledger" "legacy category unexpectedly tracked as managed"
+
+  Step "Case 2e: rerunning install after migration is idempotent"
+  $migrationCategoryFirstRun = Get-Content -LiteralPath (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\_category_.json") -Raw
+  $migrationRerunResult = Invoke-Installer -TargetRoot $migrationInstallRepo -ExtraArgs @("-SkipTests", "-SkipWebsite")
+  Assert-Condition "case2e legacy migration rerun exits cleanly" ($migrationRerunResult.Code -eq 0) "exit=0" "exit=$($migrationRerunResult.Code)"
+  Assert-Condition "case2e legacy migration rerun is idempotent" ((Get-Content -LiteralPath (Join-Path $migrationInstallRepo "Docs\WorkflowStandards\ProjectStructure\_category_.json") -Raw) -eq $migrationCategoryFirstRun) "category unchanged" "category changed on rerun"
+
+  Step "Case 2f: SkipDocsSectionMigration preserves legacy section state"
+  $skipMigrationRepo = New-TargetRepo "skip docs section migration target"
+  New-LegacyDocsSectionFixture -TargetRoot $skipMigrationRepo
+  $skipMigrationResult = Invoke-Installer -TargetRoot $skipMigrationRepo -ExtraArgs @("-SkipTests", "-SkipWebsite", "-SkipDocsSectionMigration")
+  Assert-Condition "case2f skip docs section migration exits cleanly" ($skipMigrationResult.Code -eq 0) "exit=0" "exit=$($skipMigrationResult.Code)"
+  Assert-PathMissing "case2f skip migration leaves category absent" (Join-Path $skipMigrationRepo "Docs\WorkflowStandards\ProjectStructure\_category_.json")
+  $skipMigrationReport = @(Get-ChildItem -LiteralPath (Join-Path $skipMigrationRepo ".ue-tools-installer-updates") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "Docs-Section-Migration.md" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+  Assert-Condition "case2f skip migration report emitted" ($skipMigrationReport.Count -eq 1) "report written" "skip migration report missing"
+  if ($skipMigrationReport.Count -eq 1) {
+    $skipMigrationReportText = Get-Content -LiteralPath $skipMigrationReport[0].FullName -Raw
+    Assert-Condition "case2f skip migration report records skipped status" ($skipMigrationReportText -like "*Status: skipped-by-parameter*") "skip status recorded" "skip status missing from migration report"
+  }
+
+  Step "Case 2g: managed git metadata removes duplicate unmanaged payload entries and reruns idempotently"
   $managedGitMetadataRepo = New-TargetRepo "managed git metadata target"
   $payloadGitIgnore = Get-Content -LiteralPath (Join-Path $payloadRoot ".gitignore") -Raw
   $payloadGitAttributes = Get-Content -LiteralPath (Join-Path $payloadRoot ".gitattributes") -Raw
@@ -364,12 +458,15 @@ try {
 '@
   $themedResult = Invoke-Installer -TargetRoot $themedRepo -ExtraArgs @("-SkipTests", "-WebsiteTheme", "ocean", "-WebsiteLogoPath", $svgLogoPath)
   Assert-Condition "case5b themed install exits cleanly" ($themedResult.Code -eq 0) "exit=0" "exit=$($themedResult.Code)"
-  Assert-FileContains "case5b ocean theme copied to custom.css" (Join-Path $themedRepo "website\src\css\custom.css") "--ifm-color-primary: #0d7ea2;"
+  Assert-FileContains "case5b custom css imports active theme" (Join-Path $themedRepo "website\src\css\custom.css") "@import '../../theme-presets/active-theme.css';"
+  Assert-FileContains "case5b ocean theme copied to active-theme.css" (Join-Path $themedRepo "website\theme-presets\active-theme.css") "--ifm-color-primary: #0d7ea2;"
   Assert-FileContains "case5b config stores ocean theme id" (Join-Path $themedRepo "website\docusaurus.config.ts") "suiteThemeId: 'ocean'"
   Assert-FileContains "case5b config points logo src to branding asset" (Join-Path $themedRepo "website\docusaurus.config.ts") "src: 'img/branding/project-logo.svg'"
-  Assert-FileContains "case5b custom logo also rewires favicon" (Join-Path $themedRepo "website\docusaurus.config.ts") "favicon: 'img/branding/project-logo.svg'"
-  Assert-FileContains "case5b custom logo also rewires social card" (Join-Path $themedRepo "website\docusaurus.config.ts") "image: 'img/branding/project-logo.svg'"
+  Assert-FileContains "case5b custom logo also rewires favicon" (Join-Path $themedRepo "website\docusaurus.config.ts") "favicon: 'img/branding/project-favicon.svg'"
+  Assert-FileContains "case5b custom logo also rewires social card" (Join-Path $themedRepo "website\docusaurus.config.ts") "image: 'img/branding/project-social-card.svg'"
   Assert-PathExists "case5b svg logo copied into website branding assets" (Join-Path $themedRepo "website\static\img\branding\project-logo.svg")
+  Assert-PathExists "case5b svg favicon copied into website branding assets" (Join-Path $themedRepo "website\static\img\branding\project-favicon.svg")
+  Assert-PathExists "case5b svg social card copied into website branding assets" (Join-Path $themedRepo "website\static\img\branding\project-social-card.svg")
 
   Step "Case 5c: PNG logo is accepted and applied"
   $pngLogoRepo = New-TargetRepo "png logo target"
@@ -377,11 +474,14 @@ try {
   Write-TestPngFile -Path $pngLogoPath
   $pngLogoResult = Invoke-Installer -TargetRoot $pngLogoRepo -ExtraArgs @("-SkipTests", "-WebsiteTheme", "violet", "-WebsiteLogoPath", $pngLogoPath)
   Assert-Condition "case5c png logo install exits cleanly" ($pngLogoResult.Code -eq 0) "exit=0" "exit=$($pngLogoResult.Code)"
-  Assert-FileContains "case5c violet theme copied to custom.css" (Join-Path $pngLogoRepo "website\src\css\custom.css") "--ifm-color-primary: #6a53c1;"
+  Assert-FileContains "case5c custom css imports active theme" (Join-Path $pngLogoRepo "website\src\css\custom.css") "@import '../../theme-presets/active-theme.css';"
+  Assert-FileContains "case5c violet theme copied to active-theme.css" (Join-Path $pngLogoRepo "website\theme-presets\active-theme.css") "--ifm-color-primary: #6a53c1;"
   Assert-FileContains "case5c config points to png branding asset" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "src: 'img/branding/project-logo.png'"
-  Assert-FileContains "case5c custom png logo rewires favicon" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "favicon: 'img/branding/project-logo.png'"
-  Assert-FileContains "case5c custom png logo rewires social card" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "image: 'img/branding/project-logo.png'"
+  Assert-FileContains "case5c custom png logo rewires favicon" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "favicon: 'img/branding/project-favicon.png'"
+  Assert-FileContains "case5c custom png logo rewires social card" (Join-Path $pngLogoRepo "website\docusaurus.config.ts") "image: 'img/branding/project-social-card.png'"
   Assert-PathExists "case5c png logo copied into website branding assets" (Join-Path $pngLogoRepo "website\static\img\branding\project-logo.png")
+  Assert-PathExists "case5c png favicon copied into website branding assets" (Join-Path $pngLogoRepo "website\static\img\branding\project-favicon.png")
+  Assert-PathExists "case5c png social card copied into website branding assets" (Join-Path $pngLogoRepo "website\static\img\branding\project-social-card.png")
 
   Step "Case 5d: invalid website theme fails with clear allowed-values message"
   $invalidThemeRepo = New-TargetRepo "invalid theme target"
@@ -402,14 +502,14 @@ try {
   Assert-Condition "case5f skip website with theme/logo flags exits cleanly" ($skipWebsiteBypassResult.Code -eq 0) "exit=0" "exit=$($skipWebsiteBypassResult.Code)"
   Assert-PathMissing "case5f website remains skipped" (Join-Path $skipWebsiteBypassRepo "website\package.json")
 
-  Step "Case 5g: existing unmanaged website is preserved by default"
+  Step "Case 5g: PreserveExisting keeps an unmanaged website untouched"
   $preserveWebsiteRepo = New-TargetRepo "preserve website target"
   $preserveWebsiteRoot = Join-Path $preserveWebsiteRepo "website"
   New-Item -ItemType Directory -Force -Path (Join-Path $preserveWebsiteRoot "src\css") | Out-Null
   Write-Utf8NoBomFile -Path (Join-Path $preserveWebsiteRoot "package.json") -Content '{"name":"custom-site"}'
   Write-Utf8NoBomFile -Path (Join-Path $preserveWebsiteRoot "docusaurus.config.ts") -Content "export default { title: 'Custom Site' }`n"
   Write-Utf8NoBomFile -Path (Join-Path $preserveWebsiteRoot "src\css\custom.css") -Content "/* preserved custom css */`n:root { --ifm-color-primary: #ff0000; }`n"
-  $preserveWebsiteResult = Invoke-Installer -TargetRoot $preserveWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipDocs", "-WebsiteTheme", "not-a-real-theme")
+  $preserveWebsiteResult = Invoke-Installer -TargetRoot $preserveWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipDocs", "-WebsiteInstallMode", "PreserveExisting", "-WebsiteTheme", "not-a-real-theme")
   Assert-Condition "case5g unmanaged website preserve exits cleanly" ($preserveWebsiteResult.Code -eq 0) "exit=0" "exit=$($preserveWebsiteResult.Code)"
   Assert-FileContains "case5g custom css preserved" (Join-Path $preserveWebsiteRoot "src\css\custom.css") "--ifm-color-primary: #ff0000;"
   Assert-Condition "case5g output notes unmanaged website preserve mode" ($preserveWebsiteResult.Output -like "*Preserving current Docusaurus site*") "preserve guidance emitted" "preserve guidance missing"
@@ -424,9 +524,10 @@ try {
   Write-Utf8NoBomFile -Path (Join-Path $adoptWebsiteRoot "src\css\custom.css") -Content "/* stale css */`n:root { --ifm-color-primary: #ff0000; }`n"
   $adoptWebsiteResult = Invoke-Installer -TargetRoot $adoptWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipDocs", "-AdoptExistingWebsite", "-WebsiteTheme", "ocean")
   Assert-Condition "case5h adopt website exits cleanly" ($adoptWebsiteResult.Code -eq 0) "exit=0" "exit=$($adoptWebsiteResult.Code)"
-  Assert-FileContains "case5h adopted website receives managed theme css" (Join-Path $adoptWebsiteRoot "src\css\custom.css") "--ifm-color-primary: #0d7ea2;"
+  Assert-FileContains "case5h adopted website custom css imports active theme" (Join-Path $adoptWebsiteRoot "src\css\custom.css") "@import '../../theme-presets/active-theme.css';"
+  Assert-FileContains "case5h adopted website receives managed theme css" (Join-Path $adoptWebsiteRoot "theme-presets\active-theme.css") "--ifm-color-primary: #0d7ea2;"
   Assert-PathExists "case5h ownership marker created during adoption" (Join-Path $adoptWebsiteRoot ".ue-tools\ownership.json")
-  $adoptSnapshotMatches = @(Get-ChildItem -LiteralPath (Join-Path $adoptWebsiteRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*website-adopt-snapshot*" })
+  $adoptSnapshotMatches = @(Get-ChildItem -LiteralPath (Join-Path $adoptWebsiteRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*website*" })
   Assert-Condition "case5h pre-adopt website snapshot backup created" ($adoptSnapshotMatches.Count -gt 0) "backup count=$($adoptSnapshotMatches.Count)" "adopt snapshot backup missing"
 
   Step "Case 6: NoBackup replaces managed paths without writing backup output"

@@ -77,7 +77,16 @@ It also prepares installed optional tooling so commands are ready after init:
 - If `Scripts/UETools/UEToolSuite.Art.psm1` and `ArtSource/` exist, init checks that `ArtSource/_Template` has the expected `Source`, `Textures`, and `Exports` folders.
 - If optional tools are not installed in a target UE repo, init reports them as skipped instead of failing the core bootstrap.
 
+Docs section normalization is also part of installed repo readiness:
+
+- Normal installs and updates automatically normalize legacy docs sections that behave like real sections in SiteAdmin but still lack `_category_.json`.
+- `ue-tools init` reruns the same normalization pass unless `-SkipDocsSectionMigration` is supplied.
+- `ue-tools docs migrate-sections` exposes the same normalization logic directly, and `ue-tools docs migrate-sections --what-if` plans changes without writing files.
+- `ue-tools docs doctor` reports qualifying legacy sections and points to `ue-tools docs migrate-sections` as the remediation command.
+- Normalization writes only deterministic `_category_.json` files. It does not create `README.md`, landing docs, or generated-index links.
+
 Use `-SkipOptionalToolSetup` to skip optional prerequisite work entirely. Use `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, or `-SkipDocsBridgeInstall` for docs-specific control.
+Use `-SkipDocsSectionMigration` only when you intentionally need installer or init recovery without touching the target `Docs/` tree.
 
 ## UE Sync Workflow
 

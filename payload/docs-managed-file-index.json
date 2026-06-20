@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "payloadVersion": "1.0.0",
-  "generatedUtc": "2026-06-14T01:58:17Z",
+  "generatedUtc": "2026-06-22T01:13:19Z",
   "files": [
     {
       "relativePath": "Docs/_domains.json",
       "category": "docsShell",
-      "sha256": "f9afb72b51655569d0a8040e33cc8940aed6fbb356d9545762bb4f36ad0a2ff5"
+      "sha256": "fdfc9670815b6579a70ef177a531b92c1a40606abba68e4dff1b4e1272ad941e"
     },
     {
       "relativePath": "Docs/ProjectDocs/_category_.json",
       "category": "docsShell",
-      "sha256": "637080d295b4275e18c7e7bf82daee5c8467ebadbf11e6e4f90e149a59c4dfbc"
+      "sha256": "fa53055f603368a01989c97c3dfce9818e601b82cfd1e07c0abad193ae41649a"
     },
     {
       "relativePath": "Docs/ProjectDocs/README.md",
@@ -26,7 +26,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/_category_.json",
       "category": "docsShell",
-      "sha256": "a712e88b6eb17ebd18177497910e4afe454dea87fa634896e8b8fb5456a9e64b"
+      "sha256": "6bd9bb6a430f87a2068405679b89e6d1c833ea53645ab0ace6bc3c80223e5493"
     },
     {
       "relativePath": "Docs/WorkflowStandards/AI/_category_.json",
@@ -91,7 +91,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/DocsSite/Authoring.md",
       "category": "docs",
-      "sha256": "bc60afb6eda331977b16670c243bf5cd9e11682f74bd5e7f5bf844542eef1c51"
+      "sha256": "0cca8b20a1e155d470bc190d77d4a94b77fe4497f7b07340435041356307abfe"
     },
     {
       "relativePath": "Docs/WorkflowStandards/DocsSite/Docusaurus-Setup.md",
@@ -121,7 +121,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/Setup.md",
       "category": "docs",
-      "sha256": "7944f1467d898a6a50355ea796e7fa53cdd931f0ae1010488a26c38e77a57261"
+      "sha256": "7e57fe19d9d16ead1aad6bd34a85d2af9e1769b8e877442f893c87384f730e41"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Testing.md",

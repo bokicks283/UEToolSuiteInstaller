@@ -26,6 +26,7 @@ param(
   [switch]$SkipShellAliases,
   [switch]$SkipOptionalToolSetup,
   [switch]$SkipDocsSetup,
+  [switch]$SkipDocsSectionMigration,
   [switch]$SkipDocsNpmInstall,
   [switch]$ForceDocsNpmInstall,
   [switch]$SkipDocsBridgeInstall,
@@ -627,6 +628,161 @@ function Ensure-DocsCategoryMetadataFiles {
 
   Ensure-DocsCategoryMetadataChildren -DocsRootPath $docsRoot -ParentDir $docsRoot -CreatedList $created
   return @($created.ToArray())
+}
+
+function Write-DocsSectionMigrationReport {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [AllowNull()]$MigrationResult = $null,
+    [string]$Status = "completed",
+    [string]$ErrorMessage = ""
+  )
+
+  $reportRoot = Join-Path $TargetRoot ".ue-tools-installer-updates\$InstallStamp"
+  if (-not (Test-Path -LiteralPath $reportRoot -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $reportRoot | Out-Null
+  }
+
+  $jsonPath = Join-Path $reportRoot "docs-section-migration.json"
+  $markdownPath = Join-Path $reportRoot "Docs-Section-Migration.md"
+
+  $plannedFiles = @()
+  $detectedLegacySections = @()
+  $createdFiles = @()
+  $skippedEntries = @()
+  $warnings = @()
+  $changed = $false
+  if ($null -ne $MigrationResult) {
+    $plannedFiles = @($MigrationResult.PlannedFiles | ForEach-Object {
+        [ordered]@{
+          relativePath = [string]$_.RelativePath
+          label        = [string]$_.Label
+          position     = $_.Position
+        }
+      })
+    $detectedLegacySections = @($MigrationResult.DetectedLegacySections | ForEach-Object {
+        [ordered]@{
+          relativePath = [string]$_.RelativePath
+          reason       = [string]$_.Reason
+        }
+      })
+    $createdFiles = @($MigrationResult.CreatedFiles | ForEach-Object {
+        (Get-RelativePathCompat -BasePath $TargetRoot -TargetPath ([string]$_)).Replace("\", "/")
+      })
+    $skippedEntries = @($MigrationResult.SkippedEntries | ForEach-Object {
+        [ordered]@{
+          kind         = [string]$_.Kind
+          relativePath = [string]$_.RelativePath
+          reason       = [string]$_.Reason
+        }
+      })
+    $warnings = @($MigrationResult.Warnings | ForEach-Object {
+        [ordered]@{
+          relativePath = [string]$_.RelativePath
+          reason       = [string]$_.Reason
+        }
+      })
+    $changed = [bool]$MigrationResult.Changed
+  }
+
+  $document = [ordered]@{
+    schemaVersion         = 1
+    generatedUtc          = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    status                = $Status
+    changed               = $changed
+    detectedLegacySections = $detectedLegacySections
+    plannedFiles          = $plannedFiles
+    createdFiles          = $createdFiles
+    skippedEntries        = $skippedEntries
+    warnings              = $warnings
+    error                 = $ErrorMessage
+  }
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add("# UE Tool Suite Docs Section Migration Report") | Out-Null
+  $lines.Add("") | Out-Null
+  $lines.Add("- Status: $Status") | Out-Null
+  $lines.Add("- Changed: $changed") | Out-Null
+  $lines.Add("- Legacy sections detected: $($detectedLegacySections.Count)") | Out-Null
+  $lines.Add("- Metadata files created: $($createdFiles.Count)") | Out-Null
+  $lines.Add("- Skipped entries: $($skippedEntries.Count)") | Out-Null
+  $lines.Add("") | Out-Null
+
+  if ($plannedFiles.Count -gt 0) {
+    $lines.Add("## Planned Files") | Out-Null
+    foreach ($plannedFile in $plannedFiles) {
+      $lines.Add("- $($plannedFile.relativePath) -> label=`"$($plannedFile.label)`", position=$($plannedFile.position)") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  if ($skippedEntries.Count -gt 0) {
+    $lines.Add("## Skipped Entries") | Out-Null
+    foreach ($skippedEntry in $skippedEntries) {
+      $lines.Add("- $($skippedEntry.kind): $($skippedEntry.relativePath) ($($skippedEntry.reason))") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ErrorMessage)) {
+    $lines.Add("## Error") | Out-Null
+    $lines.Add($ErrorMessage) | Out-Null
+    $lines.Add("") | Out-Null
+  }
+
+  Write-Utf8NoBomFile -Path $jsonPath -Content ($document | ConvertTo-Json -Depth 12)
+  Write-Utf8NoBomFile -Path $markdownPath -Content ($lines -join "`n")
+
+  return [pscustomobject]@{
+    JsonPath     = $jsonPath
+    MarkdownPath = $markdownPath
+  }
+}
+
+function Invoke-InstalledDocsSectionMigration {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [switch]$SkipMigration
+  )
+
+  $docsRoot = Join-Path $TargetRoot "Docs"
+  $docsModulePath = Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+  if (-not (Test-Path -LiteralPath $docsRoot -PathType Container) -or -not (Test-Path -LiteralPath $docsModulePath -PathType Leaf)) {
+    return [pscustomobject]@{
+      Status     = "not-applicable"
+      Changed    = $false
+      ReportPath = $null
+      Result     = $null
+    }
+  }
+
+  if ($SkipMigration) {
+    $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -Status "skipped-by-parameter"
+    return [pscustomobject]@{
+      Status     = "skipped-by-parameter"
+      Changed    = $false
+      ReportPath = $reportPaths.MarkdownPath
+      Result     = $null
+    }
+  }
+
+  $docsModule = Import-Module -Name $docsModulePath -Force -DisableNameChecking -PassThru
+  try {
+    $result = & $docsModule { param($repoRoot) Invoke-DocsSectionMigration -ResolvedRepoRoot $repoRoot } $TargetRoot
+    $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -MigrationResult $result -Status "completed"
+    return [pscustomobject]@{
+      Status     = "completed"
+      Changed    = [bool]$result.Changed
+      ReportPath = $reportPaths.MarkdownPath
+      Result     = $result
+    }
+  }
+  catch {
+    $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -Status "failed" -ErrorMessage $_.Exception.Message
+    throw ("Docs section migration failed. Review: {0}. {1}" -f $reportPaths.MarkdownPath, $_.Exception.Message)
+  }
 }
 
 function Apply-WebsiteThemeAndBranding {
@@ -1444,7 +1600,25 @@ function Copy-ManagedWebsiteIndexedFile {
 
   $parent = Split-Path -Path $targetPath -Parent
   if (-not [string]::IsNullOrWhiteSpace($parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    $current = $parent
+    $directoryChain = New-Object System.Collections.Generic.List[string]
+    while (-not [string]::IsNullOrWhiteSpace($current) -and (Test-PathInsideRoot -Root $TargetRoot -Path $current)) {
+      $directoryChain.Add($current) | Out-Null
+      $current = Split-Path -Path $current -Parent
+    }
+
+    $directoryPaths = @($directoryChain.ToArray())
+    [array]::Reverse($directoryPaths)
+    foreach ($directoryPath in $directoryPaths) {
+      if ((Test-Path -LiteralPath $directoryPath) -and -not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+        $backupRelativePath = Get-RelativePathCompat -BasePath $TargetRoot -TargetPath $directoryPath
+        Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $backupRelativePath -ExistingPath $directoryPath -BackupRoot $BackupRoot
+        Remove-Item -LiteralPath $directoryPath -Force
+      }
+      if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $directoryPath | Out-Null
+      }
+    }
   }
 
   Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
@@ -2473,9 +2647,18 @@ if (-not $SkipDocs) {
     -OverrideMap $websiteOverrideMap `
     -IncludeCodingStandards:(-not $SkipCodingStandardsTools)
 
-  $createdCategoryFiles = @(Ensure-DocsCategoryMetadataFiles -TargetRoot $resolvedTargetRoot -InstalledList $installed)
-  if ($createdCategoryFiles.Count -gt 0) {
-    Info "Created docs category metadata files: $($createdCategoryFiles.Count)"
+  $docsSectionMigration = Invoke-InstalledDocsSectionMigration `
+    -TargetRoot $resolvedTargetRoot `
+    -InstallStamp $installStamp `
+    -SkipMigration:$SkipDocsSectionMigration
+  if ($docsSectionMigration.ReportPath) {
+    Info "Docs section migration report: $($docsSectionMigration.ReportPath)"
+  }
+  if ($docsSectionMigration.Status -eq "skipped-by-parameter") {
+    Warn "Skipped docs section migration by parameter."
+  }
+  elseif ($docsSectionMigration.Changed) {
+    Info "Created docs section metadata files: $(@($docsSectionMigration.Result.CreatedFiles).Count)"
   }
 }
 
@@ -2546,6 +2729,7 @@ if ($RunInit) {
   if ($SkipLfsPull) { $initArgs += "-SkipLfsPull" }
   if ($SkipOptionalToolSetup) { $initArgs += "-SkipOptionalToolSetup" }
   if ($SkipDocsSetup) { $initArgs += "-SkipDocsSetup" }
+  if ($SkipDocsSectionMigration) { $initArgs += "-SkipDocsSectionMigration" }
   if ($SkipDocsNpmInstall) { $initArgs += "-SkipDocsNpmInstall" }
   if ($ForceDocsNpmInstall) { $initArgs += "-ForceDocsNpmInstall" }
   if ($SkipDocsBridgeInstall) { $initArgs += "-SkipDocsBridgeInstall" }

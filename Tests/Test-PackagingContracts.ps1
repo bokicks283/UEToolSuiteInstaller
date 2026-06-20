@@ -216,6 +216,7 @@ try {
   Assert-HasLiteral -Name "docs module starts editor api in foreground start" -Text $docsModuleText -Needle "Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot"
   Assert-HasLiteral -Name "docs module writes editor runtime config" -Text $docsModuleText -Needle "editor-runtime.json"
   Assert-HasLiteral -Name "docs module exposes visibility command" -Text $docsModuleText -Needle "ue-tools docs visibility"
+  Assert-HasLiteral -Name "docs module exposes migrate-sections command" -Text $docsModuleText -Needle "ue-tools docs migrate-sections"
   Assert-LacksLiteral -Name "docs module removed docs edit command" -Text $docsModuleText -Needle "ue-tools docs edit"
   Assert-LacksLiteral -Name "docs config removed editor navbar route" -Text $docsConfigText -Needle "to: '/editor'"
   Assert-Condition -Name "docs payload omits standalone editor route" -Condition (-not (Test-Path -LiteralPath $docsStandaloneEditorPagePath -PathType Leaf)) -PassDetail "standalone editor page absent" -FailDetail "unexpected file: $docsStandaloneEditorPagePath"
@@ -229,17 +230,17 @@ try {
   Assert-HasLiteral -Name "docs sidebar wraps Docusaurus original component" -Text $docsSidebarText -Needle "@theme-original/DocSidebar"
   Assert-LacksLiteral -Name "docs sidebar no longer fetches api tree at read time" -Text $docsSidebarText -Needle "/api/tree"
   Assert-LacksLiteral -Name "docs sidebar no longer fetches domains at read time" -Text $docsSidebarText -Needle "/api/domains"
-  Assert-HasLiteral -Name "site admin panel exposes dedicated structure ordering surface" -Text $docsAuthoringPanelText -Needle 'Structure ordering'
+  Assert-HasLiteral -Name "site admin panel exposes dedicated structure ordering surface" -Text $docsAuthoringPanelText -Needle 'Save Structure'
   Assert-HasLiteral -Name "site admin panel exposes hide from site action" -Text $docsAuthoringPanelText -Needle 'Hide From Site'
   Assert-HasLiteral -Name "site admin panel exposes show in site action" -Text $docsAuthoringPanelText -Needle 'Show In Site'
-  Assert-HasLiteral -Name "site admin panel exposes landing visibility toggle" -Text $docsAuthoringPanelText -Needle 'Show landing in sidebar'
+  Assert-HasLiteral -Name "site admin panel exposes landing visibility toggle" -Text $docsAuthoringPanelText -Needle 'Show landing page in sidebar'
   Assert-HasLiteral -Name "doc layout exposes single edit entrypoint" -Text $docsDocItemLayoutText -Needle "setEditMode(true)"
   Assert-HasLiteral -Name "doc layout exposes page visibility action" -Text $docsDocItemLayoutText -Needle "toggleCurrentPageVisibility"
   Assert-HasLiteral -Name "doc layout persists unlisted visibility state" -Text $docsDocItemLayoutText -Needle "'unlisted'"
   Assert-HasLiteral -Name "doc layout renders hidden page notice from current page state" -Text $docsDocItemLayoutText -Needle "This page is hidden from site navigation."
   Assert-HasLiteral -Name "doc layout uses tiptap editor content" -Text $docsDocItemLayoutText -Needle "EditorContent"
   Assert-HasLiteral -Name "doc layout exposes formatting toolbar" -Text $docsDocItemLayoutText -Needle "toggleBold"
-  Assert-HasLiteral -Name "doc layout exposes alignment toolbar" -Text $docsDocItemLayoutText -Needle "setTextAlign('center')"
+  Assert-HasLiteral -Name "doc layout exposes alignment toolbar" -Text $docsDocItemLayoutText -Needle "applyTextAlignment(activeEditor, 'center')"
   Assert-HasLiteral -Name "doc layout exposes link insert UI" -Text $docsDocItemLayoutText -Needle "Insert link"
   Assert-HasLiteral -Name "doc layout exposes image insert UI" -Text $docsDocItemLayoutText -Needle "Insert image"
   Assert-HasLiteral -Name "doc layout exposes task list UI" -Text $docsDocItemLayoutText -Needle "Task list"

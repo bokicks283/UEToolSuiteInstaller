@@ -91,6 +91,7 @@ Create:
   new-section, create-section   Create a docs section
   new-page, create-page         Create a page at Docs root or inside a section
   reorder                       Reorder a page or section and shift sibling positions
+  migrate-sections              Normalize legacy docs sections into _category_.json sections
   visibility                    Hide/show a doc page from site navigation using front matter
 
 Run:
@@ -1192,7 +1193,7 @@ function Get-NormalizedArgumentTail {
     $tail.Add($stringValue) | Out-Null
   }
 
-  return ,($tail.ToArray())
+  return @($tail.ToArray())
 }
 
 function Resolve-DocsToolsCommandAlias {
@@ -1591,6 +1592,7 @@ Examples:
   ue-tools docs create-page Setup -Title "Setup"
   ue-tools docs create-page Workflow Daily-Flow -Title "Daily Flow" -SidebarLabel "Daily Flow"
   ue-tools docs reorder Art-Source 4
+  ue-tools docs migrate-sections --what-if
   ue-tools docs start --port 3001
   ue-tools docs start --background --port 3001
   ue-tools docs docusaurus docs:version 1.0.0 --skip-feedback
@@ -1802,6 +1804,29 @@ Examples:
   ue-tools docs reorder Art-Source 4
   ue-tools docs reorder Workflow 3
   ue-tools docs reorder Workflow/Daily-Flow 2
+"@
+      return
+    }
+    "migrate-sections" {
+@"
+ue-tools docs migrate-sections
+
+Usage:
+  ue-tools docs migrate-sections [--what-if]
+
+Behavior:
+  - Finds legacy docs directories that the editor/navigation model exposes as sections but that lack `_category_.json`
+  - Plans deterministic `_category_.json` files with a stable `label` and preserved `position`
+  - Writes only `_category_.json`
+  - Preserves current visible navigation order
+  - Never overwrites an existing `_category_.json`
+
+Options:
+  --what-if, -WhatIf            Plan the migration and report what would change without writing files
+
+Examples:
+  ue-tools docs migrate-sections
+  ue-tools docs migrate-sections --what-if
 "@
       return
     }
@@ -2068,7 +2093,7 @@ function Parse-SubcommandArguments {
     [string[]]$MultiValueNames = @()
   )
 
-  $argumentList = @($CommandArguments)
+  $argumentList = @(Get-NormalizedArgumentList -Values $CommandArguments)
   $positionals = New-Object System.Collections.Generic.List[string]
   $values = @{}
   $multiValues = @{}
@@ -2569,6 +2594,498 @@ function Build-CategoryMetadataContent {
   return (($Metadata | ConvertTo-Json -Depth 10) + "`r`n")
 }
 
+function Test-DocsNavigableMarkdownFile {
+  param([Parameter(Mandatory)][System.IO.FileSystemInfo]$FileInfo)
+
+  return (
+    $FileInfo.Extension.Equals(".md", [System.StringComparison]::OrdinalIgnoreCase) -or
+    $FileInfo.Extension.Equals(".mdx", [System.StringComparison]::OrdinalIgnoreCase)
+  )
+}
+
+function Test-DocsExcludedDirectoryName {
+  param([Parameter(Mandatory)][string]$Name)
+
+  if ([string]::IsNullOrWhiteSpace($Name)) {
+    return $false
+  }
+
+  if ($Name.StartsWith(".")) {
+    return $true
+  }
+
+  $excludedNames = @(
+    "node_modules",
+    "build",
+    "build-debug",
+    ".docusaurus",
+    ".ue-tools",
+    ".ue-tools-installer-updates",
+    "Results",
+    "TestResults",
+    "Snapshots",
+    "Templates",
+    "bin",
+    "obj"
+  )
+
+  return ($excludedNames -contains $Name)
+}
+
+function Get-DocsDomainsConfigPathForRoot {
+  param([Parameter(Mandatory)][string]$DocsRoot)
+
+  return (Join-Path $DocsRoot "_domains.json")
+}
+
+function Read-DocsDomainsConfigForRoot {
+  param([Parameter(Mandatory)][string]$DocsRoot)
+
+  $configPath = Get-DocsDomainsConfigPathForRoot -DocsRoot $DocsRoot
+  if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    return $null
+  }
+
+  try {
+    return (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json)
+  }
+  catch {
+    return $null
+  }
+}
+
+function Get-DocsConfiguredDomainRootSet {
+  param([Parameter(Mandatory)][string]$DocsRoot)
+
+  $roots = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+  $config = Read-DocsDomainsConfigForRoot -DocsRoot $DocsRoot
+  if ($null -eq $config -or $null -eq $config.domains) {
+    return ,$roots
+  }
+
+  foreach ($entry in @($config.domains)) {
+    if ($null -eq $entry) { continue }
+
+    foreach ($candidate in @([string]$entry.dirName, [string]$entry.path)) {
+      $normalizedCandidate = $candidate.Trim().Replace('\', '/').Trim('/')
+      if ([string]::IsNullOrWhiteSpace($normalizedCandidate)) {
+        continue
+      }
+
+      if ($normalizedCandidate -notmatch '/') {
+        [void]$roots.Add($normalizedCandidate)
+      }
+    }
+
+    foreach ($ownedRoot in @($entry.ownedRoots)) {
+      $normalizedOwnedRoot = ([string]$ownedRoot).Trim().Replace('\', '/').Trim('/')
+      if ([string]::IsNullOrWhiteSpace($normalizedOwnedRoot)) {
+        continue
+      }
+
+      if ($normalizedOwnedRoot -notmatch '/') {
+        [void]$roots.Add($normalizedOwnedRoot)
+      }
+    }
+  }
+
+  return ,$roots
+}
+
+function Get-DocsSectionDisplayLabel {
+  param([Parameter(Mandatory)][string]$DirectoryPath)
+
+  $categoryPath = Join-Path $DirectoryPath "_category_.json"
+  if (Test-Path -LiteralPath $categoryPath -PathType Leaf) {
+    try {
+      $categoryJson = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
+      $label = ([string]$categoryJson.label).Trim()
+      if (-not [string]::IsNullOrWhiteSpace($label)) {
+        return $label
+      }
+    }
+    catch {
+    }
+  }
+
+  foreach ($candidateName in @("README.md", "README.mdx", "index.md", "index.mdx")) {
+    $candidatePath = Join-Path $DirectoryPath $candidateName
+    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
+      continue
+    }
+
+    try {
+      $content = Get-Content -LiteralPath $candidatePath -Raw
+      $frontMatter = Get-FrontMatterBlock -Content $content
+      $title = Get-FrontMatterValue -FrontMatter $frontMatter -Key "title"
+      if (-not [string]::IsNullOrWhiteSpace($title)) {
+        return [string]$title
+      }
+
+      $headingMatch = [regex]::Match($content, '(?m)^\#\s+(?<title>.+?)\s*$')
+      if ($headingMatch.Success) {
+        return $headingMatch.Groups['title'].Value.Trim()
+      }
+    }
+    catch {
+    }
+  }
+
+  return [System.IO.Path]::GetFileName($DirectoryPath)
+}
+
+function Get-DocsLegacySectionFinding {
+  param(
+    [Parameter(Mandatory)][string]$DocsRoot,
+    [Parameter(Mandatory)][string]$DirectoryPath,
+    [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.HashSet[string]]$ConfiguredDomainRoots
+  )
+
+  Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $DirectoryPath
+  $fullDirectoryPath = [System.IO.Path]::GetFullPath($DirectoryPath)
+  $relativePath = (Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $fullDirectoryPath) -replace '\\', '/'
+  if ($relativePath -eq ".") {
+    $relativePath = ""
+  }
+
+  $directoryName = [System.IO.Path]::GetFileName($fullDirectoryPath)
+  $categoryPath = Join-Path $fullDirectoryPath "_category_.json"
+
+  if (Test-DocsExcludedDirectoryName -Name $directoryName) {
+    return [pscustomobject]@{
+      Kind         = "excluded-directory"
+      RelativePath = $relativePath
+      FullPath     = $fullDirectoryPath
+      Reason       = "Excluded/generated directory."
+      Qualifies    = $false
+    }
+  }
+
+  $ancestorPath = Split-Path -Parent $fullDirectoryPath
+  while (
+    -not [string]::IsNullOrWhiteSpace($ancestorPath) -and
+    -not [System.IO.Path]::GetFullPath($ancestorPath).Equals([System.IO.Path]::GetFullPath($DocsRoot), [System.StringComparison]::OrdinalIgnoreCase)
+  ) {
+    if (Test-DocsExcludedDirectoryName -Name ([System.IO.Path]::GetFileName($ancestorPath))) {
+      return [pscustomobject]@{
+        Kind         = "excluded-directory"
+        RelativePath = $relativePath
+        FullPath     = $fullDirectoryPath
+        Reason       = "Directory is inside an excluded/generated directory."
+        Qualifies    = $false
+      }
+    }
+
+    $nextAncestorPath = Split-Path -Parent $ancestorPath
+    if ($nextAncestorPath -eq $ancestorPath) {
+      break
+    }
+    $ancestorPath = $nextAncestorPath
+  }
+
+  if (Test-Path -LiteralPath $categoryPath -PathType Leaf) {
+    try {
+      $null = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
+      return [pscustomobject]@{
+        Kind         = "marked-section"
+        RelativePath = $relativePath
+        FullPath     = $fullDirectoryPath
+        Reason       = "Section already has _category_.json."
+        Qualifies    = $false
+      }
+    }
+    catch {
+      return [pscustomobject]@{
+        Kind         = "malformed-category"
+        RelativePath = $relativePath
+        FullPath     = $fullDirectoryPath
+        Reason       = "Existing _category_.json is malformed and will not be overwritten."
+        Qualifies    = $false
+      }
+    }
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($relativePath) -and $relativePath -notmatch '/' -and $ConfiguredDomainRoots.Contains($relativePath)) {
+    return [pscustomobject]@{
+      Kind         = "domain-root"
+      RelativePath = $relativePath
+      FullPath     = $fullDirectoryPath
+      Reason       = "Configured domain-owned root is controlled by _domains.json."
+      Qualifies    = $false
+    }
+  }
+
+  $navigableFiles = @(
+    Get-ChildItem -LiteralPath $fullDirectoryPath -File -ErrorAction SilentlyContinue |
+      Where-Object { Test-DocsNavigableMarkdownFile -FileInfo $_ }
+  )
+  if ($navigableFiles.Count -gt 0) {
+    return [pscustomobject]@{
+      Kind         = "legacy-section"
+      RelativePath = $relativePath
+      FullPath     = $fullDirectoryPath
+      Reason       = "Directory is exposed as a section by navigable Markdown/MDX descendants but has no _category_.json."
+      Qualifies    = $true
+    }
+  }
+
+  $allChildEntries = @(
+    Get-ChildItem -LiteralPath $fullDirectoryPath -Force -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -ne "_category_.json" }
+  )
+  if ($allChildEntries.Count -eq 0) {
+    return [pscustomobject]@{
+      Kind         = "empty-directory"
+      RelativePath = $relativePath
+      FullPath     = $fullDirectoryPath
+      Reason       = "Directory is empty."
+      Qualifies    = $false
+    }
+  }
+
+  return [pscustomobject]@{
+    Kind         = "asset-only-directory"
+    RelativePath = $relativePath
+    FullPath     = $fullDirectoryPath
+    Reason       = "Directory has no navigable Markdown/MDX content."
+    Qualifies    = $false
+  }
+}
+
+function Get-DocsSectionNormalizationAudit {
+  param(
+    [Parameter(Mandatory)][string]$DocsRoot,
+    [string[]]$ScopeDirectories = @()
+  )
+
+  $configuredDomainRoots = Get-DocsConfiguredDomainRootSet -DocsRoot $DocsRoot
+  $scanRoots = New-Object System.Collections.Generic.List[string]
+  if (@($ScopeDirectories).Count -eq 0) {
+    $scanRoots.Add([System.IO.Path]::GetFullPath($DocsRoot)) | Out-Null
+  }
+  else {
+    $seenRoots = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($scopeDirectory in @($ScopeDirectories)) {
+      if ([string]::IsNullOrWhiteSpace([string]$scopeDirectory)) { continue }
+      $resolvedScope = [System.IO.Path]::GetFullPath([string]$scopeDirectory)
+      if (-not $resolvedScope.Equals([System.IO.Path]::GetFullPath($DocsRoot), [System.StringComparison]::OrdinalIgnoreCase)) {
+        Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $resolvedScope
+      }
+      if (-not (Test-Path -LiteralPath $resolvedScope -PathType Container)) {
+        continue
+      }
+      if ($seenRoots.Add($resolvedScope)) {
+        $scanRoots.Add($resolvedScope) | Out-Null
+      }
+    }
+  }
+
+  $findings = New-Object System.Collections.Generic.List[object]
+  $seenDirectories = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+
+  foreach ($scanRoot in @($scanRoots.ToArray())) {
+    if (-not (Test-Path -LiteralPath $scanRoot -PathType Container)) {
+      continue
+    }
+
+    foreach ($directory in @(
+        Get-ChildItem -LiteralPath $scanRoot -Directory -Recurse -ErrorAction SilentlyContinue |
+          Sort-Object FullName
+      )) {
+      $resolvedDirectory = [System.IO.Path]::GetFullPath($directory.FullName)
+      if (-not $seenDirectories.Add($resolvedDirectory)) {
+        continue
+      }
+
+      $finding = Get-DocsLegacySectionFinding `
+        -DocsRoot $DocsRoot `
+        -DirectoryPath $resolvedDirectory `
+        -ConfiguredDomainRoots $configuredDomainRoots
+      $findings.Add($finding) | Out-Null
+    }
+  }
+
+  return [pscustomobject]@{
+    DocsRoot             = $DocsRoot
+    ScannedRoots         = @($scanRoots.ToArray() | ForEach-Object { (Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $_) -replace '\\', '/' })
+    Findings             = @($findings.ToArray())
+    DetectedLegacyFields = @($findings.ToArray() | Where-Object { $_.Qualifies })
+  }
+}
+
+function New-DocsSectionNormalizationPlan {
+  param(
+    [Parameter(Mandatory)][string]$DocsRoot,
+    [string[]]$ScopeDirectories = @()
+  )
+
+  $audit = Get-DocsSectionNormalizationAudit -DocsRoot $DocsRoot -ScopeDirectories $ScopeDirectories
+  $legacySections = @($audit.Findings | Where-Object { $_.Qualifies })
+  $plannedFiles = New-Object System.Collections.Generic.List[object]
+  $affectedParents = New-Object System.Collections.Generic.List[object]
+
+  foreach ($parentDir in @($legacySections | Group-Object { Split-Path -Path $_.FullPath -Parent })) {
+    $resolvedParentDir = [System.IO.Path]::GetFullPath([string]$parentDir.Name)
+    $siblingsBefore = @(Get-DocsNavigationSiblings -DocsRoot $DocsRoot -ParentDir $resolvedParentDir)
+    $orderBefore = @($siblingsBefore | ForEach-Object { [string]$_.RelativePath })
+    $plannedRelativePaths = @($parentDir.Group | ForEach-Object { [string]$_.RelativePath })
+    $validatedOrderBefore = @(
+      $siblingsBefore |
+        Where-Object {
+          if ([string]$_.ItemType -eq "page") {
+            return $true
+          }
+
+          if ([string]$_.RelativePath -in $plannedRelativePaths) {
+            return $true
+          }
+
+          return ($null -ne (Get-CategoryPositionForDirectory -DirectoryPath ([string]$_.FullPath)))
+        } |
+        ForEach-Object { [string]$_.RelativePath }
+    )
+    $affectedParents.Add([pscustomobject]@{
+        ParentDir    = $resolvedParentDir
+        RelativePath = ((Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $resolvedParentDir) -replace '\\', '/')
+        OrderBefore  = $orderBefore
+        ValidatedOrderBefore = $validatedOrderBefore
+      }) | Out-Null
+
+    foreach ($legacySection in @($parentDir.Group | Sort-Object RelativePath)) {
+      $matchingSibling = @($siblingsBefore | Where-Object {
+          ([string]$_.ItemType) -eq "section" -and
+          [System.IO.Path]::GetFullPath([string]$_.FullPath).Equals([System.IO.Path]::GetFullPath([string]$legacySection.FullPath), [System.StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1)
+      if ($null -eq $matchingSibling) {
+        throw "Failed to plan legacy section normalization because the current navigation model does not expose '$($legacySection.RelativePath)' as a section."
+      }
+
+      $plannedPosition = ConvertTo-CompactNumericValue -Value ([double]$matchingSibling.Position)
+      $metadata = [ordered]@{
+        label    = (Get-DocsSectionDisplayLabel -DirectoryPath ([string]$legacySection.FullPath))
+        position = $plannedPosition
+      }
+
+      $plannedFiles.Add([pscustomobject]@{
+          RelativePath = [string]$legacySection.RelativePath
+          FullPath     = [string]$legacySection.FullPath
+          CategoryPath = (Join-Path ([string]$legacySection.FullPath) "_category_.json")
+          Label        = [string]$metadata.label
+          Position     = $plannedPosition
+          Metadata     = $metadata
+          Content      = (Build-CategoryMetadataContent -Metadata $metadata)
+        }) | Out-Null
+    }
+  }
+
+  return [pscustomobject]@{
+    DocsRoot              = $DocsRoot
+    ScannedRoots          = @($audit.ScannedRoots)
+    Findings              = @($audit.Findings)
+    DetectedLegacySections = @($legacySections)
+    PlannedFiles          = @($plannedFiles.ToArray())
+    AffectedParents       = @($affectedParents.ToArray())
+    SkippedEntries        = @($audit.Findings | Where-Object { -not $_.Qualifies -and $_.Kind -ne "marked-section" })
+    Warnings              = @($audit.Findings | Where-Object { $_.Kind -eq "malformed-category" })
+  }
+}
+
+function Remove-DocsSectionNormalizationFiles {
+  param([AllowEmptyCollection()][string[]]$Paths = @())
+
+  foreach ($path in @($Paths | Sort-Object Length -Descending)) {
+    if ([string]::IsNullOrWhiteSpace([string]$path)) {
+      continue
+    }
+
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function Invoke-DocsSectionMigration {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [switch]$WhatIf,
+    [string[]]$ScopeDirectories = @()
+  )
+
+  $docsRoot = Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  if (-not (Test-Path -LiteralPath $docsRoot -PathType Container)) {
+    throw "Docs root not found: $docsRoot"
+  }
+
+  $plan = New-DocsSectionNormalizationPlan -DocsRoot $docsRoot -ScopeDirectories $ScopeDirectories
+  $createdFiles = New-Object System.Collections.Generic.List[string]
+
+  if ($WhatIf -or $plan.PlannedFiles.Count -eq 0) {
+    return [pscustomobject]@{
+      Command               = "migrate-sections"
+      RepoRoot              = $ResolvedRepoRoot
+      DocsRoot              = $docsRoot
+      WhatIf                = [bool]$WhatIf
+      Changed               = $false
+      ScannedRoots          = @($plan.ScannedRoots)
+      Findings              = @($plan.Findings)
+      DetectedLegacySections = @($plan.DetectedLegacySections)
+      PlannedFiles          = @($plan.PlannedFiles)
+      CreatedFiles          = @()
+      SkippedEntries        = @($plan.SkippedEntries)
+      Warnings              = @($plan.Warnings)
+    }
+  }
+
+  try {
+    foreach ($plannedFile in @($plan.PlannedFiles)) {
+      $categoryPath = [string]$plannedFile.CategoryPath
+      if (Test-Path -LiteralPath $categoryPath -PathType Leaf) {
+        throw "Refusing to overwrite existing section metadata: $categoryPath"
+      }
+
+      Write-Utf8NoBomFile -Path $categoryPath -Content ([string]$plannedFile.Content)
+      $createdFiles.Add($categoryPath) | Out-Null
+    }
+
+    foreach ($affectedParent in @($plan.AffectedParents)) {
+      $expectedOrder = @($affectedParent.ValidatedOrderBefore)
+      $expectedOrderSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+      foreach ($expectedPath in $expectedOrder) {
+        [void]$expectedOrderSet.Add([string]$expectedPath)
+      }
+
+      $currentOrder = @(
+        Get-DocsNavigationSiblings -DocsRoot $docsRoot -ParentDir ([string]$affectedParent.ParentDir) |
+          ForEach-Object { [string]$_.RelativePath } |
+          Where-Object { $expectedOrderSet.Contains([string]$_) }
+      )
+
+      if ($currentOrder.Count -ne $expectedOrder.Count -or -not ([string]::Join("|", $currentOrder).Equals([string]::Join("|", $expectedOrder), [System.StringComparison]::Ordinal))) {
+        throw "Section normalization changed navigation order under '$([string]$affectedParent.RelativePath)'."
+      }
+    }
+  }
+  catch {
+    Remove-DocsSectionNormalizationFiles -Paths @($createdFiles.ToArray())
+    throw
+  }
+
+  return [pscustomobject]@{
+    Command               = "migrate-sections"
+    RepoRoot              = $ResolvedRepoRoot
+    DocsRoot              = $docsRoot
+    WhatIf                = $false
+    Changed               = ($createdFiles.Count -gt 0)
+    ScannedRoots          = @($plan.ScannedRoots)
+    Findings              = @($plan.Findings)
+    DetectedLegacySections = @($plan.DetectedLegacySections)
+    PlannedFiles          = @($plan.PlannedFiles)
+    CreatedFiles          = @($createdFiles.ToArray())
+    SkippedEntries        = @($plan.SkippedEntries)
+    Warnings              = @($plan.Warnings)
+  }
+}
+
 function Assert-PathInsideRoot {
   param(
     [Parameter(Mandatory)][string]$RootPath,
@@ -2591,6 +3108,96 @@ function Test-DocsSectionExists {
 
   $categoryPath = Join-Path $SectionDir "_category_.json"
   return (Test-Path -LiteralPath $categoryPath -PathType Leaf)
+}
+
+function Test-DocsImplicitSectionExists {
+  param([Parameter(Mandatory)][string]$SectionDir)
+
+  if (-not (Test-Path -LiteralPath $SectionDir -PathType Container)) {
+    return $false
+  }
+
+  $docsRoot = Split-Path -Parent $SectionDir
+  while (-not [string]::IsNullOrWhiteSpace($docsRoot)) {
+    if ([System.IO.Path]::GetFileName($docsRoot).Equals("Docs", [System.StringComparison]::OrdinalIgnoreCase)) {
+      break
+    }
+
+    $nextParent = Split-Path -Parent $docsRoot
+    if ($nextParent -eq $docsRoot) {
+      break
+    }
+    $docsRoot = $nextParent
+  }
+
+  if ([string]::IsNullOrWhiteSpace($docsRoot) -or -not [System.IO.Path]::GetFileName($docsRoot).Equals("Docs", [System.StringComparison]::OrdinalIgnoreCase)) {
+    return $false
+  }
+
+  $finding = Get-DocsLegacySectionFinding `
+    -DocsRoot $docsRoot `
+    -DirectoryPath $SectionDir `
+    -ConfiguredDomainRoots (Get-DocsConfiguredDomainRootSet -DocsRoot $docsRoot)
+  return [bool]$finding.Qualifies
+}
+
+function Get-DocsImplicitSectionFallbackPosition {
+  param(
+    [Parameter(Mandatory)][string]$DocsRoot,
+    [Parameter(Mandatory)][string]$DirectoryPath
+  )
+
+  $parentDir = Split-Path -Parent $DirectoryPath
+  if ([string]::IsNullOrWhiteSpace($parentDir) -or -not (Test-Path -LiteralPath $parentDir -PathType Container)) {
+    return 100000.0
+  }
+
+  $positions = New-Object System.Collections.Generic.List[double]
+
+  foreach ($markdownFile in @(Get-ChildItem -LiteralPath $parentDir -File -ErrorAction SilentlyContinue | Where-Object {
+        $_.Extension.Equals(".md", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $_.Extension.Equals(".mdx", [System.StringComparison]::OrdinalIgnoreCase)
+      })) {
+    $position = Get-SidebarPositionForMarkdownFile -FilePath $markdownFile.FullName
+    if ($null -ne $position) {
+      $positions.Add($position) | Out-Null
+    }
+  }
+
+  foreach ($childDir in @(Get-ChildItem -LiteralPath $parentDir -Directory -ErrorAction SilentlyContinue)) {
+    if (-not (Test-DocsSectionExists -SectionDir $childDir.FullName)) {
+      continue
+    }
+
+    $position = Get-CategoryPositionForDirectory -DirectoryPath $childDir.FullName
+    if ($null -ne $position) {
+      $positions.Add($position) | Out-Null
+    }
+  }
+
+  $fallbackPosition = 100000.0
+  if ($positions.Count -gt 0) {
+    $fallbackPosition = ((($positions.ToArray() | Measure-Object -Maximum).Maximum) + 1.0)
+  }
+
+  $fallbackIndex = 0.0
+  foreach ($childDir in @(Get-ChildItem -LiteralPath $parentDir -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    if (Test-DocsSectionExists -SectionDir $childDir.FullName) {
+      continue
+    }
+
+    if (-not (Test-DocsImplicitSectionExists -SectionDir $childDir.FullName)) {
+      continue
+    }
+
+    if ($childDir.FullName.Equals($DirectoryPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      return ($fallbackPosition + $fallbackIndex)
+    }
+
+    $fallbackIndex += 1.0
+  }
+
+  return ($fallbackPosition + $fallbackIndex)
 }
 
 function Get-CommonDocValueOptionNames {
@@ -3034,7 +3641,13 @@ function Get-CategoryPositionForDirectory {
     return $null
   }
 
-  $categoryJson = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
+  try {
+    $categoryJson = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
+  }
+  catch {
+    return $null
+  }
+
   if ($null -eq $categoryJson.position) {
     return $null
   }
@@ -3160,6 +3773,16 @@ function Resolve-DocsNavigationTarget {
     }
   }
 
+  if (Test-DocsImplicitSectionExists -SectionDir $directoryCandidate) {
+    return [pscustomobject]@{
+      ItemType = "section"
+      FullPath = $directoryCandidate
+      ParentDir = (Split-Path -Parent $directoryCandidate)
+      RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $directoryCandidate -ItemType "section")
+      Position = (Get-DocsImplicitSectionFallbackPosition -DocsRoot $DocsRoot -DirectoryPath $directoryCandidate)
+    }
+  }
+
   $fileRelativePath = $normalized
   if (-not $fileRelativePath.EndsWith(".md", [System.StringComparison]::OrdinalIgnoreCase)) {
     $fileRelativePath = "$fileRelativePath.md"
@@ -3225,6 +3848,33 @@ function Get-DocsNavigationSiblings {
         RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $childDir.FullName -ItemType "section")
         Position = $position
       }) | Out-Null
+  }
+
+  $fallbackPosition = 100000.0
+  if ($siblings.Count -gt 0) {
+    $fallbackPosition = ((($siblings.ToArray() | Select-Object -ExpandProperty Position | Measure-Object -Maximum).Maximum) + 1.0)
+  }
+
+  foreach ($childDir in @(Get-ChildItem -LiteralPath $ParentDir -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    $hasMarkedSectionMetadata = Test-DocsSectionExists -SectionDir $childDir.FullName
+    if ($hasMarkedSectionMetadata) {
+      $position = Get-CategoryPositionForDirectory -DirectoryPath $childDir.FullName
+      if ($null -ne $position) {
+        continue
+      }
+    }
+    elseif (-not (Test-DocsImplicitSectionExists -SectionDir $childDir.FullName)) {
+      continue
+    }
+
+    $siblings.Add([pscustomobject]@{
+        ItemType = "section"
+        FullPath = $childDir.FullName
+        ParentDir = $ParentDir
+        RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $childDir.FullName -ItemType "section")
+        Position = $fallbackPosition
+      }) | Out-Null
+    $fallbackPosition += 1.0
   }
 
   return @($siblings | Sort-Object Position, RelativePath)
@@ -3318,6 +3968,12 @@ function Invoke-DocsReorder {
   }
 
   $docsRoot = Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot
+  $target = Resolve-DocsNavigationTarget -DocsRoot $docsRoot -TargetPath $argumentList[0]
+  $scopeDirectories = @([string]$target.ParentDir)
+  if ([string]$target.ItemType -eq "section") {
+    $scopeDirectories += [string]$target.FullPath
+  }
+  $null = Invoke-DocsSectionMigration -ResolvedRepoRoot $ResolvedRepoRoot -ScopeDirectories @($scopeDirectories)
   $target = Resolve-DocsNavigationTarget -DocsRoot $docsRoot -TargetPath $argumentList[0]
   $desiredPosition = ConvertTo-NumericValue -Value $argumentList[1] -OptionName "Position"
   if ([double]$desiredPosition -lt 1) {
@@ -4265,6 +4921,7 @@ function Invoke-DocsDoctor {
   $websiteRoot = Get-WebsiteRoot -ResolvedRepoRoot $ResolvedRepoRoot
   $bridgeStatus = Get-BridgeStatus
   $status = Invoke-DocsStatus -ResolvedRepoRoot $ResolvedRepoRoot
+  $migrationPlan = Invoke-DocsSectionMigration -ResolvedRepoRoot $ResolvedRepoRoot -WhatIf
 
   return [pscustomobject]@{
     Command = "doctor"
@@ -4287,7 +4944,26 @@ function Invoke-DocsDoctor {
     EditorApiUrl = $status.EditorUrl
     EditorApiLogPath = $status.EditorLogPath
     EditorApiErrorLogPath = $status.EditorErrorLogPath
+    SectionMigration = $migrationPlan
   }
+}
+
+function Invoke-DocsMigrateSections {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments = @()
+  )
+
+  $parsed = Parse-SubcommandArguments `
+    -CommandArguments $CommandArguments `
+    -SwitchNames @("whatif", "what-if")
+
+  if ($parsed.Positionals.Count -gt 0) {
+    throw "migrate-sections does not accept positional arguments. Usage: ue-tools docs migrate-sections [--what-if]."
+  }
+
+  $whatIf = ($parsed.Switches.ContainsKey("whatif") -or $parsed.Switches.ContainsKey("what-if"))
+  return (Invoke-DocsSectionMigration -ResolvedRepoRoot $ResolvedRepoRoot -WhatIf:$whatIf)
 }
 
 function Write-DocsToolsError {
@@ -4406,6 +5082,31 @@ function Invoke-DocsToolsMain {
       else {
         Write-Output "Reordered '$($result.Target)' from $($result.OldPosition) to $($result.NewPosition)."
         Write-Output "Updated items: $($result.UpdatedCount)"
+      }
+      return
+    }
+    "migrate-sections" {
+      $result = Invoke-DocsMigrateSections -ResolvedRepoRoot $ResolvedRepoRoot -CommandArguments $remaining
+      if ($result.WhatIf) {
+        if ($result.PlannedFiles.Count -eq 0) {
+          Write-Output "No legacy docs sections require migration."
+        }
+        else {
+          foreach ($plannedFile in @($result.PlannedFiles)) {
+            Write-Output ("Would normalize '{0}' -> label='{1}', position={2}" -f [string]$plannedFile.RelativePath, [string]$plannedFile.Label, [string]$plannedFile.Position)
+          }
+        }
+        return
+      }
+
+      if ($result.CreatedFiles.Count -eq 0) {
+        Write-Output "No legacy docs sections require migration."
+      }
+      else {
+        foreach ($plannedFile in @($result.PlannedFiles)) {
+          Write-Output ("Normalized '{0}' -> label='{1}', position={2}" -f [string]$plannedFile.RelativePath, [string]$plannedFile.Label, [string]$plannedFile.Position)
+        }
+        Write-Output "Created metadata files: $($result.CreatedFiles.Count)"
       }
       return
     }
@@ -4608,6 +5309,23 @@ function Invoke-DocsToolsMain {
       if ($result.EditorApiErrorLogPath) {
         Write-Output "Editor API stderr log: $($result.EditorApiErrorLogPath)"
       }
+      $migrationPlan = $result.SectionMigration
+      Write-Output "Legacy docs sections requiring migration: $(@($migrationPlan.DetectedLegacySections).Count)"
+      foreach ($legacySection in @($migrationPlan.DetectedLegacySections)) {
+        $planned = @($migrationPlan.PlannedFiles | Where-Object { ([string]$_.RelativePath).Equals([string]$legacySection.RelativePath, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+        if ($null -ne $planned) {
+          Write-Output ("WARN legacy section: {0} -> planned label='{1}', position={2}" -f [string]$legacySection.RelativePath, [string]$planned.Label, [string]$planned.Position)
+        }
+        else {
+          Write-Output ("WARN legacy section: {0}" -f [string]$legacySection.RelativePath)
+        }
+      }
+      foreach ($skippedEntry in @($migrationPlan.SkippedEntries)) {
+        Write-Output ("INFO {0}: {1} ({2})" -f [string]$skippedEntry.Kind, [string]$skippedEntry.RelativePath, [string]$skippedEntry.Reason)
+      }
+      if (@($migrationPlan.DetectedLegacySections).Count -gt 0) {
+        Write-Output "Remediation: ue-tools docs migrate-sections"
+      }
       return
     }
     "install-bridge" {
@@ -4639,4 +5357,4 @@ function Invoke-DocsToolsMain {
   }
 }
 
-Export-ModuleMember -Function Get-DocsToolsRepoRoot, Invoke-DocsToolsMain
+Export-ModuleMember -Function Get-DocsToolsRepoRoot, Invoke-DocsToolsMain, Invoke-DocsSectionMigration
