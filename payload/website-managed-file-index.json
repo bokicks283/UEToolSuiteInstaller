@@ -119,16 +119,6 @@
       "relativePath": "website/static/.nojekyll"
     },
     {
-      "sha256": "9204212d3905bc1b8d1d882825d1eceb5ad942329222277d7257831a7d47d827",
-      "category": "shell",
-      "relativePath": "website/static/img/docusaurus.png"
-    },
-    {
-      "sha256": "7e3f3833e6742ffcc323c56380b3d1faf185c175534ea5591686bf879a1f7cfb",
-      "category": "shell",
-      "relativePath": "website/static/img/docusaurus-social-card.jpg"
-    },
-    {
       "sha256": "824816e2e33cb97af6d54ea0ba7403937a9462e06b1430edf0d334b4c4096225",
       "category": "shell",
       "relativePath": "website/static/img/docusaurus-social-card.svg"
