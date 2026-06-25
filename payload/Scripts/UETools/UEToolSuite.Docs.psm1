@@ -1,3 +1,11 @@
+$coreModulePath = Join-Path $PSScriptRoot 'UEToolSuite.Core.psm1'
+
+if (-not (Test-Path -LiteralPath $coreModulePath -PathType Leaf)) {
+  throw "Required UEToolSuite Core module was not found: $coreModulePath"
+}
+
+Import-Module -Name $coreModulePath -ErrorAction Stop
+
 function Get-UEToolSuiteDocsNormalizedArgumentList {
   [CmdletBinding()]
   param([AllowNull()][string[]]$Values)
@@ -61,7 +69,7 @@ function Split-UEToolSuiteDocsStartArguments {
 
   return [pscustomobject]@{
     Background = $background
-    StartArgs = $passThroughArgs.ToArray()
+    StartArgs  = $passThroughArgs.ToArray()
   }
 }
 
@@ -81,7 +89,7 @@ function Get-UEToolSuiteDocsRootHelpText {
   [CmdletBinding()]
   param()
 
-@"
+  @"
 UE project docs automation.
 
 Usage:
@@ -311,10 +319,10 @@ function New-UEToolSuiteDocsBridgeStatus {
   )
 
   return [pscustomobject]@{
-    CodeCliPath = $CodeCliPath
+    CodeCliPath               = $CodeCliPath
     MarkdownAllInOneInstalled = [bool]$MarkdownAllInOneInstalled
-    BridgeInstalled = [bool]$BridgeInstalled
-    TocReady = ([bool]$CodeCliPath -and [bool]$MarkdownAllInOneInstalled -and [bool]$BridgeInstalled)
+    BridgeInstalled           = [bool]$BridgeInstalled
+    TocReady                  = ([bool]$CodeCliPath -and [bool]$MarkdownAllInOneInstalled -and [bool]$BridgeInstalled)
   }
 }
 
@@ -478,10 +486,10 @@ function Get-DefaultDocsWebsiteOverridesDocument {
 
   return [ordered]@{
     schemaVersion = 1
-    theme = [ordered]@{
-      themeId = $ThemeId
-      logoPath = $LogoPath
-      faviconPath = $FaviconPath
+    theme         = [ordered]@{
+      themeId        = $ThemeId
+      logoPath       = $LogoPath
+      faviconPath    = $FaviconPath
       socialCardPath = $SocialCardPath
     }
     fileOverrides = @()
@@ -505,7 +513,7 @@ function Read-DocsWebsiteOverrides {
   $defaultDocument = Get-DefaultDocsWebsiteOverridesDocument
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
     return [pscustomobject]@{
-      Path = $path
+      Path     = $path
       Document = $defaultDocument
     }
   }
@@ -515,7 +523,7 @@ function Read-DocsWebsiteOverrides {
   }
   catch {
     return [pscustomobject]@{
-      Path = $path
+      Path     = $path
       Document = $defaultDocument
     }
   }
@@ -535,13 +543,13 @@ function Read-DocsWebsiteOverrides {
   }
 
   return [pscustomobject]@{
-    Path = $path
+    Path     = $path
     Document = [ordered]@{
       schemaVersion = 1
-      theme = [ordered]@{
-        themeId = if ([string]::IsNullOrWhiteSpace([string]$parsed.theme.themeId)) { "neutral" } else { [string]$parsed.theme.themeId }
-        logoPath = [string]$parsed.theme.logoPath
-        faviconPath = [string]$parsed.theme.faviconPath
+      theme         = [ordered]@{
+        themeId        = if ([string]::IsNullOrWhiteSpace([string]$parsed.theme.themeId)) { "neutral" } else { [string]$parsed.theme.themeId }
+        logoPath       = [string]$parsed.theme.logoPath
+        faviconPath    = [string]$parsed.theme.faviconPath
         socialCardPath = [string]$parsed.theme.socialCardPath
       }
       fileOverrides = $fileOverrides
@@ -580,22 +588,22 @@ function Write-DocsWebsiteOwnershipMarker {
   $markerPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
   $projectName = Split-Path -Leaf $ResolvedRepoRoot
   $marker = [ordered]@{
-    schemaVersion = 2
-    managedBy = "UEToolSuiteInstaller"
-    projectName = $projectName
-    installMode = $InstallMode
-    theme = [ordered]@{
-      themeId = $ThemeId
-      logoPath = $LogoPath
-      faviconPath = $FaviconPath
+    schemaVersion  = 2
+    managedBy      = "UEToolSuiteInstaller"
+    projectName    = $projectName
+    installMode    = $InstallMode
+    theme          = [ordered]@{
+      themeId        = $ThemeId
+      logoPath       = $LogoPath
+      faviconPath    = $FaviconPath
       socialCardPath = $SocialCardPath
     }
     overridePolicy = [ordered]@{
-      schemaVersion = 1
-      source = "site-overrides.json"
+      schemaVersion       = 1
+      source              = "site-overrides.json"
       adoptedViaDocsTheme = [bool]$Adopted
     }
-    updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    updatedUtc     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   }
 
   Write-DocsThemeUtf8NoBomFile -Path $markerPath -Content ($marker | ConvertTo-Json -Depth 8)
@@ -633,19 +641,19 @@ function Read-DocsThemeCatalog {
   }
 
   return [pscustomobject]@{
-    CatalogPath = $catalogPath
+    CatalogPath  = $catalogPath
     DefaultTheme = [string]$catalog.defaultTheme
-    Themes = @($themes | ForEach-Object {
-      [pscustomobject]@{
-        id = ([string]$_.id).Trim()
-        label = ([string]$_.label).Trim()
-        description = [string]$_.description
-        cssPath = ([string]$_.cssPath).Trim()
-        logoPath = ([string]$_.logoPath).Trim().Replace("\", "/").TrimStart("/")
-        faviconPath = ([string]$_.faviconPath).Trim().Replace("\", "/").TrimStart("/")
-        socialCardPath = ([string]$_.socialCardPath).Trim().Replace("\", "/").TrimStart("/")
-      }
-    })
+    Themes       = @($themes | ForEach-Object {
+        [pscustomobject]@{
+          id             = ([string]$_.id).Trim()
+          label          = ([string]$_.label).Trim()
+          description    = [string]$_.description
+          cssPath        = ([string]$_.cssPath).Trim()
+          logoPath       = ([string]$_.logoPath).Trim().Replace("\", "/").TrimStart("/")
+          faviconPath    = ([string]$_.faviconPath).Trim().Replace("\", "/").TrimStart("/")
+          socialCardPath = ([string]$_.socialCardPath).Trim().Replace("\", "/").TrimStart("/")
+        }
+      })
   }
 }
 
@@ -714,10 +722,10 @@ function Invoke-DocsThemeApply {
   $themeFaviconPath = Join-Path $websiteRoot ("static\" + $themeEntry.faviconPath.Replace("/", "\"))
   $themeSocialCardPath = Join-Path $websiteRoot ("static\" + $themeEntry.socialCardPath.Replace("/", "\"))
   foreach ($asset in @(
-    [pscustomobject]@{ Name = "logoPath"; Path = $themeLogoPath; Relative = [string]$themeEntry.logoPath },
-    [pscustomobject]@{ Name = "faviconPath"; Path = $themeFaviconPath; Relative = [string]$themeEntry.faviconPath },
-    [pscustomobject]@{ Name = "socialCardPath"; Path = $themeSocialCardPath; Relative = [string]$themeEntry.socialCardPath }
-  )) {
+      [pscustomobject]@{ Name = "logoPath"; Path = $themeLogoPath; Relative = [string]$themeEntry.logoPath },
+      [pscustomobject]@{ Name = "faviconPath"; Path = $themeFaviconPath; Relative = [string]$themeEntry.faviconPath },
+      [pscustomobject]@{ Name = "socialCardPath"; Path = $themeSocialCardPath; Relative = [string]$themeEntry.socialCardPath }
+    )) {
     if (-not (Test-Path -LiteralPath $asset.Path -PathType Leaf)) {
       throw "Theme asset '$($asset.Name)' is missing for '$($themeEntry.id)': $($asset.Path) (catalog value: $($asset.Relative))"
     }
@@ -952,16 +960,16 @@ function Invoke-DocsSiteStatus {
   }
 
   return [pscustomobject]@{
-    Managed = [bool]($null -ne $ownership)
-    OwnershipPath = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
-    OverridesPath = $overrides.Path
-    InstallMode = if ($ownership) { [string]$ownership.installMode } else { "unmanaged" }
-    ThemeId = $themeId
-    LogoPath = [string]$overrides.Document.theme.logoPath
-    FaviconPath = [string]$overrides.Document.theme.faviconPath
+    Managed        = [bool]($null -ne $ownership)
+    OwnershipPath  = Get-DocsWebsiteOwnershipMarkerPath -ResolvedRepoRoot $ResolvedRepoRoot
+    OverridesPath  = $overrides.Path
+    InstallMode    = if ($ownership) { [string]$ownership.installMode } else { "unmanaged" }
+    ThemeId        = $themeId
+    LogoPath       = [string]$overrides.Document.theme.logoPath
+    FaviconPath    = [string]$overrides.Document.theme.faviconPath
     SocialCardPath = [string]$overrides.Document.theme.socialCardPath
-    OverrideCount = @($overrides.Document.fileOverrides).Count
-    OverridePaths = @($overrides.Document.fileOverrides | ForEach-Object { [string]$_.path })
+    OverrideCount  = @($overrides.Document.fileOverrides).Count
+    OverridePaths  = @($overrides.Document.fileOverrides | ForEach-Object { [string]$_.path })
   }
 }
 
@@ -1338,7 +1346,10 @@ function Save-DocsServerState {
 
   $statePath = Get-DocsServerStatePath -ResolvedRepoRoot $ResolvedRepoRoot
   $json = $State | ConvertTo-Json -Depth 6
-  Write-Utf8NoBomFile -Path $statePath -Content $json
+  Write-UEToolSuiteUtf8NoBomFile `
+    -Path $statePath `
+    -Content $json `
+    -EnsureParentDirectory
   return $statePath
 }
 
@@ -1447,10 +1458,10 @@ function Write-DocsEditorRuntimeConfig {
   }
 
   $payload = [ordered]@{
-    apiUrl = $ApiUrl
+    apiUrl      = $ApiUrl
     generatedAt = (Get-Date).ToString("o")
   }
-  Write-Utf8NoBomFile -Path $configPath -Content ($payload | ConvertTo-Json -Depth 5)
+  Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $configPath -Content ($payload | ConvertTo-Json -Depth 5)
   $legacyConfigPath = Get-LegacyDocsEditorRuntimeConfigPath -ResolvedRepoRoot $ResolvedRepoRoot
   if (Test-Path -LiteralPath $legacyConfigPath -PathType Leaf) {
     Remove-Item -LiteralPath $legacyConfigPath -Force
@@ -1558,7 +1569,7 @@ function Get-DocsToolsRootHelp {
     return (Get-UEToolSuiteDocsRootHelpText)
   }
 
-@"
+  @"
 UE project docs automation.
 
 Usage:
@@ -1628,7 +1639,7 @@ function Get-DocsToolsCommandHelp {
 
   switch ($normalized) {
     "new-page" {
-@"
+      @"
 ue-tools docs new-page
 Alias: ue-tools docs create-page
 
@@ -1686,7 +1697,7 @@ Examples:
       return
     }
     "new-section" {
-@"
+      @"
 ue-tools docs new-section
 Alias: ue-tools docs create-section
 
@@ -1762,7 +1773,7 @@ Examples:
       return
     }
     "start" {
-@"
+      @"
 ue-tools docs start
 
 Usage:
@@ -1782,7 +1793,7 @@ Examples:
       return
     }
     "reorder" {
-@"
+      @"
 ue-tools docs reorder
 
 Usage:
@@ -1808,7 +1819,7 @@ Examples:
       return
     }
     "migrate-sections" {
-@"
+      @"
 ue-tools docs migrate-sections
 
 Usage:
@@ -1831,7 +1842,7 @@ Examples:
       return
     }
     "visibility" {
-@"
+      @"
 ue-tools docs visibility
 
 Usage:
@@ -1854,7 +1865,7 @@ Examples:
       return
     }
     "docusaurus" {
-@"
+      @"
 ue-tools docs docusaurus
 
 Usage:
@@ -1867,7 +1878,7 @@ Example:
       return
     }
     "check" {
-@"
+      @"
 ue-tools docs check
 
 Validates docs metadata, catches common docs-site mistakes, and runs the Docusaurus production build.
@@ -1875,7 +1886,7 @@ Validates docs metadata, catches common docs-site mistakes, and runs the Docusau
       return
     }
     "status" {
-@"
+      @"
 ue-tools docs status
 
 Shows tracked docs runtime status:
@@ -1886,7 +1897,7 @@ Shows tracked docs runtime status:
       return
     }
     "stop" {
-@"
+      @"
 ue-tools docs stop
 
 Stops the tracked background docs runtime:
@@ -1897,7 +1908,7 @@ and removes saved runtime state.
       return
     }
     "doctor" {
-@"
+      @"
 ue-tools docs doctor
 
 Checks common local docs prerequisites:
@@ -1912,7 +1923,7 @@ Checks common local docs prerequisites:
       return
     }
     "install-bridge" {
-@"
+      @"
 ue-tools docs install-bridge
 
 Installs the optional UE project VS Code bridge used for TOC generation. Markdown All in One still needs to be installed separately.
@@ -1920,7 +1931,7 @@ Installs the optional UE project VS Code bridge used for TOC generation. Markdow
       return
     }
     "theme" {
-@"
+      @"
 ue-tools docs theme
 
 Usage:
@@ -1941,7 +1952,7 @@ Notes:
       return
     }
     "site" {
-@"
+      @"
 ue-tools docs site
 
 Usage:
@@ -2144,9 +2155,9 @@ function Parse-SubcommandArguments {
 
   return [pscustomobject]@{
     Positionals = $positionals.ToArray()
-    Values = $values
+    Values      = $values
     MultiValues = $multiValues
-    Switches = $switches
+    Switches    = $switches
   }
 }
 
@@ -2165,7 +2176,7 @@ function Parse-KeyValueAssignment {
   }
 
   return [pscustomobject]@{
-    Key = $key
+    Key   = $key
     Value = $value
   }
 }
@@ -2241,8 +2252,8 @@ function ConvertTo-StringList {
 
   return @(
     $Value.Split(',') |
-      ForEach-Object { $_.Trim() } |
-      Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    ForEach-Object { $_.Trim() } |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
   )
 }
 
@@ -2361,7 +2372,7 @@ function Get-ObjectEntries {
 
   return @($Value.PSObject.Properties | ForEach-Object {
       [pscustomobject]@{
-        Key = $_.Name
+        Key   = $_.Name
         Value = $_.Value
       }
     })
@@ -2523,12 +2534,12 @@ function Queue-TocRequest {
   New-Item -ItemType Directory -Force -Path $requestDir | Out-Null
 
   $requestObject = [ordered]@{
-    version = 1
-    action = "createToc"
+    version       = 1
+    action        = "createToc"
     workspaceRoot = [System.IO.Path]::GetFullPath($ResolvedRepoRoot)
-    filePath = [System.IO.Path]::GetFullPath($FilePath)
-    marker = $script:TocMarker
-    createdAt = (Get-Date).ToString("o")
+    filePath      = [System.IO.Path]::GetFullPath($FilePath)
+    marker        = $script:TocMarker
+    createdAt     = (Get-Date).ToString("o")
   }
 
   $requestId = "{0}-{1}" -f (Get-Date).ToString("yyyyMMddHHmmss"), ([Guid]::NewGuid().ToString("N"))
@@ -2536,7 +2547,7 @@ function Queue-TocRequest {
   $tempPath = Join-Path $requestDir "$requestId.tmp"
   $finalPath = Join-Path $requestDir "$requestId.json"
 
-  Write-Utf8NoBomFile -Path $tempPath -Content $json
+  Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $tempPath -Content $json
   Move-Item -LiteralPath $tempPath -Destination $finalPath -Force
 
   return $finalPath
@@ -2660,7 +2671,7 @@ function Get-DocsConfiguredDomainRootSet {
   $roots = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
   $config = Read-DocsDomainsConfigForRoot -DocsRoot $DocsRoot
   if ($null -eq $config -or $null -eq $config.domains) {
-    return ,$roots
+    return , $roots
   }
 
   foreach ($entry in @($config.domains)) {
@@ -2689,7 +2700,7 @@ function Get-DocsConfiguredDomainRootSet {
     }
   }
 
-  return ,$roots
+  return , $roots
 }
 
 function Get-DocsSectionDisplayLabel {
@@ -2817,7 +2828,7 @@ function Get-DocsLegacySectionFinding {
 
   $navigableFiles = @(
     Get-ChildItem -LiteralPath $fullDirectoryPath -File -ErrorAction SilentlyContinue |
-      Where-Object { Test-DocsNavigableMarkdownFile -FileInfo $_ }
+    Where-Object { Test-DocsNavigableMarkdownFile -FileInfo $_ }
   )
   if ($navigableFiles.Count -gt 0) {
     return [pscustomobject]@{
@@ -2831,7 +2842,7 @@ function Get-DocsLegacySectionFinding {
 
   $allChildEntries = @(
     Get-ChildItem -LiteralPath $fullDirectoryPath -Force -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -ne "_category_.json" }
+    Where-Object { $_.Name -ne "_category_.json" }
   )
   if ($allChildEntries.Count -eq 0) {
     return [pscustomobject]@{
@@ -2890,7 +2901,7 @@ function Get-DocsSectionNormalizationAudit {
 
     foreach ($directory in @(
         Get-ChildItem -LiteralPath $scanRoot -Directory -Recurse -ErrorAction SilentlyContinue |
-          Sort-Object FullName
+        Sort-Object FullName
       )) {
       $resolvedDirectory = [System.IO.Path]::GetFullPath($directory.FullName)
       if (-not $seenDirectories.Add($resolvedDirectory)) {
@@ -2931,23 +2942,23 @@ function New-DocsSectionNormalizationPlan {
     $plannedRelativePaths = @($parentDir.Group | ForEach-Object { [string]$_.RelativePath })
     $validatedOrderBefore = @(
       $siblingsBefore |
-        Where-Object {
-          if ([string]$_.ItemType -eq "page") {
-            return $true
-          }
+      Where-Object {
+        if ([string]$_.ItemType -eq "page") {
+          return $true
+        }
 
-          if ([string]$_.RelativePath -in $plannedRelativePaths) {
-            return $true
-          }
+        if ([string]$_.RelativePath -in $plannedRelativePaths) {
+          return $true
+        }
 
-          return ($null -ne (Get-CategoryPositionForDirectory -DirectoryPath ([string]$_.FullPath)))
-        } |
-        ForEach-Object { [string]$_.RelativePath }
+        return ($null -ne (Get-CategoryPositionForDirectory -DirectoryPath ([string]$_.FullPath)))
+      } |
+      ForEach-Object { [string]$_.RelativePath }
     )
     $affectedParents.Add([pscustomobject]@{
-        ParentDir    = $resolvedParentDir
-        RelativePath = ((Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $resolvedParentDir) -replace '\\', '/')
-        OrderBefore  = $orderBefore
+        ParentDir            = $resolvedParentDir
+        RelativePath         = ((Get-UEToolSuiteRelativePath -BasePath $DocsRoot -TargetPath $resolvedParentDir) -replace '\\', '/')
+        OrderBefore          = $orderBefore
         ValidatedOrderBefore = $validatedOrderBefore
       }) | Out-Null
 
@@ -2979,14 +2990,14 @@ function New-DocsSectionNormalizationPlan {
   }
 
   return [pscustomobject]@{
-    DocsRoot              = $DocsRoot
-    ScannedRoots          = @($audit.ScannedRoots)
-    Findings              = @($audit.Findings)
+    DocsRoot               = $DocsRoot
+    ScannedRoots           = @($audit.ScannedRoots)
+    Findings               = @($audit.Findings)
     DetectedLegacySections = @($legacySections)
-    PlannedFiles          = @($plannedFiles.ToArray())
-    AffectedParents       = @($affectedParents.ToArray())
-    SkippedEntries        = @($audit.Findings | Where-Object { -not $_.Qualifies -and $_.Kind -ne "marked-section" })
-    Warnings              = @($audit.Findings | Where-Object { $_.Kind -eq "malformed-category" })
+    PlannedFiles           = @($plannedFiles.ToArray())
+    AffectedParents        = @($affectedParents.ToArray())
+    SkippedEntries         = @($audit.Findings | Where-Object { -not $_.Qualifies -and $_.Kind -ne "marked-section" })
+    Warnings               = @($audit.Findings | Where-Object { $_.Kind -eq "malformed-category" })
   }
 }
 
@@ -3021,18 +3032,18 @@ function Invoke-DocsSectionMigration {
 
   if ($WhatIf -or $plan.PlannedFiles.Count -eq 0) {
     return [pscustomobject]@{
-      Command               = "migrate-sections"
-      RepoRoot              = $ResolvedRepoRoot
-      DocsRoot              = $docsRoot
-      WhatIf                = [bool]$WhatIf
-      Changed               = $false
-      ScannedRoots          = @($plan.ScannedRoots)
-      Findings              = @($plan.Findings)
+      Command                = "migrate-sections"
+      RepoRoot               = $ResolvedRepoRoot
+      DocsRoot               = $docsRoot
+      WhatIf                 = [bool]$WhatIf
+      Changed                = $false
+      ScannedRoots           = @($plan.ScannedRoots)
+      Findings               = @($plan.Findings)
       DetectedLegacySections = @($plan.DetectedLegacySections)
-      PlannedFiles          = @($plan.PlannedFiles)
-      CreatedFiles          = @()
-      SkippedEntries        = @($plan.SkippedEntries)
-      Warnings              = @($plan.Warnings)
+      PlannedFiles           = @($plan.PlannedFiles)
+      CreatedFiles           = @()
+      SkippedEntries         = @($plan.SkippedEntries)
+      Warnings               = @($plan.Warnings)
     }
   }
 
@@ -3043,7 +3054,7 @@ function Invoke-DocsSectionMigration {
         throw "Refusing to overwrite existing section metadata: $categoryPath"
       }
 
-      Write-Utf8NoBomFile -Path $categoryPath -Content ([string]$plannedFile.Content)
+      Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $categoryPath -Content ([string]$plannedFile.Content)
       $createdFiles.Add($categoryPath) | Out-Null
     }
 
@@ -3056,8 +3067,8 @@ function Invoke-DocsSectionMigration {
 
       $currentOrder = @(
         Get-DocsNavigationSiblings -DocsRoot $docsRoot -ParentDir ([string]$affectedParent.ParentDir) |
-          ForEach-Object { [string]$_.RelativePath } |
-          Where-Object { $expectedOrderSet.Contains([string]$_) }
+        ForEach-Object { [string]$_.RelativePath } |
+        Where-Object { $expectedOrderSet.Contains([string]$_) }
       )
 
       if ($currentOrder.Count -ne $expectedOrder.Count -or -not ([string]::Join("|", $currentOrder).Equals([string]::Join("|", $expectedOrder), [System.StringComparison]::Ordinal))) {
@@ -3071,18 +3082,18 @@ function Invoke-DocsSectionMigration {
   }
 
   return [pscustomobject]@{
-    Command               = "migrate-sections"
-    RepoRoot              = $ResolvedRepoRoot
-    DocsRoot              = $docsRoot
-    WhatIf                = $false
-    Changed               = ($createdFiles.Count -gt 0)
-    ScannedRoots          = @($plan.ScannedRoots)
-    Findings              = @($plan.Findings)
+    Command                = "migrate-sections"
+    RepoRoot               = $ResolvedRepoRoot
+    DocsRoot               = $docsRoot
+    WhatIf                 = $false
+    Changed                = ($createdFiles.Count -gt 0)
+    ScannedRoots           = @($plan.ScannedRoots)
+    Findings               = @($plan.Findings)
     DetectedLegacySections = @($plan.DetectedLegacySections)
-    PlannedFiles          = @($plan.PlannedFiles)
-    CreatedFiles          = @($createdFiles.ToArray())
-    SkippedEntries        = @($plan.SkippedEntries)
-    Warnings              = @($plan.Warnings)
+    PlannedFiles           = @($plan.PlannedFiles)
+    CreatedFiles           = @($createdFiles.ToArray())
+    SkippedEntries         = @($plan.SkippedEntries)
+    Warnings               = @($plan.Warnings)
   }
 }
 
@@ -3240,7 +3251,7 @@ function New-DocFrontMatter {
 
   $frontMatter = [ordered]@{
     title = $Title
-    slug = $Slug
+    slug  = $Slug
   }
 
   if ($null -ne $SidebarPosition) {
@@ -3322,7 +3333,7 @@ function New-CategoryMetadata {
     "doc" {
       $link = [ordered]@{
         type = "doc"
-        id = $LinkDocId
+        id   = $LinkDocId
       }
       Set-OrderedMapValue -Map $metadata -Key "link" -Value $link
     }
@@ -3361,17 +3372,17 @@ function Invoke-NewSection {
     -CommandArguments $CommandArguments `
     -SwitchNames @("force", "notoc") `
     -ValueNames @(
-      "title", "label", "slug", "position", "docsidebarposition",
-      "description", "image", "keywords", "tags", "tagsjson",
-      "sidebarlabel", "sidebarclassname", "sidebarkey", "sidebarcustompropsjson",
-      "displayedsidebar", "paginationlabel", "paginationnext", "paginationprev",
-      "hidetitle", "hidetableofcontents", "tocminheadinglevel", "tocmaxheadinglevel",
-      "customediturl", "draft", "unlisted", "parsenumberprefixes",
-      "lastupdatedate", "lastupdateauthor",
-      "collapsible", "collapsed", "classname", "key", "custompropsjson",
-      "linktype", "linkid", "generatedindextitle", "generatedindexslug",
-      "generatedindexdescription", "generatedindeximage", "generatedindexkeywords"
-    ) `
+    "title", "label", "slug", "position", "docsidebarposition",
+    "description", "image", "keywords", "tags", "tagsjson",
+    "sidebarlabel", "sidebarclassname", "sidebarkey", "sidebarcustompropsjson",
+    "displayedsidebar", "paginationlabel", "paginationnext", "paginationprev",
+    "hidetitle", "hidetableofcontents", "tocminheadinglevel", "tocmaxheadinglevel",
+    "customediturl", "draft", "unlisted", "parsenumberprefixes",
+    "lastupdatedate", "lastupdateauthor",
+    "collapsible", "collapsed", "classname", "key", "custompropsjson",
+    "linktype", "linkid", "generatedindextitle", "generatedindexslug",
+    "generatedindexdescription", "generatedindeximage", "generatedindexkeywords"
+  ) `
     -MultiValueNames @("docfield", "docfieldjson", "categoryfield", "categoryjson")
   if ($parsed.Positionals.Count -eq 0) {
     throw "SectionPath is required. Usage: ue-tools docs new-section <SectionPath> [options]. Run 'ue-tools docs help new-section'."
@@ -3467,9 +3478,9 @@ function Invoke-NewSection {
   $categoryContent = Build-CategoryMetadataContent -Metadata $categoryMetadata
 
   if ($createsReadme) {
-    Write-Utf8NoBomFile -Path $readmePath -Content $readmeContent
+    Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $readmePath -Content $readmeContent
   }
-  Write-Utf8NoBomFile -Path $categoryPath -Content $categoryContent
+  Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $categoryPath -Content $categoryContent
 
   if ($createsReadme -and $includeToc) {
     $null = Queue-TocRequest -ResolvedRepoRoot $ResolvedRepoRoot -FilePath $readmePath
@@ -3477,11 +3488,11 @@ function Invoke-NewSection {
   }
 
   [pscustomobject]@{
-    Command = "new-section"
-    Path = $sectionDir
-    ReadmePath = $(if ($createsReadme) { $readmePath } else { "" })
+    Command      = "new-section"
+    Path         = $sectionDir
+    ReadmePath   = $(if ($createsReadme) { $readmePath } else { "" })
     CategoryPath = $categoryPath
-    TocQueued = ($createsReadme -and $includeToc)
+    TocQueued    = ($createsReadme -and $includeToc)
     BridgeStatus = $bridgeStatus
   }
 }
@@ -3552,7 +3563,7 @@ function Invoke-NewPage {
     -JsonAssignments @($parsed.MultiValues["fieldjson"])
 
   $pageContent = Build-ScaffoldDocContent -FrontMatter $pageFrontMatter -HeadingTitle $title -IncludeToc:$includeToc -OverviewNoun "page"
-  Write-Utf8NoBomFile -Path $pagePath -Content $pageContent
+  Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $pagePath -Content $pageContent
 
   if ($includeToc) {
     $null = Queue-TocRequest -ResolvedRepoRoot $ResolvedRepoRoot -FilePath $pagePath
@@ -3560,9 +3571,9 @@ function Invoke-NewPage {
   }
 
   [pscustomobject]@{
-    Command = "new-page"
-    Path = $pagePath
-    TocQueued = $includeToc
+    Command      = "new-page"
+    Path         = $pagePath
+    TocQueued    = $includeToc
     BridgeStatus = $bridgeStatus
   }
 }
@@ -3765,21 +3776,21 @@ function Resolve-DocsNavigationTarget {
     }
 
     return [pscustomobject]@{
-      ItemType = "section"
-      FullPath = $directoryCandidate
-      ParentDir = (Split-Path -Parent $directoryCandidate)
+      ItemType     = "section"
+      FullPath     = $directoryCandidate
+      ParentDir    = (Split-Path -Parent $directoryCandidate)
       RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $directoryCandidate -ItemType "section")
-      Position = $position
+      Position     = $position
     }
   }
 
   if (Test-DocsImplicitSectionExists -SectionDir $directoryCandidate) {
     return [pscustomobject]@{
-      ItemType = "section"
-      FullPath = $directoryCandidate
-      ParentDir = (Split-Path -Parent $directoryCandidate)
+      ItemType     = "section"
+      FullPath     = $directoryCandidate
+      ParentDir    = (Split-Path -Parent $directoryCandidate)
       RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $directoryCandidate -ItemType "section")
-      Position = (Get-DocsImplicitSectionFallbackPosition -DocsRoot $DocsRoot -DirectoryPath $directoryCandidate)
+      Position     = (Get-DocsImplicitSectionFallbackPosition -DocsRoot $DocsRoot -DirectoryPath $directoryCandidate)
     }
   }
 
@@ -3800,11 +3811,11 @@ function Resolve-DocsNavigationTarget {
   }
 
   return [pscustomobject]@{
-    ItemType = "page"
-    FullPath = $fileCandidate
-    ParentDir = (Split-Path -Parent $fileCandidate)
+    ItemType     = "page"
+    FullPath     = $fileCandidate
+    ParentDir    = (Split-Path -Parent $fileCandidate)
     RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $fileCandidate -ItemType "page")
-    Position = $pagePosition
+    Position     = $pagePosition
   }
 }
 
@@ -3823,11 +3834,11 @@ function Get-DocsNavigationSiblings {
     }
 
     $siblings.Add([pscustomobject]@{
-        ItemType = "page"
-        FullPath = $markdownFile.FullName
-        ParentDir = $ParentDir
+        ItemType     = "page"
+        FullPath     = $markdownFile.FullName
+        ParentDir    = $ParentDir
         RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $markdownFile.FullName -ItemType "page")
-        Position = $position
+        Position     = $position
       }) | Out-Null
   }
 
@@ -3842,11 +3853,11 @@ function Get-DocsNavigationSiblings {
     }
 
     $siblings.Add([pscustomobject]@{
-        ItemType = "section"
-        FullPath = $childDir.FullName
-        ParentDir = $ParentDir
+        ItemType     = "section"
+        FullPath     = $childDir.FullName
+        ParentDir    = $ParentDir
         RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $childDir.FullName -ItemType "section")
-        Position = $position
+        Position     = $position
       }) | Out-Null
   }
 
@@ -3868,11 +3879,11 @@ function Get-DocsNavigationSiblings {
     }
 
     $siblings.Add([pscustomobject]@{
-        ItemType = "section"
-        FullPath = $childDir.FullName
-        ParentDir = $ParentDir
+        ItemType     = "section"
+        FullPath     = $childDir.FullName
+        ParentDir    = $ParentDir
         RelativePath = (Get-DocsItemRelativePath -DocsRoot $DocsRoot -ItemPath $childDir.FullName -ItemType "section")
-        Position = $fallbackPosition
+        Position     = $fallbackPosition
       }) | Out-Null
     $fallbackPosition += 1.0
   }
@@ -3899,7 +3910,7 @@ function Set-SidebarPositionForMarkdownFile {
       ''
       $content.TrimStart("`r", "`n")
     ) -join $newline
-    Write-Utf8NoBomFile -Path $FilePath -Content $newContent
+    Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $FilePath -Content $newContent
     return
   }
 
@@ -3914,7 +3925,7 @@ function Set-SidebarPositionForMarkdownFile {
   }
 
   $newContent = "---$newline$updatedFrontMatter$newline---$rest"
-  Write-Utf8NoBomFile -Path $FilePath -Content $newContent
+  Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $FilePath -Content $newContent
 }
 
 function Set-CategoryPositionForDirectory {
@@ -3931,7 +3942,7 @@ function Set-CategoryPositionForDirectory {
   $categoryJson = Get-Content -LiteralPath $categoryPath -Raw | ConvertFrom-Json
   $categoryJson.position = (ConvertTo-CompactNumericValue -Value ([double]$Position))
   $content = ($categoryJson | ConvertTo-Json -Depth 20) + "`r`n"
-  Write-Utf8NoBomFile -Path $categoryPath -Content $content
+  Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $categoryPath -Content $content
 }
 
 function Set-DocsNavigationItemPosition {
@@ -3994,10 +4005,10 @@ function Invoke-DocsReorder {
   $desiredPositionNumber = [double]$desiredPosition
   if ([Math]::Abs($currentPosition - $desiredPositionNumber) -lt 0.0000001) {
     return [pscustomobject]@{
-      Command = "reorder"
-      Target = $target.RelativePath
-      OldPosition = $target.Position
-      NewPosition = $desiredPosition
+      Command      = "reorder"
+      Target       = $target.RelativePath
+      OldPosition  = $target.Position
+      NewPosition  = $desiredPosition
       UpdatedCount = 0
     }
   }
@@ -4027,7 +4038,7 @@ function Invoke-DocsReorder {
       Set-DocsNavigationItemPosition -Item $sibling -Position $newSiblingPosition
       $changedItems.Add([pscustomobject]@{
           RelativePath = $sibling.RelativePath
-          Position = $newSiblingPosition
+          Position     = $newSiblingPosition
         }) | Out-Null
     }
   }
@@ -4035,14 +4046,14 @@ function Invoke-DocsReorder {
   Set-DocsNavigationItemPosition -Item $target -Position $desiredPosition
   $changedItems.Add([pscustomobject]@{
       RelativePath = $target.RelativePath
-      Position = $desiredPosition
+      Position     = $desiredPosition
     }) | Out-Null
 
   return [pscustomobject]@{
-    Command = "reorder"
-    Target = $target.RelativePath
-    OldPosition = $target.Position
-    NewPosition = $desiredPosition
+    Command      = "reorder"
+    Target       = $target.RelativePath
+    OldPosition  = $target.Position
+    NewPosition  = $desiredPosition
     UpdatedCount = $changedItems.Count
     UpdatedItems = @($changedItems | Sort-Object RelativePath)
   }
@@ -4063,7 +4074,7 @@ function Resolve-DocsVisibilityTarget {
       $candidatePath = Join-Path $directoryCandidate $candidateName
       if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
         return [pscustomobject]@{
-          FullPath = $candidatePath
+          FullPath     = $candidatePath
           RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $candidatePath)
         }
       }
@@ -4077,7 +4088,7 @@ function Resolve-DocsVisibilityTarget {
     Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $fileCandidate
     if (Test-Path -LiteralPath $fileCandidate -PathType Leaf) {
       return [pscustomobject]@{
-        FullPath = $fileCandidate
+        FullPath     = $fileCandidate
         RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $fileCandidate)
       }
     }
@@ -4087,7 +4098,7 @@ function Resolve-DocsVisibilityTarget {
   Assert-PathInsideRoot -RootPath $DocsRoot -TargetPath $directCandidate
   if (Test-Path -LiteralPath $directCandidate -PathType Leaf) {
     return [pscustomobject]@{
-      FullPath = $directCandidate
+      FullPath     = $directCandidate
       RelativePath = (Get-RelativeDocPath -DocsRoot $DocsRoot -FullPath $directCandidate)
     }
   }
@@ -4148,7 +4159,7 @@ function Invoke-DocsVisibility {
     else {
       "---$newline$updatedFrontMatter$newline---$rest"
     }
-    Write-Utf8NoBomFile -Path $target.FullPath -Content $updatedContent
+    Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $target.FullPath -Content $updatedContent
   }
   elseif ($hide) {
     $updatedContent = @(
@@ -4158,13 +4169,13 @@ function Invoke-DocsVisibility {
       ''
       $content.TrimStart("`r", "`n")
     ) -join $newline
-    Write-Utf8NoBomFile -Path $target.FullPath -Content $updatedContent
+    Write-UEToolSuiteUtf8NoBomFile -EnsureParentDirectory -Path $target.FullPath -Content $updatedContent
   }
 
   return [pscustomobject]@{
     Command = "visibility"
-    Target = $target.RelativePath
-    Hidden = $hide
+    Target  = $target.RelativePath
+    Hidden  = $hide
   }
 }
 
@@ -4226,7 +4237,7 @@ function Invoke-DocsCheck {
   }
 
   return [pscustomobject]@{
-    Command = "check"
+    Command      = "check"
     FilesChecked = $docFiles.Count
   }
 }
@@ -4316,7 +4327,7 @@ function Split-DocsStartArguments {
 
   return [pscustomobject]@{
     Background = $background
-    StartArgs = $passThroughArgs.ToArray()
+    StartArgs  = $passThroughArgs.ToArray()
   }
 }
 
@@ -4404,23 +4415,23 @@ function Get-DocsEditorApiStatus {
   $isRunning = (Test-ProcessRunning -ProcessId $processId) -or (Test-ProcessRunning -ProcessId $rootProcessId)
   if (-not $isRunning) {
     return [pscustomobject]@{
-      Status = "stale_state"
-      ProcessId = $processId
+      Status        = "stale_state"
+      ProcessId     = $processId
       RootProcessId = $rootProcessId
-      Url = [string]$entry.url
-      LogPath = [string]$entry.logPath
-      ErrorLogPath = [string]$entry.errorLogPath
+      Url           = [string]$entry.url
+      LogPath       = [string]$entry.logPath
+      ErrorLogPath  = [string]$entry.errorLogPath
     }
   }
 
   return [pscustomobject]@{
-    Status = "running"
-    ProcessId = $processId
+    Status        = "running"
+    ProcessId     = $processId
     RootProcessId = $rootProcessId
-    Url = [string]$entry.url
-    LogPath = [string]$entry.logPath
-    ErrorLogPath = [string]$entry.errorLogPath
-    StartedAt = [string]$entry.startedAt
+    Url           = [string]$entry.url
+    LogPath       = [string]$entry.logPath
+    ErrorLogPath  = [string]$entry.errorLogPath
+    StartedAt     = [string]$entry.startedAt
   }
 }
 
@@ -4435,12 +4446,12 @@ function Start-DocsEditorApiBackground {
     [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $existingStatus.Url)
     return [pscustomobject]@{
       AlreadyRunning = $true
-      ProcessId = $existingStatus.ProcessId
-      RootProcessId = $existingStatus.RootProcessId
-      Url = $existingStatus.Url
-      LogPath = $existingStatus.LogPath
-      ErrorLogPath = $existingStatus.ErrorLogPath
-      StartedAt = $existingStatus.StartedAt
+      ProcessId      = $existingStatus.ProcessId
+      RootProcessId  = $existingStatus.RootProcessId
+      Url            = $existingStatus.Url
+      LogPath        = $existingStatus.LogPath
+      ErrorLogPath   = $existingStatus.ErrorLogPath
+      StartedAt      = $existingStatus.StartedAt
     }
   }
 
@@ -4510,27 +4521,27 @@ function Start-DocsEditorApiBackground {
   }
 
   $entry = [ordered]@{
-    version = 1
+    version       = 1
     rootProcessId = $process.Id
-    processId = $trackedProcessId
-    startedAt = (Get-Date).ToString("o")
-    url = $url
-    port = $resolvedPort
-    logPath = $stdoutPath
-    errorLogPath = $stderrPath
-    scriptPath = $scriptPath
-    commandLine = $commandLine
+    processId     = $trackedProcessId
+    startedAt     = (Get-Date).ToString("o")
+    url           = $url
+    port          = $resolvedPort
+    logPath       = $stdoutPath
+    errorLogPath  = $stderrPath
+    scriptPath    = $scriptPath
+    commandLine   = $commandLine
   }
   [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $entry)
   [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $url)
 
   return [pscustomobject]@{
     AlreadyRunning = $false
-    ProcessId = $trackedProcessId
-    RootProcessId = $process.Id
-    Url = $url
-    LogPath = $stdoutPath
-    ErrorLogPath = $stderrPath
+    ProcessId      = $trackedProcessId
+    RootProcessId  = $process.Id
+    Url            = $url
+    LogPath        = $stdoutPath
+    ErrorLogPath   = $stderrPath
   }
 }
 
@@ -4563,8 +4574,8 @@ function Stop-DocsEditorApiBackground {
   [void](Save-DocsEditorApiEntry -ResolvedRepoRoot $ResolvedRepoRoot -Entry $null)
   Remove-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot
   return [pscustomobject]@{
-    Status = if ($wasRunning) { "stopped" } else { "stale_state_removed" }
-    ProcessId = $processId
+    Status        = if ($wasRunning) { "stopped" } else { "stale_state_removed" }
+    ProcessId     = $processId
     RootProcessId = $rootProcessId
   }
 }
@@ -4647,11 +4658,11 @@ function Invoke-DocsStartBackground {
         [void](Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot)
       }
       return [pscustomobject]@{
-        Command = "start"
-        Aborted = $true
+        Command        = "start"
+        Aborted        = $true
         AlreadyRunning = ($runningEntries.Count -gt 0)
-        ExistingCount = $runningEntries.Count
-        EditorApiUrl = $editorApi.Url
+        ExistingCount  = $runningEntries.Count
+        EditorApiUrl   = $editorApi.Url
       }
     }
   }
@@ -4702,35 +4713,35 @@ function Invoke-DocsStartBackground {
 
   $url = Get-DocsStartUrl -StartArgs $normalizedStartArgs
   $entry = [ordered]@{
-    version = 1
+    version       = 1
     rootProcessId = $process.Id
-    processId = $trackedProcessId
-    startedAt = (Get-Date).ToString("o")
-    websiteRoot = $websiteRoot
-    logPath = $stdoutPath
-    errorLogPath = $stderrPath
-    url = $url
-    commandLine = $commandLine
-    args = $normalizedStartArgs
+    processId     = $trackedProcessId
+    startedAt     = (Get-Date).ToString("o")
+    websiteRoot   = $websiteRoot
+    logPath       = $stdoutPath
+    errorLogPath  = $stderrPath
+    url           = $url
+    commandLine   = $commandLine
+    args          = $normalizedStartArgs
   }
 
   $updatedEntries = @($runningEntries.ToArray()) + @($entry)
   $statePath = Save-DocsServerEntries -ResolvedRepoRoot $ResolvedRepoRoot -Entries $updatedEntries
 
   return [pscustomobject]@{
-    Command = "start-background"
-    AlreadyRunning = $false
-    ProcessId = $trackedProcessId
-    RootProcessId = $process.Id
-    LogPath = $stdoutPath
-    ErrorLogPath = $stderrPath
-    StatePath = $statePath
-    Url = $url
-    EditorApiUrl = $editorApi.Url
-    EditorApiLogPath = $editorApi.LogPath
+    Command               = "start-background"
+    AlreadyRunning        = $false
+    ProcessId             = $trackedProcessId
+    RootProcessId         = $process.Id
+    LogPath               = $stdoutPath
+    ErrorLogPath          = $stderrPath
+    StatePath             = $statePath
+    Url                   = $url
+    EditorApiUrl          = $editorApi.Url
+    EditorApiLogPath      = $editorApi.LogPath
     EditorApiErrorLogPath = $editorApi.ErrorLogPath
-    NpmCommandLine = $commandLine
-    TrackedServerCount = $updatedEntries.Count
+    NpmCommandLine        = $commandLine
+    TrackedServerCount    = $updatedEntries.Count
   }
 }
 
@@ -4744,14 +4755,14 @@ function Invoke-DocsStop {
     $editorStopResult = Stop-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot
     if ($editorStopResult.Status -ne "not_running") {
       return [pscustomobject]@{
-        Command = "stop"
-        Status = "editor_only_stopped"
+        Command      = "stop"
+        Status       = "editor_only_stopped"
         EditorStatus = $editorStopResult.Status
       }
     }
     return [pscustomobject]@{
       Command = "stop"
-      Status = "not_running"
+      Status  = "not_running"
     }
   }
 
@@ -4802,11 +4813,11 @@ function Invoke-DocsStop {
   }
 
   return [pscustomobject]@{
-    Command = "stop"
-    Status = $status
-    ProcessId = $firstProcessId
+    Command      = "stop"
+    Status       = $status
+    ProcessId    = $firstProcessId
     StoppedCount = $stoppedCount
-    StaleCount = $staleCount
+    StaleCount   = $staleCount
     EditorStatus = if ($null -ne $editorStopResult) { $editorStopResult.Status } else { "not_running" }
   }
 }
@@ -4828,11 +4839,11 @@ function Invoke-DocsStatus {
     }
 
     return [pscustomobject]@{
-      Command = "status"
-      Status = if ($editorStatus.Status -eq "running") { "editor_running_only" } else { "not_running" }
-      EditorStatus = $editorStatus.Status
-      EditorUrl = $editorStatus.Url
-      EditorLogPath = $editorStatus.LogPath
+      Command            = "status"
+      Status             = if ($editorStatus.Status -eq "running") { "editor_running_only" } else { "not_running" }
+      EditorStatus       = $editorStatus.Status
+      EditorUrl          = $editorStatus.Url
+      EditorLogPath      = $editorStatus.LogPath
       EditorErrorLogPath = $editorStatus.ErrorLogPath
     }
   }
@@ -4868,17 +4879,17 @@ function Invoke-DocsStatus {
       [void](Write-DocsEditorRuntimeConfig -ResolvedRepoRoot $ResolvedRepoRoot -ApiUrl $editorStatus.Url)
     }
     return [pscustomobject]@{
-      Command = "status"
-      Status = if ($staleEntries.Count -gt 1) { "stale_state_multiple" } else { "stale_state" }
-      ProcessId = $processId
-      RootProcessId = $rootProcessId
-      LogPath = [string]$firstStale.logPath
-      ErrorLogPath = [string]$firstStale.errorLogPath
-      Url = [string]$firstStale.url
-      StaleCount = $staleEntries.Count
-      EditorStatus = $editorStatus.Status
-      EditorUrl = $editorStatus.Url
-      EditorLogPath = $editorStatus.LogPath
+      Command            = "status"
+      Status             = if ($staleEntries.Count -gt 1) { "stale_state_multiple" } else { "stale_state" }
+      ProcessId          = $processId
+      RootProcessId      = $rootProcessId
+      LogPath            = [string]$firstStale.logPath
+      ErrorLogPath       = [string]$firstStale.errorLogPath
+      Url                = [string]$firstStale.url
+      StaleCount         = $staleEntries.Count
+      EditorStatus       = $editorStatus.Status
+      EditorUrl          = $editorStatus.Url
+      EditorLogPath      = $editorStatus.LogPath
       EditorErrorLogPath = $editorStatus.ErrorLogPath
     }
   }
@@ -4896,21 +4907,21 @@ function Invoke-DocsStatus {
   }
 
   return [pscustomobject]@{
-    Command = "status"
-    Status = if ($runningEntries.Count -gt 1) { "running_multiple" } else { "running" }
-    ProcessId = $processId
-    RootProcessId = $rootProcessId
-    LogPath = [string]$firstRunning.logPath
-    ErrorLogPath = [string]$firstRunning.errorLogPath
-    Url = [string]$firstRunning.url
-    StartedAt = [string]$firstRunning.startedAt
-    Args = @($firstRunning.args)
-    RunningCount = $runningEntries.Count
-    StaleCount = $staleEntries.Count
-    RunningEntries = @($runningEntries.ToArray())
-    EditorStatus = $editorStatus.Status
-    EditorUrl = $editorStatus.Url
-    EditorLogPath = $editorStatus.LogPath
+    Command            = "status"
+    Status             = if ($runningEntries.Count -gt 1) { "running_multiple" } else { "running" }
+    ProcessId          = $processId
+    RootProcessId      = $rootProcessId
+    LogPath            = [string]$firstRunning.logPath
+    ErrorLogPath       = [string]$firstRunning.errorLogPath
+    Url                = [string]$firstRunning.url
+    StartedAt          = [string]$firstRunning.startedAt
+    Args               = @($firstRunning.args)
+    RunningCount       = $runningEntries.Count
+    StaleCount         = $staleEntries.Count
+    RunningEntries     = @($runningEntries.ToArray())
+    EditorStatus       = $editorStatus.Status
+    EditorUrl          = $editorStatus.Url
+    EditorLogPath      = $editorStatus.LogPath
     EditorErrorLogPath = $editorStatus.ErrorLogPath
   }
 }
@@ -4924,27 +4935,27 @@ function Invoke-DocsDoctor {
   $migrationPlan = Invoke-DocsSectionMigration -ResolvedRepoRoot $ResolvedRepoRoot -WhatIf
 
   return [pscustomobject]@{
-    Command = "doctor"
-    RepoRoot = $ResolvedRepoRoot
-    WebsiteRoot = $websiteRoot
-    DocsRoot = (Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot)
-    NodeInstalled = (Test-CommandAvailable -Name "node")
-    NpmInstalled = (Test-CommandAvailable -Name "npm")
-    NodeModulesPresent = (Test-Path -LiteralPath (Join-Path $websiteRoot "node_modules"))
-    CodeCliFound = (-not [string]::IsNullOrWhiteSpace($bridgeStatus.CodeCliPath))
-    CodeCliPath = $bridgeStatus.CodeCliPath
+    Command                   = "doctor"
+    RepoRoot                  = $ResolvedRepoRoot
+    WebsiteRoot               = $websiteRoot
+    DocsRoot                  = (Get-DocsRoot -ResolvedRepoRoot $ResolvedRepoRoot)
+    NodeInstalled             = (Test-CommandAvailable -Name "node")
+    NpmInstalled              = (Test-CommandAvailable -Name "npm")
+    NodeModulesPresent        = (Test-Path -LiteralPath (Join-Path $websiteRoot "node_modules"))
+    CodeCliFound              = (-not [string]::IsNullOrWhiteSpace($bridgeStatus.CodeCliPath))
+    CodeCliPath               = $bridgeStatus.CodeCliPath
     MarkdownAllInOneInstalled = $bridgeStatus.MarkdownAllInOneInstalled
-    BridgeInstalled = $bridgeStatus.BridgeInstalled
-    TocReady = $bridgeStatus.TocReady
-    ServerStatus = $status.Status
-    ServerUrl = $status.Url
-    ServerLogPath = $status.LogPath
-    ServerErrorLogPath = $status.ErrorLogPath
-    EditorStatus = $status.EditorStatus
-    EditorApiUrl = $status.EditorUrl
-    EditorApiLogPath = $status.EditorLogPath
-    EditorApiErrorLogPath = $status.EditorErrorLogPath
-    SectionMigration = $migrationPlan
+    BridgeInstalled           = $bridgeStatus.BridgeInstalled
+    TocReady                  = $bridgeStatus.TocReady
+    ServerStatus              = $status.Status
+    ServerUrl                 = $status.Url
+    ServerLogPath             = $status.LogPath
+    ServerErrorLogPath        = $status.ErrorLogPath
+    EditorStatus              = $status.EditorStatus
+    EditorApiUrl              = $status.EditorUrl
+    EditorApiLogPath          = $status.EditorLogPath
+    EditorApiErrorLogPath     = $status.EditorErrorLogPath
+    SectionMigration          = $migrationPlan
   }
 }
 
@@ -4995,20 +5006,20 @@ function Invoke-InstallBridge {
 
   $prefix = "$publisher.$name-"
   Get-ChildItem -LiteralPath $extensionsRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like "$prefix*" } |
-    ForEach-Object {
-      $resolved = $_.FullName
-      if ($resolved.StartsWith($extensionsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-        Remove-Item -LiteralPath $resolved -Recurse -Force
-      }
+  Where-Object { $_.Name -like "$prefix*" } |
+  ForEach-Object {
+    $resolved = $_.FullName
+    if ($resolved.StartsWith($extensionsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+      Remove-Item -LiteralPath $resolved -Recurse -Force
     }
+  }
 
   $destination = Join-Path $extensionsRoot "$publisher.$name-$version"
   Copy-Item -LiteralPath $bridgeSource -Destination $destination -Recurse -Force
 
   return [pscustomobject]@{
-    Command = "install-bridge"
-    Destination = $destination
+    Command                   = "install-bridge"
+    Destination               = $destination
     MarkdownAllInOneInstalled = (Test-VSCodeExtensionInstalled -ExtensionId $script:MarkdownAllInOneExtensionId)
   }
 }
