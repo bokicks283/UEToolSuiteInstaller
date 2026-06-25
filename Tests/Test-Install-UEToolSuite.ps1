@@ -183,6 +183,58 @@ sidebar_position: 1
 '@
 }
 
+function Get-TestDocsRuntimeDirectory {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $docsModulePath = Join-Path $payloadRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+  $docsModule = Import-Module -Name $docsModulePath -Force -DisableNameChecking -PassThru
+  return (& $docsModule { param($repoRoot) Get-DocsToolsRuntimeDirectory -ResolvedRepoRoot $repoRoot } $TargetRoot)
+}
+
+function New-TrackedDocsRuntimeFixture {
+  param([Parameter(Mandatory)][string]$TargetRoot)
+
+  $pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
+  $sleepProcess = Start-Process `
+    -FilePath $pwshPath `
+    -ArgumentList @("-NoLogo", "-NoProfile", "-Command", "Start-Sleep -Seconds 120") `
+    -WindowStyle Hidden `
+    -PassThru
+
+  $runtimeDir = Get-TestDocsRuntimeDirectory -TargetRoot $TargetRoot
+  New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+  $statePath = Join-Path $runtimeDir "docs-server.json"
+  $runtimeState = [ordered]@{
+    version = 3
+    servers = @()
+    editorApi = [ordered]@{
+      version       = 1
+      rootProcessId = $sleepProcess.Id
+      processId     = $sleepProcess.Id
+      startedAt     = (Get-Date).ToString("o")
+      url           = "http://127.0.0.1:38473/"
+      port          = 38473
+      logPath       = ""
+      errorLogPath  = ""
+      scriptPath    = (Join-Path $TargetRoot "Scripts\UETools\DocsEditorApiHost.ps1")
+      modulePath    = (Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Docs.psm1")
+    }
+  }
+  Write-Utf8NoBomFile -Path $statePath -Content ($runtimeState | ConvertTo-Json -Depth 10)
+
+  $runtimeConfigPath = Join-Path $TargetRoot "website\static\ue-tools\editor-runtime.json"
+  Write-Utf8NoBomFile -Path $runtimeConfigPath -Content (@{
+      apiUrl = "http://127.0.0.1:38473/"
+    } | ConvertTo-Json -Depth 5)
+
+  return [pscustomobject]@{
+    ProcessId         = $sleepProcess.Id
+    RuntimeDirectory  = $runtimeDir
+    RuntimeStatePath  = $statePath
+    RuntimeConfigPath = $runtimeConfigPath
+  }
+}
+
 try {
   Step "UE tool suite installer tests ($stamp)"
   Write-Log "Installer: $installerScript" Cyan
@@ -400,6 +452,17 @@ try {
   Assert-Condition "case2d rerun exits cleanly" ($managedGitMetadataRerun.Code -eq 0) "exit=0" "exit=$($managedGitMetadataRerun.Code)"
   Assert-Condition "case2d git ignore rerun is idempotent" ((Get-Content -LiteralPath (Join-Path $managedGitMetadataRepo ".gitignore") -Raw) -eq $managedGitIgnoreFirstRun) "content unchanged" "gitignore changed on rerun"
   Assert-Condition "case2d git attributes rerun is idempotent" ((Get-Content -LiteralPath (Join-Path $managedGitMetadataRepo ".gitattributes") -Raw) -eq $managedGitAttributesFirstRun) "content unchanged" "gitattributes changed on rerun"
+
+  Step "Case 2e: installer stops tracked docs runtime before updating managed payload files"
+  $runtimeStopRepo = New-TargetRepo "runtime stop target"
+  $runtimeStopInstallResult = Invoke-Installer -TargetRoot $runtimeStopRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2e initial install exits cleanly" ($runtimeStopInstallResult.Code -eq 0) "exit=0" "exit=$($runtimeStopInstallResult.Code)"
+  $runtimeFixture = New-TrackedDocsRuntimeFixture -TargetRoot $runtimeStopRepo
+  $runtimeStopUpdateResult = Invoke-Installer -TargetRoot $runtimeStopRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2e update exits cleanly" ($runtimeStopUpdateResult.Code -eq 0) "exit=0" "exit=$($runtimeStopUpdateResult.Code)"
+  Assert-Condition "case2e installer reports docs runtime shutdown" ($runtimeStopUpdateResult.Output -like "*Stopped existing docs runtime before updating managed docs payload files.*") "stop message emitted" "stop message missing"
+  Assert-Condition "case2e tracked runtime process stopped" (-not (Get-Process -Id $runtimeFixture.ProcessId -ErrorAction SilentlyContinue)) "process stopped" "process $($runtimeFixture.ProcessId) still running"
+  Assert-PathMissing "case2e runtime state file removed" $runtimeFixture.RuntimeStatePath
 
   Step "Case 3: installer can run target Init-Repo"
   $initRepo = New-TargetRepo "run init target"

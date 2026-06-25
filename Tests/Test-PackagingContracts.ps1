@@ -262,7 +262,9 @@ try {
   Assert-HasLiteral -Name "doc layout uses Mermaid renderer for edit previews" -Text $docsDocItemLayoutText -Needle "import('mermaid')"
   Assert-HasLiteral -Name "doc layout blocks advanced mdx with source fallback" -Text $docsDocItemLayoutText -Needle "Source Mode Required"
   Assert-HasLiteral -Name "docs editor api host exposes visibility endpoint" -Text (Get-Content -LiteralPath $docsEditorHostPath -Raw) -Needle '"/api/visibility"'
-  Assert-HasLiteral -Name "docs editor api host advertises authoring api version" -Text (Get-Content -LiteralPath $docsEditorHostPath -Raw) -Needle "authoringApiVersion = 2"
+  $docsEditorHostText = Get-Content -LiteralPath $docsEditorHostPath -Raw
+  Assert-HasLiteral -Name "docs editor api host defines shared api version" -Text $docsEditorHostText -Needle '$script:ApiVersion = 2'
+  Assert-HasLiteral -Name "docs editor api host advertises authoring api version" -Text $docsEditorHostText -Needle 'authoringApiVersion = $script:ApiVersion'
   Assert-HasLiteral -Name "docs browser QA covers toolbar readability" -Text $docsBrowserQaText -Needle "at least 28x28 px"
   Assert-HasLiteral -Name "docs browser QA covers dedicated structure ordering controls" -Text $docsBrowserQaText -Needle "Use the Site Settings structure ordering controls"
   Assert-HasLiteral -Name "docs browser QA covers hide from site visibility" -Text $docsBrowserQaText -Needle "Hide the temporary page from the site"

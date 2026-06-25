@@ -19,7 +19,7 @@
       "relativePath": "website/docusaurus.config.ts"
     },
     {
-      "sha256": "84425bd0f0c4078c90d917644d3404063eeebaac6fd95f588399ac0746f672e5",
+      "sha256": "4b85ed6afd2c3262d9409a8ce67768d173dd24034201a4a590db6ae0e54bbb0b",
       "category": "shell",
       "relativePath": "website/domainCatalog.ts"
     },
@@ -79,7 +79,7 @@
       "relativePath": "website/src/pages/site-settings.tsx"
     },
     {
-      "sha256": "8894e581008b7d360f3b848a5d4bc3fa2deab56e95e4a3825b0cdef1c51806e3",
+      "sha256": "cb488288528c58aaa7bf600d4104b8a6c155ebf03053cf7f031cf7945e78d504",
       "category": "shell",
       "relativePath": "website/src/theme/authoring/api.ts"
     },
@@ -449,7 +449,7 @@
       "relativePath": "website/theme-presets/violet.css"
     },
     {
-      "sha256": "1bbddecc170d6739308972751b01e2761e1e8d1cf7f6d43bfc4e5589a9b6e059",
+      "sha256": "5eb33c6cccca2b10103117ba62b844938ba5fed15afaf70f45633b1a06e40923",
       "category": "shell",
       "relativePath": "website/tsconfig.json"
     }

@@ -42,6 +42,7 @@ export type DocsDomainsPayload = {
 export const DOCS_STRUCTURE_CHANGED_EVENT = 'ue-docs:structure-changed';
 const DOCS_STRUCTURE_CHANGED_STORAGE_KEY = 'ue-docs:structure-changed';
 const EDITOR_API_CAPABILITY_VERSION = 2;
+const EDITOR_API_APPLICATION_ID = 'UEToolSuiteDocsEditorApi';
 
 export type DocsContentPayload = {
   path: string;
@@ -55,6 +56,33 @@ const DIRECT_EDITOR_API_URL = 'http://127.0.0.1:38473/';
 const EDITOR_API_HEALTH_PATH = 'health';
 const EDITOR_API_PROBE_TIMEOUT_MS = 1500;
 const EDITOR_API_PROBE_RETRY_DELAY_MS = 1000;
+
+type EditorRuntimeConfig = {
+  apiUrl?: string;
+  applicationId?: string;
+  apiVersion?: number;
+  repoRoot?: string;
+  docsRoot?: string;
+  processId?: number;
+  startedAt?: string;
+};
+
+type EditorApiHealthPayload = {
+  ok?: boolean;
+  applicationId?: string;
+  apiVersion?: number;
+  processId?: number;
+  repoRoot?: string;
+  docsRoot?: string;
+  startedAt?: string;
+  capabilities?: {
+    authoringApiVersion?: number;
+    siteConfig?: boolean;
+    domains?: boolean;
+    tree?: boolean;
+    visibility?: boolean;
+  };
+};
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
@@ -189,13 +217,50 @@ function buildApiCandidates(preferredApiBase: string): string[] {
   candidates.add(preferred);
   candidates.add(normalizeApiBase(DEFAULT_EDITOR_API_URL));
   candidates.add(normalizeApiBase(DIRECT_EDITOR_API_URL));
-  for (let port = 38474; port <= 38490; port += 1) {
-    candidates.add(normalizeApiBase(`http://127.0.0.1:${port}/`));
-  }
   return [...candidates];
 }
 
-async function probeApiBase(apiBase: string, timeoutMs = EDITOR_API_PROBE_TIMEOUT_MS): Promise<boolean> {
+function normalizeComparablePath(value: string | undefined): string {
+  return (value || '').replaceAll('\\', '/').replace(/\/+$/g, '').toLowerCase();
+}
+
+function matchesExpectedRuntimeIdentity(payload: EditorApiHealthPayload, expected: EditorRuntimeConfig | null): boolean {
+  if (!expected) {
+    return true;
+  }
+
+  if (expected.applicationId && payload.applicationId !== expected.applicationId) {
+    return false;
+  }
+
+  if (typeof expected.apiVersion === 'number' && payload.apiVersion !== expected.apiVersion) {
+    return false;
+  }
+
+  if (expected.repoRoot && normalizeComparablePath(payload.repoRoot) !== normalizeComparablePath(expected.repoRoot)) {
+    return false;
+  }
+
+  if (expected.docsRoot && normalizeComparablePath(payload.docsRoot) !== normalizeComparablePath(expected.docsRoot)) {
+    return false;
+  }
+
+  if (typeof expected.processId === 'number' && payload.processId !== expected.processId) {
+    return false;
+  }
+
+  if (expected.startedAt && payload.startedAt !== expected.startedAt) {
+    return false;
+  }
+
+  return true;
+}
+
+async function probeApiBase(
+  apiBase: string,
+  expectedRuntime: EditorRuntimeConfig | null,
+  timeoutMs = EDITOR_API_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -206,28 +271,22 @@ async function probeApiBase(apiBase: string, timeoutMs = EDITOR_API_PROBE_TIMEOU
     if (!response.ok) {
       return false;
     }
-    const payload = (await response.json()) as {
-      ok?: boolean;
-      capabilities?: {
-        authoringApiVersion?: number;
-        siteConfig?: boolean;
-        domains?: boolean;
-        tree?: boolean;
-        visibility?: boolean;
-      };
-    };
+    const payload = (await response.json()) as EditorApiHealthPayload;
     if (payload.ok === false) {
       return false;
     }
 
     const capabilities = payload.capabilities;
     return (
+      payload.applicationId === EDITOR_API_APPLICATION_ID &&
+      payload.apiVersion === EDITOR_API_CAPABILITY_VERSION &&
       !!capabilities &&
       capabilities.authoringApiVersion === EDITOR_API_CAPABILITY_VERSION &&
       capabilities.siteConfig === true &&
       capabilities.domains === true &&
       capabilities.tree === true &&
-      capabilities.visibility === true
+      capabilities.visibility === true &&
+      matchesExpectedRuntimeIdentity(payload, expectedRuntime)
     );
   } catch {
     return false;
@@ -236,9 +295,14 @@ async function probeApiBase(apiBase: string, timeoutMs = EDITOR_API_PROBE_TIMEOU
   }
 }
 
-async function resolveReachableApiBase(preferredApiBase: string): Promise<{apiBaseUrl: string; runtimeAvailable: boolean}> {
+async function resolveReachableApiBase(
+  preferredApiBase: string,
+  expectedRuntime: EditorRuntimeConfig | null,
+): Promise<{apiBaseUrl: string; runtimeAvailable: boolean}> {
   const candidates = buildApiCandidates(preferredApiBase);
-  const probeResults = await Promise.all(candidates.map(async (candidate) => ({candidate, ok: await probeApiBase(candidate)})));
+  const probeResults = await Promise.all(
+    candidates.map(async (candidate) => ({candidate, ok: await probeApiBase(candidate, expectedRuntime)})),
+  );
   for (const result of probeResults) {
     if (result.ok) {
       return {apiBaseUrl: result.candidate, runtimeAvailable: true};
@@ -258,6 +322,7 @@ export function useDocsAuthoringApi() {
 
     async function loadRuntimeConfig() {
       let preferredApiBase = DEFAULT_EDITOR_API_URL;
+      let expectedRuntime: EditorRuntimeConfig | null = null;
       try {
         const runtimeConfigPaths = ['/ue-tools/editor-runtime.json', '/.ue-tools/editor-runtime.json'];
         for (const runtimeConfigPath of runtimeConfigPaths) {
@@ -266,16 +331,17 @@ export function useDocsAuthoringApi() {
             continue;
           }
 
-          const payload = (await response.json()) as {apiUrl?: string};
+          const payload = (await response.json()) as EditorRuntimeConfig;
           if (payload.apiUrl) {
             preferredApiBase = normalizeApiBase(payload.apiUrl);
           }
+          expectedRuntime = payload;
           break;
         }
       } catch {
         // Keep default loopback API URL.
       } finally {
-        const resolvedApi = await resolveReachableApiBase(preferredApiBase);
+        const resolvedApi = await resolveReachableApiBase(preferredApiBase, expectedRuntime);
         if (!cancelled) {
           setApiBaseUrl(resolvedApi.apiBaseUrl);
           setRuntimeAvailable(resolvedApi.runtimeAvailable);

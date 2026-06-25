@@ -785,6 +785,38 @@ function Invoke-InstalledDocsSectionMigration {
   }
 }
 
+function Stop-InstalledDocsRuntimeIfPresent {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$TargetRoot
+  )
+
+  $payloadDocsModulePath = Join-Path $PayloadRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+  if (-not (Test-Path -LiteralPath $payloadDocsModulePath -PathType Leaf)) {
+    return [pscustomobject]@{
+      Status = "not-applicable"
+    }
+  }
+
+  $docsModule = Import-Module -Name $payloadDocsModulePath -Force -DisableNameChecking -PassThru
+  $statusBefore = & $docsModule { param($repoRoot) Invoke-DocsStatus -ResolvedRepoRoot $repoRoot } $TargetRoot
+  $stopResult = & $docsModule { param($repoRoot) Invoke-DocsStop -ResolvedRepoRoot $repoRoot } $TargetRoot
+  $statusAfter = & $docsModule { param($repoRoot) Invoke-DocsStatus -ResolvedRepoRoot $repoRoot } $TargetRoot
+
+  $serverStillRunning = $statusAfter.Status -in @("running", "running_multiple")
+  $editorStillRunning = $statusAfter.EditorStatus -in @("running", "running_untracked", "conflict")
+  if ($serverStillRunning -or $editorStillRunning) {
+    throw ("Installer refused to continue because the target docs runtime is still active for '{0}'. Server status: {1}. Editor status: {2}." -f $TargetRoot, $statusAfter.Status, $statusAfter.EditorStatus)
+  }
+
+  return [pscustomobject]@{
+    Status       = if (($statusBefore.Status -ne "not_running") -or ($statusBefore.EditorStatus -ne "not_running")) { "stopped" } else { "not_running" }
+    StatusBefore = $statusBefore
+    StopResult   = $stopResult
+    StatusAfter  = $statusAfter
+  }
+}
+
 function Apply-WebsiteThemeAndBranding {
   param(
     [Parameter(Mandatory)][string]$PayloadRoot,
@@ -2561,6 +2593,14 @@ if (-not $SkipWebsite) {
       -PersistedOverrideDocument $websiteOverridesState.Document `
       -ForceSuitePaths $WebsiteForceSuitePath `
       -ForceProjectPaths $WebsiteForceProjectPath
+  }
+}
+
+$docsRuntimeStopResult = $null
+if ((-not $SkipWebsite) -or (-not $SkipDocs)) {
+  $docsRuntimeStopResult = Stop-InstalledDocsRuntimeIfPresent -PayloadRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot
+  if ($docsRuntimeStopResult.Status -eq "stopped") {
+    Info "Stopped existing docs runtime before updating managed docs payload files."
   }
 }
 

@@ -222,51 +222,36 @@ function Invoke-DocsToolsCommand {
     }
 
     $coreModulePath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "UEToolSuite.Core.psm1"
-    $escapedCoreModulePath = $coreModulePath -replace "'", "''"
-    $escapedScriptPath = $script:DocsToolsScriptPath -replace "'", "''"
-    $escapedRepoRoot = $ScratchRepoRoot -replace "'", "''"
-    $escapedCliArgs = @($CliArgs | ForEach-Object { "'" + (("$($_)") -replace "'", "''") + "'" })
-    $commandText = @"
-`$cliArgs = @($($escapedCliArgs -join ', '))
-`$previousAutoRunFlag = `$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN
-`$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = '1'
-try {
-  Import-Module -Name '$escapedCoreModulePath' -Force -DisableNameChecking | Out-Null
-  `$scriptsRoot = Split-Path -Parent (Split-Path -Parent '$escapedScriptPath')
-  if (Get-Command -Name 'Set-UEToolSuiteRuntimeContext' -CommandType Function -ErrorAction SilentlyContinue) {
-    Set-UEToolSuiteRuntimeContext -ScriptsRoot `$scriptsRoot -StateKey 'docs-tools-test' -LogPrefix '[Docs]'
-  }
-  `$docsModule = Import-Module -Name '$escapedScriptPath' -Force -DisableNameChecking -PassThru
-  `$repoResolver = Get-Command -Name 'Get-DocsToolsRepoRoot' -Module `$docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
-  if (-not `$repoResolver) { throw 'Get-DocsToolsRepoRoot was not exported by docs module.' }
-  `$entrypoint = Get-Command -Name 'Invoke-DocsToolsMain' -Module `$docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
-  if (-not `$entrypoint) { throw 'Invoke-DocsToolsMain was not exported by docs module.' }
-  `$resolvedRepoRoot = & `$repoResolver.Name -ExplicitRepoRoot '$escapedRepoRoot'
-  & `$entrypoint.Name -ResolvedRepoRoot `$resolvedRepoRoot -CommandArguments `$cliArgs
-}
-catch {
-  Write-Host ('Error: ' + `$_.Exception.Message) -ForegroundColor Red
-  exit 1
-}
-finally {
-  if (`$null -eq `$previousAutoRunFlag) {
-    Remove-Item Env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
-  }
-  else {
-    `$env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = `$previousAutoRunFlag
-  }
-}
-"@
+    $previousAutoRunFlag = $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN
+    $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = '1'
+    try {
+      Import-Module -Name $coreModulePath -Force -DisableNameChecking | Out-Null
+      $scriptsRoot = Split-Path -Parent (Split-Path -Parent $script:DocsToolsScriptPath)
+      if (Get-Command -Name 'Set-UEToolSuiteRuntimeContext' -CommandType Function -ErrorAction SilentlyContinue) {
+        Set-UEToolSuiteRuntimeContext -ScriptsRoot $scriptsRoot -StateKey 'docs-tools-test' -LogPrefix '[Docs]'
+      }
 
-    $allArgs = @(
-      "-NoLogo",
-      "-NoProfile",
-      "-ExecutionPolicy", "Bypass",
-      "-Command", $commandText
-    )
-
-    $output = @(& $pwshPath @allArgs 2>&1)
-    $exitCode = $LASTEXITCODE
+      $docsModule = Import-Module -Name $script:DocsToolsScriptPath -Force -DisableNameChecking -PassThru
+      $repoResolver = Get-Command -Name 'Get-DocsToolsRepoRoot' -Module $docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+      if (-not $repoResolver) { throw 'Get-DocsToolsRepoRoot was not exported by docs module.' }
+      $entrypoint = Get-Command -Name 'Invoke-DocsToolsMain' -Module $docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+      if (-not $entrypoint) { throw 'Invoke-DocsToolsMain was not exported by docs module.' }
+      $resolvedRepoRoot = & $repoResolver.Name -ExplicitRepoRoot $ScratchRepoRoot
+      $output = @(& $entrypoint.Name -ResolvedRepoRoot $resolvedRepoRoot -CommandArguments $CliArgs 2>&1)
+      $exitCode = 0
+    }
+    catch {
+      $output = @("Error: $($_.Exception.Message)")
+      $exitCode = 1
+    }
+    finally {
+      if ($null -eq $previousAutoRunFlag) {
+        Remove-Item Env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue
+      }
+      else {
+        $env:UE_TOOLS_DOCS_RUNTIME_NO_AUTORUN = $previousAutoRunFlag
+      }
+    }
 
     return [pscustomobject]@{
       ExitCode = $exitCode
@@ -476,6 +461,12 @@ try {
       $apiHostHealthFailure = "health endpoint did not report ready. stderr=$stderrSnippet stdout=$stdoutSnippet"
     }
     Assert-Condition "case1g api host health endpoint ready" $apiHostReady "health ok" $apiHostHealthFailure
+    Assert-Condition "case1g health reports application identity" ([string]$health.applicationId -eq "UEToolSuiteDocsEditorApi") "application id matches" "applicationId=$([string]$health.applicationId)"
+    Assert-Condition "case1g health reports api version" ([int]$health.apiVersion -eq 2) "apiVersion=2" "apiVersion=$([string]$health.apiVersion)"
+    Assert-Condition "case1g health reports process id" ([int]$health.processId -gt 0) "process id reported" "processId=$([string]$health.processId)"
+    Assert-Condition "case1g health reports repo root" ([string]$health.repoRoot -eq $apiHostRepo) "repo root matches" "repoRoot=$([string]$health.repoRoot)"
+    Assert-Condition "case1g health reports docs root" ([string]$health.docsRoot -eq (Join-Path $apiHostRepo 'Docs')) "docs root matches" "docsRoot=$([string]$health.docsRoot)"
+    Assert-Condition "case1g health reports startup timestamp" (-not [string]::IsNullOrWhiteSpace([string]$health.startedAt)) "startedAt reported" "startedAt missing"
 
     if ($apiHostReady) {
       $tree = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/tree" -Method Get -TimeoutSec 5
@@ -2218,7 +2209,7 @@ sidebar_position: 1
       -CliArgs @("start", "--background", "--port", "$startStopPort") `
       -Toolset $startStopToolset `
       -SandboxRoot $startStopSandbox `
-      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes"; STUB_NPM_START_MODE = "sleep" }
     $serverStateFiles = @(Get-ChildItem -Path (Join-Path $startResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
     $serverState = Get-Content -LiteralPath $serverStateFiles[0].FullName -Raw | ConvertFrom-Json
     $primaryServerState = if ($serverState.PSObject.Properties["servers"]) { @($serverState.servers)[0] } else { $serverState }
@@ -2256,7 +2247,7 @@ sidebar_position: 1
       -not (Get-Process -Id $primaryServerPid -ErrorAction SilentlyContinue)
     ) "process $primaryServerPid stopped"
 
-    Step "Case 5c: start --background tracks multiple servers and stop removes tracked state"
+    Step "Case 5c: start --background reuses the tracked docs server instead of creating duplicates"
     $multiServerRepo = New-MinimalDocsRepo -Name "repo-start-stop-multiple"
     $multiServerToolset = New-StubToolset -Name "toolset-start-stop-multiple"
     $multiServerSandbox = New-ScratchPath "sandbox-start-stop-multiple"
@@ -2270,24 +2261,21 @@ sidebar_position: 1
       -CliArgs @("start", "--background", "--port", "$firstMultiPort") `
       -Toolset $multiServerToolset `
       -SandboxRoot $multiServerSandbox `
-      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes"; STUB_NPM_START_MODE = "sleep" }
     $secondStartResult = Invoke-DocsToolsCommand `
       -ScratchRepoRoot $multiServerRepo `
       -CliArgs @("start", "--background", "--port", "$secondMultiPort") `
       -Toolset $multiServerToolset `
       -SandboxRoot $multiServerSandbox `
-      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes"; STUB_NPM_START_MODE = "sleep" }
     $multiStateFiles = @(Get-ChildItem -Path (Join-Path $firstStartResult.SandboxTemp "ueproject-ue-tools-docs") -Recurse -Filter docs-server.json -ErrorAction SilentlyContinue)
     $multiStateRaw = Get-Content -LiteralPath $multiStateFiles[0].FullName -Raw | ConvertFrom-Json
     $multiEntries = if ($multiStateRaw.PSObject.Properties["servers"]) { @($multiStateRaw.servers) } else { @($multiStateRaw) }
     $multiPids = @($multiEntries | ForEach-Object { [int]$_.processId } | Select-Object -Unique)
     Assert-Condition "case5c first start exits cleanly" ($firstStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($firstStartResult.ExitCode)"
     Assert-Condition "case5c second start exits cleanly" ($secondStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($secondStartResult.ExitCode)"
-    Assert-Condition "case5c state file remains valid after second start" ($multiEntries.Count -ge 1) "tracked servers=$($multiEntries.Count)" "expected at least one tracked server entry"
-    Assert-Condition "case5c second start reports a handled path" (
-      $secondStartResult.OutputText.Contains("Started docs dev server in the background") -or
-      $secondStartResult.OutputText.Contains("Docs dev server start aborted")
-    ) "second start returned a handled result"
+    Assert-Condition "case5c state file keeps a single tracked server after second start" ($multiEntries.Count -eq 1) "tracked servers=1" "tracked servers=$($multiEntries.Count)"
+    Assert-TextContains "case5c second start reports reuse" $secondStartResult.OutputText "Docs dev server is already running"
     $multiStopResult = Invoke-DocsToolsCommand `
       -ScratchRepoRoot $multiServerRepo `
       -CliArgs @("stop") `
@@ -2315,7 +2303,7 @@ sidebar_position: 1
       -CliArgs @("start", "--background", "--port", "$editorRuntimePort") `
       -Toolset $editorRuntimeToolset `
       -SandboxRoot $editorRuntimeSandbox `
-      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes" }
+      -ExtraEnv @{ UE_TOOLS_DOCS_START_CONTINUE = "yes"; STUB_NPM_START_MODE = "sleep" }
     Assert-Condition "case5d start exits cleanly" ($editorStartResult.ExitCode -eq 0) "exit code=0" "exit code=$($editorStartResult.ExitCode)"
     Assert-TextContains "case5d start output includes editor api" $editorStartResult.OutputText "Editor API: http://127.0.0.1:"
     Assert-TextContains "case5d start output mentions inline editing" $editorStartResult.OutputText "Inline editing is available directly on docs pages."
@@ -2332,7 +2320,14 @@ sidebar_position: 1
     Assert-Condition "case5d editor runtime config created" (Test-Path -LiteralPath $editorRuntimeConfigPath -PathType Leaf) "editor-runtime.json created"
     if (Test-Path -LiteralPath $editorRuntimeConfigPath -PathType Leaf) {
       $editorRuntimeConfigText = Get-Content -LiteralPath $editorRuntimeConfigPath -Raw
+      $editorRuntimeConfig = $editorRuntimeConfigText | ConvertFrom-Json
       Assert-TextContains "case5d runtime config stores api url" $editorRuntimeConfigText '"apiUrl": "http://127.0.0.1:'
+      Assert-Condition "case5d runtime config stores application id" ([string]$editorRuntimeConfig.applicationId -eq "UEToolSuiteDocsEditorApi") "application id matches" "applicationId=$([string]$editorRuntimeConfig.applicationId)"
+      Assert-Condition "case5d runtime config stores repo root" ([string]$editorRuntimeConfig.repoRoot -eq $editorRuntimeRepo) "repo root matches" "repoRoot=$([string]$editorRuntimeConfig.repoRoot)"
+      Assert-Condition "case5d runtime config stores docs root" ([string]$editorRuntimeConfig.docsRoot -eq (Join-Path $editorRuntimeRepo 'Docs')) "docs root matches" "docsRoot=$([string]$editorRuntimeConfig.docsRoot)"
+      $editorHealth = Invoke-RestMethod -Uri ([string]$editorRuntimeConfig.apiUrl + "health") -Method Get -TimeoutSec 2
+      Assert-Condition "case5d live health matches runtime config process id" ([int]$editorHealth.processId -eq [int]$editorRuntimeConfig.processId) "process ids match" "health processId=$([string]$editorHealth.processId) runtime processId=$([string]$editorRuntimeConfig.processId)"
+      Assert-Condition "case5d live health reports startup timestamp" (-not [string]::IsNullOrWhiteSpace([string]$editorHealth.startedAt)) "startedAt reported" "health startedAt missing"
     }
 
     $editorStopResult = Invoke-DocsToolsCommand `
@@ -2346,9 +2341,28 @@ sidebar_position: 1
       $editorStopResult.OutputText.Contains("Editor API status: stale_state_removed") -or
       $editorStopResult.OutputText.Contains("Editor API status: not_running")
     ) "stop command reported editor runtime shutdown"
+
+    Step "Case 5e: start --background fails clearly when the editor API port is occupied by another process"
+    $occupiedApiRepo = New-MinimalDocsRepo -Name "repo-editor-port-conflict"
+    $occupiedApiToolset = New-StubToolset -Name "toolset-editor-port-conflict"
+    $occupiedApiSandbox = New-ScratchPath "sandbox-editor-port-conflict"
+    $occupiedApiListener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 38473)
+    $occupiedApiListener.Start()
+    try {
+      $occupiedApiStartResult = Invoke-DocsToolsCommand `
+        -ScratchRepoRoot $occupiedApiRepo `
+        -CliArgs @("start", "--background", "--port", "$(Get-FreeTcpPort)") `
+        -Toolset $occupiedApiToolset `
+        -SandboxRoot $occupiedApiSandbox
+      Assert-Condition "case5e start returns non-zero when api port is occupied" ($occupiedApiStartResult.ExitCode -ne 0) "non-zero exit" "exit code=$($occupiedApiStartResult.ExitCode)"
+      Assert-TextContains "case5e start reports occupied api port clearly" $occupiedApiStartResult.OutputText "Docs editor API port 38473 is already in use by a different or unverified process."
+    }
+    finally {
+      $occupiedApiListener.Stop()
+    }
   }
   else {
-    Step "Case 5b/5c/5d: background runtime lifecycle (optional)"
+    Step "Case 5b/5c/5d/5e: background runtime lifecycle (optional)"
     $script:SkipCount += 1
     Write-Log "[SKIP] Set UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS=1 to run background docs runtime lifecycle cases." Yellow
   }

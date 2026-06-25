@@ -22,6 +22,9 @@ if (Test-Path -LiteralPath $coreModulePath -PathType Leaf) {
 }
 $script:RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $script:DocsRoot = (& $script:DocsModule { param($resolvedRepoRoot) Get-DocsRoot -ResolvedRepoRoot $resolvedRepoRoot } $script:RepoRoot)
+$script:ApiStartedAt = (Get-Date).ToString("o")
+$script:ApiVersion = 2
+$script:ApiApplicationId = "UEToolSuiteDocsEditorApi"
 
 if (-not (Test-Path -LiteralPath $script:DocsRoot -PathType Container)) {
   throw "Docs root not found: $($script:DocsRoot)"
@@ -4230,10 +4233,16 @@ function Invoke-EditorApiRequest {
   if ($path -eq "/health" -and $request.HttpMethod -eq "GET") {
     Write-JsonResponse -Context $Context -Payload ([ordered]@{
         ok           = $true
+        applicationId = $script:ApiApplicationId
+        apiVersion    = $script:ApiVersion
+        processId     = $PID
         repoRoot     = $script:RepoRoot
         docsRoot     = $script:DocsRoot
+        startedAt    = $script:ApiStartedAt
+        modulePath   = $DocsModulePath
+        scriptPath   = $PSCommandPath
         capabilities = [ordered]@{
-          authoringApiVersion = 2
+          authoringApiVersion = $script:ApiVersion
           siteConfig          = $true
           domains             = $true
           tree                = $true
