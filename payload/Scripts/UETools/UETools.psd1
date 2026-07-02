@@ -15,7 +15,7 @@
   Author = "UEToolSuiteInstaller"
   CompanyName = "UEToolSuiteInstaller"
   Copyright = "(c) UEToolSuiteInstaller. All rights reserved."
-  PowerShellVersion = "5.1"
+  PowerShellVersion = "7.3"
   FunctionsToExport = "*"
   CmdletsToExport = @()
   VariablesToExport = @()
