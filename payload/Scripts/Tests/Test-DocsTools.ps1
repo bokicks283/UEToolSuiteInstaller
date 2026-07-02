@@ -57,6 +57,38 @@ function Get-FreeTcpPort {
   }
 }
 
+function Test-IsRoundTripTimestamp {
+  param([AllowEmptyString()][string]$Value)
+
+  if ([string]::IsNullOrWhiteSpace($Value)) {
+    return $false
+  }
+
+  $parsed = [System.DateTimeOffset]::MinValue
+  return [System.DateTimeOffset]::TryParseExact(
+    $Value,
+    "o",
+    [System.Globalization.CultureInfo]::InvariantCulture,
+    [System.Globalization.DateTimeStyles]::RoundtripKind,
+    [ref]$parsed
+  )
+}
+
+function Get-JsonStringFieldValue {
+  param(
+    [Parameter(Mandatory)][string]$JsonText,
+    [Parameter(Mandatory)][string]$FieldName
+  )
+
+  $pattern = '"' + [regex]::Escape($FieldName) + '"\s*:\s*"(?<value>(?:[^"\\]|\\.)*)"'
+  $match = [regex]::Match($JsonText, $pattern)
+  if (-not $match.Success) {
+    return ""
+  }
+
+  return $match.Groups["value"].Value
+}
+
 function New-MinimalDocsRepo {
   param([Parameter(Mandatory)][string]$Name)
 
@@ -434,7 +466,8 @@ try {
   try {
     for ($i = 0; $i -lt 30; $i++) {
       try {
-        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/health" -Method Get -TimeoutSec 2
+        $healthResponse = Invoke-WebRequest -Uri "http://127.0.0.1:$apiHostPort/health" -Method Get -TimeoutSec 2
+        $health = $healthResponse.Content | ConvertFrom-Json
         if ($health.ok) {
           $apiHostReady = $true
           break
@@ -466,7 +499,9 @@ try {
     Assert-Condition "case1g health reports process id" ([int]$health.processId -gt 0) "process id reported" "processId=$([string]$health.processId)"
     Assert-Condition "case1g health reports repo root" ([string]$health.repoRoot -eq $apiHostRepo) "repo root matches" "repoRoot=$([string]$health.repoRoot)"
     Assert-Condition "case1g health reports docs root" ([string]$health.docsRoot -eq (Join-Path $apiHostRepo 'Docs')) "docs root matches" "docsRoot=$([string]$health.docsRoot)"
-    Assert-Condition "case1g health reports startup timestamp" (-not [string]::IsNullOrWhiteSpace([string]$health.startedAt)) "startedAt reported" "startedAt missing"
+    $healthStartedAtRaw = Get-JsonStringFieldValue -JsonText $healthResponse.Content -FieldName "startedAt"
+    Assert-Condition "case1g health reports startup timestamp" (-not [string]::IsNullOrWhiteSpace($healthStartedAtRaw)) "startedAt reported" "startedAt missing"
+    Assert-Condition "case1g health startup timestamp uses invariant round-trip format" (Test-IsRoundTripTimestamp -Value $healthStartedAtRaw) "startedAt format is round-trip" "startedAt=$healthStartedAtRaw"
 
     if ($apiHostReady) {
       $tree = Invoke-RestMethod -Uri "http://127.0.0.1:$apiHostPort/api/tree" -Method Get -TimeoutSec 5
@@ -2321,13 +2356,21 @@ sidebar_position: 1
     if (Test-Path -LiteralPath $editorRuntimeConfigPath -PathType Leaf) {
       $editorRuntimeConfigText = Get-Content -LiteralPath $editorRuntimeConfigPath -Raw
       $editorRuntimeConfig = $editorRuntimeConfigText | ConvertFrom-Json
+      $editorRuntimeGeneratedAtRaw = Get-JsonStringFieldValue -JsonText $editorRuntimeConfigText -FieldName "generatedAt"
+      $editorRuntimeStartedAtRaw = Get-JsonStringFieldValue -JsonText $editorRuntimeConfigText -FieldName "startedAt"
       Assert-TextContains "case5d runtime config stores api url" $editorRuntimeConfigText '"apiUrl": "http://127.0.0.1:'
       Assert-Condition "case5d runtime config stores application id" ([string]$editorRuntimeConfig.applicationId -eq "UEToolSuiteDocsEditorApi") "application id matches" "applicationId=$([string]$editorRuntimeConfig.applicationId)"
       Assert-Condition "case5d runtime config stores repo root" ([string]$editorRuntimeConfig.repoRoot -eq $editorRuntimeRepo) "repo root matches" "repoRoot=$([string]$editorRuntimeConfig.repoRoot)"
       Assert-Condition "case5d runtime config stores docs root" ([string]$editorRuntimeConfig.docsRoot -eq (Join-Path $editorRuntimeRepo 'Docs')) "docs root matches" "docsRoot=$([string]$editorRuntimeConfig.docsRoot)"
+      Assert-Condition "case5d runtime config generatedAt uses invariant round-trip format" (Test-IsRoundTripTimestamp -Value $editorRuntimeGeneratedAtRaw) "generatedAt format is round-trip" "generatedAt=$editorRuntimeGeneratedAtRaw"
+      Assert-Condition "case5d runtime config startedAt uses invariant round-trip format" (Test-IsRoundTripTimestamp -Value $editorRuntimeStartedAtRaw) "startedAt format is round-trip" "startedAt=$editorRuntimeStartedAtRaw"
       $editorHealth = Invoke-RestMethod -Uri ([string]$editorRuntimeConfig.apiUrl + "health") -Method Get -TimeoutSec 2
+      $editorHealthResponse = Invoke-WebRequest -Uri ([string]$editorRuntimeConfig.apiUrl + "health") -Method Get -TimeoutSec 2
+      $editorHealthStartedAtRaw = Get-JsonStringFieldValue -JsonText $editorHealthResponse.Content -FieldName "startedAt"
       Assert-Condition "case5d live health matches runtime config process id" ([int]$editorHealth.processId -eq [int]$editorRuntimeConfig.processId) "process ids match" "health processId=$([string]$editorHealth.processId) runtime processId=$([string]$editorRuntimeConfig.processId)"
-      Assert-Condition "case5d live health reports startup timestamp" (-not [string]::IsNullOrWhiteSpace([string]$editorHealth.startedAt)) "startedAt reported" "health startedAt missing"
+      Assert-Condition "case5d live health reports startup timestamp" (-not [string]::IsNullOrWhiteSpace($editorHealthStartedAtRaw)) "startedAt reported" "health startedAt missing"
+      Assert-Condition "case5d live health startup timestamp uses invariant round-trip format" (Test-IsRoundTripTimestamp -Value $editorHealthStartedAtRaw) "health startedAt format is round-trip" "startedAt=$editorHealthStartedAtRaw"
+      Assert-Condition "case5d runtime config and health share the same startup timestamp" ($editorHealthStartedAtRaw -eq $editorRuntimeStartedAtRaw) "startedAt values match" "health startedAt=$editorHealthStartedAtRaw runtime startedAt=$editorRuntimeStartedAtRaw"
     }
 
     $editorStopResult = Invoke-DocsToolsCommand `

@@ -280,3 +280,150 @@ Lifecycle changes must keep runtime state removable through `docs stop`, tolerat
 
 - The user-facing sidebar/nav symptoms may still include a separate hot-reload issue after the split-instance lifecycle flaw is fixed.
 - Installer-side stop/invalidate logic must handle both current and older payload shapes without blocking clean upgrades.
+
+---
+
+## Plan: Docs Frontend Runtime Identity, Diagnostics, and Build Parity
+
+### Goal
+
+Accept the correct local Docs Editor API for the active project, surface precise frontend/runtime failure reasons, back off appropriately on transient failures, emit invariant timestamps, and ensure the installed/served website bundle actually matches the fixed source.
+
+### Non-goals
+
+- Do not redesign the authoring protocol beyond the confirmed `startedAt` issue.
+- Do not remove project/process identity validation.
+- Do not revisit unrelated docs navigation, sidebar, or editor-formatting bugs.
+- Do not patch only installed generated assets without fixing the source and deployment path.
+
+### Current failure
+
+- Current checked-in frontend source in `payload/website/src/theme/authoring/api.ts` rejects a healthy API when runtime descriptor `startedAt` and `/health` `startedAt` represent the same process in different string formats.
+- `site-settings.tsx` collapses all failures into a generic “not reachable” message and a fixed one-second retry loop.
+- Installed `cppCozyRPG\website\src` matches current source, but `cppCozyRPG\website\build` is older and still serves stale JS behavior.
+- Installer-managed website files currently exclude `website/build`, and the managed website ledger has no entries for built assets, so build artifacts can drift from source indefinitely.
+
+### Invariants
+
+- Windows path identity remains case-insensitive and slash-insensitive.
+- `applicationId`, `apiVersion`, `processId`, normalized `repoRoot`, and normalized `docsRoot` remain enforced.
+- Only one discovery attempt may be active per mounted hook instance.
+- Discovery backs off after failures.
+- Static docs rendering remains usable when authoring is unavailable.
+- Managed payload paths remain installation contracts, including cleanup of obsolete managed artifacts when the managed file set changes.
+
+### Files and boundaries
+
+| Boundary | Files expected to change | Why |
+|---|---|---|
+| API client/runtime discovery | `payload/website/src/theme/authoring/api.ts`, new focused runtime-discovery helper(s) under `payload/website/src/theme/authoring/` | Remove `startedAt` identity rejection, add structured diagnostics, and implement retry/backoff/manual retry |
+| React UI | `payload/website/src/pages/site-settings.tsx` | Show actionable error states instead of one generic message |
+| PowerShell runtime lifecycle | `payload/Scripts/UETools/UEToolSuite.Docs.psm1`, `payload/Scripts/UETools/DocsEditorApiHost.ps1` | Emit invariant ISO timestamps in runtime descriptor and health |
+| Website test harness | `payload/website/package.json`, new test script files under `payload/website/scripts/` | Add focused unit/editor tests without broad dependency changes |
+| Docs/runtime tests | `payload/Scripts/Tests/Test-DocsTools.ps1` | Lock runtime-config timestamp and API-health expectations |
+| Installer/managed payload | `Install-UEToolSuite.ps1`, `payload/website-managed-file-index.json`, `Tests/Test-Install-UEToolSuite.ps1`, `Tests/Test-PackagingContracts.ps1` | Include built website artifacts as managed files, remove obsolete managed build assets, and validate install/update parity |
+
+### Milestones
+
+- [ ] Reproduce with a failing test.
+- [ ] Identify root cause.
+- [ ] Implement the smallest coherent fix.
+- [ ] Run targeted tests.
+- [ ] Run cross-boundary validation.
+- [ ] Review final diff for generated/unrelated changes.
+
+### Decisions
+
+| Decision | Reason | Alternatives rejected |
+|---|---|---|
+| Keep runtime identity validation but remove `startedAt` from acceptance | The confirmed bug is format drift, not identity drift | Adding a new protocol `instanceId` now would expand scope without proof it is required |
+| Add structured frontend connection results instead of more booleans | UI and retry policy need failure categories and local diagnostics | Keeping a single `runtimeAvailable` flag would preserve the current misleading behavior |
+| Manage `website/build` through the installer and clean obsolete managed assets | The installed build is stale while installed source is current | Rebuilding only locally or patching hashed JS files would not fix deployment parity |
+
+### Validation evidence
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| Installed source timestamps in `cppCozyRPG\website` | Captured | `src` updated July 1, 2026 while `build` JS assets remained June 22, 2026 |
+| Managed website ledger in `cppCozyRPG` | Captured | No `website/build/...` entries present |
+| Installed `build/index.html` | Captured | Still references stale hashed bundles from June 22, 2026 |
+
+### Rollback/recovery
+
+Installer changes must only remove obsolete files that were previously recorded as managed website files. Frontend retry state must clean up timers on unmount, and deployment validation should restart only the tracked docs frontend/API processes for the active project.
+
+### Remaining risks
+
+- The current `localhost:3000` process may not be launched through the standard `ue-tools docs start` path, so final served-bundle verification must inspect the actual live process and response body, not just local files.
+- Adding managed `build` artifacts will increase the managed website index size and requires careful regeneration to avoid stale hashes.
+
+---
+
+## Plan: Docs Runtime Lifecycle and Document Page Authoring Status
+
+### Goal
+
+Keep one verified Docs Editor API runtime alive for the active project, repair stale runtime state automatically, and surface the shared structured connection status on editable document pages without breaking static doc rendering.
+
+### Non-goals
+
+- Do not redesign the docs editor architecture beyond the current runtime discovery and status surfaces.
+- Do not force Edit or Hide controls to appear while the Docs Editor API is unavailable.
+- Do not broaden the work into unrelated navigation, markdown serialization, or domain-tree behavior.
+
+### Current failure
+
+- The prior live investigation in `cppCozyRPG` found `/ue-tools/editor-runtime.json` pointing to `processId = 90056` on `http://127.0.0.1:38473/`, but that process no longer existed and `/__ue_docs_api__/health` returned `504`.
+- `Site Settings` already consumes structured connection status and shows `AuthoringConnectionStatusCard`.
+- `DocItem/Layout` still consumes only `runtimeReady` and `runtimeAvailable`, so document pages drop Edit/Hide with no visible diagnosis or retry affordance.
+- Background docs lifecycle cases in `payload/Scripts/Tests/Test-DocsTools.ps1` now pass in this checkout when `UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS=1`, so the remaining live risk is install/build/runtime parity rather than an already-reproducible source-suite failure.
+
+### Invariants
+
+- Runtime descriptors are discovery metadata, not proof of a live API.
+- Status/startup must distinguish live, stale, mismatched, and unreachable runtimes.
+- Static docs rendering stays usable when authoring is unavailable.
+- Editable document pages use the same shared connection state and retry path as `Site Settings`.
+
+### Files and boundaries
+
+| Boundary | Files expected to change | Why |
+|---|---|---|
+| React UI | `payload/website/src/theme/DocItem/Layout/index.tsx`, `payload/website/src/theme/DocItem/Layout/ueAuthoring.module.css` | Reuse shared structured runtime status on document pages |
+| API client/runtime discovery | `payload/website/src/theme/authoring/docPageAuthoring.ts`, `payload/website/src/theme/authoring/api.ts`, `payload/website/src/theme/authoring/runtimeDiscovery.ts` | Keep one shared connection contract and testable page-level gating |
+| docs lifecycle/runtime | `payload/Scripts/UETools/UEToolSuite.Docs.psm1`, `payload/Scripts/UETools/DocsEditorApiHost.ps1` | Enforce verified runtime ownership and stale-state repair |
+| test infrastructure | `payload/website/scripts/test-authoring-runtime.cjs`, `payload/Scripts/Tests/Test-DocsTools.ps1`, install/packaging tests as needed | Lock document-page status behavior and runtime lifecycle parity |
+| installer/managed payload | `Install-UEToolSuite.ps1`, `payload/website-managed-file-index.json`, packaging/install tests as needed | Ensure installed files and served bundles match the fixed source |
+
+### Milestones
+
+- [x] Reproduce with existing findings and focused runtime checks.
+- [x] Identify the current root cause split between runtime availability and document-page UI behavior.
+- [ ] Implement the smallest coherent fix.
+- [ ] Run targeted tests.
+- [ ] Run cross-boundary validation.
+- [ ] Review final diff for generated/unrelated changes.
+
+### Decisions
+
+| Decision | Reason | Alternatives rejected |
+|---|---|---|
+| Reuse the existing structured `AuthoringConnectionStatusCard` on document pages | Site Settings already proves the shared connection model and retry behavior | Duplicating a second error-message formatter would drift immediately |
+| Add a pure document-page authoring-state helper | The full `DocItem/Layout` component is too heavy for narrow unit coverage | Leaving the gating inline would keep the behavior difficult to test and easy to regress |
+
+### Validation evidence
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| `pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File payload/Scripts/Tests/Test-DocsTools.ps1 -FailFast` | Passed | `PASS=652 FAIL=0 WARN=0 SKIP=1` |
+| Same command with `UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS=1` | Passed | `PASS=691 FAIL=0 WARN=0 SKIP=0`; background cases `5b`..`5e` green |
+| Live browser investigation before this task | Captured | `/__ue_docs_api__/health -> 504`, stale `editor-runtime.json`, document page hid controls while Site Settings showed diagnostics |
+
+### Rollback/recovery
+
+Keep runtime cleanup ownership-safe: only remove the runtime descriptor when it belongs to the process being stopped, and keep the document-page change additive so static docs rendering remains the fallback if the runtime disappears.
+
+### Remaining risks
+
+- The live `cppCozyRPG` runtime still needs end-to-end validation after install to prove the served bundle matches the fixed source and the supported launcher path keeps the API alive.
+- If the user’s prior `localhost:3000` server was started outside the supported command path, the final live diagnosis must call that out explicitly instead of attributing the failure to the source checkout alone.

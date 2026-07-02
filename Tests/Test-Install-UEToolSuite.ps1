@@ -267,10 +267,14 @@ try {
       "website\static\img\themes\neutral\favicon.svg",
       "website\static\img\themes\neutral\social-card.svg",
       "website\.ue-tools\ownership.json",
-      ".ue-tools\state\docs-managed-ledger.json"
+      ".ue-tools\state\docs-managed-ledger.json",
+      ".ue-tools\state\website-managed-ledger.json",
+      "website\build\index.html"
     )) {
     Assert-PathExists "case1 installed $relativePath" (Join-Path $targetRepo $relativePath)
   }
+  $case1WebsiteBuildJsAssets = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo "website\build\assets\js") -File -Filter *.js -ErrorAction SilentlyContinue)
+  Assert-Condition "case1 installed website build javascript assets" ($case1WebsiteBuildJsAssets.Count -gt 0) "build js asset count=$($case1WebsiteBuildJsAssets.Count)" "missing website build javascript assets"
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
   Assert-FileContains "case1 installed binary guard uasset rule" (Join-Path $targetRepo ".gitattributes") "*.uasset filter=lfs diff=lfs merge=binary -text"
@@ -463,6 +467,66 @@ try {
   Assert-Condition "case2e installer reports docs runtime shutdown" ($runtimeStopUpdateResult.Output -like "*Stopped existing docs runtime before updating managed docs payload files.*") "stop message emitted" "stop message missing"
   Assert-Condition "case2e tracked runtime process stopped" (-not (Get-Process -Id $runtimeFixture.ProcessId -ErrorAction SilentlyContinue)) "process stopped" "process $($runtimeFixture.ProcessId) still running"
   Assert-PathMissing "case2e runtime state file removed" $runtimeFixture.RuntimeStatePath
+
+  Step "Case 2f: managed website update removes obsolete build assets tracked in the website ledger"
+  $websiteCleanupRepo = New-TargetRepo "website cleanup target"
+  $websiteCleanupInstallResult = Invoke-Installer -TargetRoot $websiteCleanupRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2f initial install exits cleanly" ($websiteCleanupInstallResult.Code -eq 0) "exit=0" "exit=$($websiteCleanupInstallResult.Code)"
+  $websiteCleanupLedgerPath = Join-Path $websiteCleanupRepo ".ue-tools\state\website-managed-ledger.json"
+  Assert-PathExists "case2f website ledger exists before update" $websiteCleanupLedgerPath
+  $staleBuildRelativePath = "website/build/assets/js/stale-runtime.bundle.js"
+  $staleBuildPath = Join-Path $websiteCleanupRepo ($staleBuildRelativePath -replace "/", "\")
+  Write-Utf8NoBomFile -Path $staleBuildPath -Content "stale managed asset`n"
+  $websiteCleanupLedger = Get-Content -LiteralPath $websiteCleanupLedgerPath -Raw | ConvertFrom-Json
+  $websiteCleanupFiles = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in @($websiteCleanupLedger.files)) {
+    if ($null -ne $entry) {
+      $websiteCleanupFiles.Add($entry) | Out-Null
+    }
+  }
+  $websiteCleanupFiles.Add([pscustomobject]@{
+      relativePath = $staleBuildRelativePath
+      installedPayloadVersion = "0.9.0"
+      installedHash = (Get-FileHash -LiteralPath $staleBuildPath -Algorithm SHA256).Hash.ToLowerInvariant()
+      updatedUtc = "2026-01-01T00:00:00Z"
+      category = "shell"
+    }) | Out-Null
+  $websiteCleanupLedger.files = @($websiteCleanupFiles.ToArray())
+  Write-Utf8NoBomFile -Path $websiteCleanupLedgerPath -Content ($websiteCleanupLedger | ConvertTo-Json -Depth 10)
+  $websiteCleanupUpdateResult = Invoke-Installer -TargetRoot $websiteCleanupRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2f update exits cleanly" ($websiteCleanupUpdateResult.Code -eq 0) "exit=0" "exit=$($websiteCleanupUpdateResult.Code)"
+  Assert-PathMissing "case2f stale managed build asset removed" $staleBuildPath
+  $websiteCleanupReport = @(Get-ChildItem -LiteralPath (Join-Path $websiteCleanupRepo ".ue-tools-installer-updates") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "Website-Update-Report.md" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+  Assert-Condition "case2f website update report emitted" ($websiteCleanupReport.Count -eq 1) "report written" "website update report missing"
+  if ($websiteCleanupReport.Count -eq 1) {
+    Assert-FileContains "case2f website update report lists removed obsolete asset" $websiteCleanupReport[0].FullName $staleBuildRelativePath
+  }
+
+  Step "Case 2g: managed website update refreshes the build directory even when older ledgers did not track build assets"
+  $websiteBuildRefreshRepo = New-TargetRepo "website build refresh target"
+  $websiteBuildRefreshInstallResult = Invoke-Installer -TargetRoot $websiteBuildRefreshRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2g initial install exits cleanly" ($websiteBuildRefreshInstallResult.Code -eq 0) "exit=0" "exit=$($websiteBuildRefreshInstallResult.Code)"
+  $websiteBuildRefreshLedgerPath = Join-Path $websiteBuildRefreshRepo ".ue-tools\state\website-managed-ledger.json"
+  Assert-PathExists "case2g website ledger exists before update" $websiteBuildRefreshLedgerPath
+  $legacyBuildRelativePath = "website/build/assets/js/legacy-runtime.bundle.js"
+  $legacyBuildPath = Join-Path $websiteBuildRefreshRepo ($legacyBuildRelativePath -replace "/", "\")
+  Write-Utf8NoBomFile -Path $legacyBuildPath -Content "legacy build asset`n"
+  $websiteBuildRefreshLedger = Get-Content -LiteralPath $websiteBuildRefreshLedgerPath -Raw | ConvertFrom-Json
+  $websiteBuildRefreshLedger.files = @(
+    foreach ($entry in @($websiteBuildRefreshLedger.files)) {
+      if ($null -eq $entry) { continue }
+      if (([string]$entry.relativePath) -like "website/build/*") {
+        continue
+      }
+      $entry
+    }
+  )
+  Write-Utf8NoBomFile -Path $websiteBuildRefreshLedgerPath -Content ($websiteBuildRefreshLedger | ConvertTo-Json -Depth 10)
+  $websiteBuildRefreshUpdateResult = Invoke-Installer -TargetRoot $websiteBuildRefreshRepo -ExtraArgs @("-SkipTests")
+  Assert-Condition "case2g update exits cleanly" ($websiteBuildRefreshUpdateResult.Code -eq 0) "exit=0" "exit=$($websiteBuildRefreshUpdateResult.Code)"
+  Assert-PathMissing "case2g legacy build asset removed by build refresh" $legacyBuildPath
+  $websiteBuildRefreshNewMain = @(Get-ChildItem -LiteralPath (Join-Path $websiteBuildRefreshRepo "website\build\assets\js") -File -Filter "main.*.js" -ErrorAction SilentlyContinue)
+  Assert-Condition "case2g refreshed build directory still contains managed main bundle" ($websiteBuildRefreshNewMain.Count -gt 0) "main bundle count=$($websiteBuildRefreshNewMain.Count)" "managed main bundle missing after build refresh"
 
   Step "Case 3: installer can run target Init-Repo"
   $initRepo = New-TargetRepo "run init target"

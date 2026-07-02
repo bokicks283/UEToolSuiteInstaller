@@ -138,6 +138,14 @@ try {
   Step "Managed payload index contract"
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "docs managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $docsManagedIndexPath
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "website managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $websiteManagedIndexPath
+  $websiteManagedIndex = Get-Content -LiteralPath $websiteManagedIndexPath -Raw | ConvertFrom-Json
+  $websiteManagedPaths = @($websiteManagedIndex.files | ForEach-Object { [string]$_.relativePath })
+  Assert-Condition -Name "website managed index includes runtime discovery source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/runtimeDiscovery.ts") -PassDetail "runtime discovery managed" -FailDetail "missing website/src/theme/authoring/runtimeDiscovery.ts"
+  Assert-Condition -Name "website managed index includes connection status card source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/AuthoringConnectionStatusCard.tsx") -PassDetail "status card managed" -FailDetail "missing website/src/theme/authoring/AuthoringConnectionStatusCard.tsx"
+  Assert-Condition -Name "website managed index includes document page authoring helper source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/docPageAuthoring.ts") -PassDetail "doc page authoring helper managed" -FailDetail "missing website/src/theme/authoring/docPageAuthoring.ts"
+  Assert-Condition -Name "website managed index includes authoring runtime tests" -Condition ($websiteManagedPaths -contains "website/scripts/test-authoring-runtime.cjs") -PassDetail "runtime tests managed" -FailDetail "missing website/scripts/test-authoring-runtime.cjs"
+  Assert-Condition -Name "website managed index includes built index html" -Condition ($websiteManagedPaths -contains "website/build/index.html") -PassDetail "website/build/index.html managed" -FailDetail "missing website/build/index.html"
+  Assert-Condition -Name "website managed index includes built javascript assets" -Condition (@($websiteManagedPaths | Where-Object { $_ -like "website/build/assets/js/*.js" }).Count -gt 0) -PassDetail "build js assets managed" -FailDetail "no website/build/assets/js/*.js entries found"
 
   Step "GUI publish content contract"
   [xml]$csprojXml = Get-Content -LiteralPath $csprojPath -Raw

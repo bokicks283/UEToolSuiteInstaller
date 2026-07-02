@@ -32,6 +32,8 @@ import {icons} from 'lucide';
 
 import authoringStyles from './ueAuthoring.module.css';
 import {broadcastDocsStructureChanged, resolveSourceToken, useDocsAuthoringApi, type DocsContentPayload} from '../../authoring/api';
+import AuthoringConnectionStatusCard from '../../authoring/AuthoringConnectionStatusCard';
+import {getDocPageAuthoringState} from '../../authoring/docPageAuthoring';
 import {
   EMOJI_MAP,
   SHORTCODE_INPUT_REGEX,
@@ -1648,8 +1650,7 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
   const [renderIgnoredHeadingLabels, setRenderIgnoredHeadingLabels] = useState<Set<string>>(new Set());
   const docTOC = useDocTOC(renderIgnoredHeadingLabels);
   const {metadata} = useDoc();
-  const {requestJson, runtimeAvailable, runtimeReady} = useDocsAuthoringApi();
-  const authoringAvailable = runtimeReady && runtimeAvailable;
+  const {connectionStatus, requestJson, retryConnection, runtimeAvailable, runtimeReady} = useDocsAuthoringApi();
   const windowSize = useWindowSize();
   const metadataTitle = useMemo(() => (typeof metadata.title === 'string' ? metadata.title.trim() : ''), [metadata.title]);
   const metadataDraft = metadata.draft === true;
@@ -1663,8 +1664,22 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
     const metadataId = typeof metadata.id === 'string' ? metadata.id.trim() : '';
     return metadataId ? resolveSourceToken(`${metadataId}.md`) : '';
   }, [metadata.id, metadata.source]);
-  const pageIsEditable = sourceToken.toLowerCase().endsWith('.md');
-  const pageCanManageVisibility = authoringAvailable && !sourceToken.toLowerCase().endsWith('/_category_.json') && !!sourceToken;
+  const {
+    authoringAvailable,
+    connectionFailure,
+    pageCanManageVisibility,
+    pageIsEditable,
+    showConnectionNotice,
+  } = useMemo(
+    () =>
+      getDocPageAuthoringState({
+        sourceToken,
+        runtimeReady,
+        runtimeAvailable,
+        connectionStatus,
+      }),
+    [connectionStatus, runtimeAvailable, runtimeReady, sourceToken],
+  );
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -3118,6 +3133,11 @@ export default function DocItemLayout({children}: {children: React.ReactNode}): 
                           Edit
                         </button>
                       ) : null}
+                    </div>
+                  ) : null}
+                  {showConnectionNotice && connectionFailure ? (
+                    <div className={authoringStyles.docAuthoringStatusCard}>
+                      <AuthoringConnectionStatusCard status={connectionFailure} onRetry={retryConnection} />
                     </div>
                   ) : null}
                 </div>

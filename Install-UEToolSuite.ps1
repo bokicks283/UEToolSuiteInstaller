@@ -1656,6 +1656,50 @@ function Copy-ManagedWebsiteIndexedFile {
   Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
 }
 
+function Remove-ManagedWebsiteIndexedFile {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$BackupRoot
+  )
+
+  $targetPath = Join-Path $TargetRoot ($RelativePath -replace "/", "\")
+  if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetPath)) {
+    throw "Refusing to remove managed website path outside target repo root: $targetPath"
+  }
+
+  if (-not (Test-Path -LiteralPath $targetPath)) {
+    return
+  }
+
+  Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $RelativePath -ExistingPath $targetPath -BackupRoot $BackupRoot
+  if ($PSCmdlet.ShouldProcess($targetPath, "Remove obsolete managed website file")) {
+    Remove-Item -LiteralPath $targetPath -Recurse -Force
+  }
+
+  $websiteRoot = Join-Path $TargetRoot "website"
+  $current = Split-Path -Path $targetPath -Parent
+  while (
+    -not [string]::IsNullOrWhiteSpace($current) -and
+    (Test-PathInsideRoot -Root $websiteRoot -Path $current) -and
+    -not ([System.IO.Path]::GetFullPath($current).TrimEnd("\").Equals([System.IO.Path]::GetFullPath($websiteRoot).TrimEnd("\"), [System.StringComparison]::OrdinalIgnoreCase))
+  ) {
+    if (-not (Test-Path -LiteralPath $current -PathType Container)) {
+      break
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $current -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -gt 0) {
+      break
+    }
+
+    if ($PSCmdlet.ShouldProcess($current, "Remove empty website directory")) {
+      Remove-Item -LiteralPath $current -Force
+    }
+    $current = Split-Path -Path $current -Parent
+  }
+}
+
 function Write-WebsiteMergeReport {
   param(
     [Parameter(Mandatory)][string]$TargetRoot,
@@ -1677,6 +1721,7 @@ function Write-WebsiteMergeReport {
     installMode = $Report.InstallMode
     installedNew = @($Report.InstalledNew)
     replacedSuiteManaged = @($Report.ReplacedSuiteManaged)
+    removedObsoleteManagedFiles = @($Report.RemovedObsoleteManagedFiles)
     preservedProjectOverrides = @($Report.PreservedProjectOverrides)
     mergedConfigs = @($Report.MergedConfigs)
     restoredProjectOverrides = @($Report.RestoredProjectOverrides)
@@ -1689,6 +1734,7 @@ function Write-WebsiteMergeReport {
   $lines.Add("- Install mode: $($Report.InstallMode)") | Out-Null
   $lines.Add("- Installed new files: $($Report.InstalledNew.Count)") | Out-Null
   $lines.Add("- Replaced suite-managed files: $($Report.ReplacedSuiteManaged.Count)") | Out-Null
+  $lines.Add("- Removed obsolete managed files: $($Report.RemovedObsoleteManagedFiles.Count)") | Out-Null
   $lines.Add("- Preserved project overrides: $($Report.PreservedProjectOverrides.Count)") | Out-Null
   $lines.Add("- Structured merges: $($Report.MergedConfigs.Count)") | Out-Null
   $lines.Add("- Restored project overrides after replace: $($Report.RestoredProjectOverrides.Count)") | Out-Null
@@ -1697,6 +1743,7 @@ function Write-WebsiteMergeReport {
   foreach ($section in @(
       [pscustomobject]@{ Title = "Installed New Files"; Items = @($Report.InstalledNew) },
       [pscustomobject]@{ Title = "Replaced Suite-Managed Files"; Items = @($Report.ReplacedSuiteManaged) },
+      [pscustomobject]@{ Title = "Removed Obsolete Managed Files"; Items = @($Report.RemovedObsoleteManagedFiles) },
       [pscustomobject]@{ Title = "Preserved Project Overrides"; Items = @($Report.PreservedProjectOverrides) },
       [pscustomobject]@{ Title = "Structured Merges"; Items = @($Report.MergedConfigs) },
       [pscustomobject]@{ Title = "Restored Project Overrides"; Items = @($Report.RestoredProjectOverrides) }
@@ -1730,6 +1777,7 @@ function Invoke-ManagedWebsiteUpdate {
     InstallMode = $RequestedMode
     InstalledNew = New-Object System.Collections.Generic.List[string]
     ReplacedSuiteManaged = New-Object System.Collections.Generic.List[string]
+    RemovedObsoleteManagedFiles = New-Object System.Collections.Generic.List[string]
     PreservedProjectOverrides = New-Object System.Collections.Generic.List[string]
     MergedConfigs = New-Object System.Collections.Generic.List[string]
     RestoredProjectOverrides = New-Object System.Collections.Generic.List[string]
@@ -1750,6 +1798,15 @@ function Invoke-ManagedWebsiteUpdate {
 
     if ($PSCmdlet.ShouldProcess($websiteRoot, "Replace existing website shell")) {
       Remove-Item -LiteralPath $websiteRoot -Recurse -Force
+    }
+  }
+
+  $managedBuildEntries = @($index.Files | Where-Object { ([string]$_.relativePath) -like "website/build/*" })
+  $buildRoot = Join-Path $websiteRoot "build"
+  if ($managedBuildEntries.Count -gt 0 -and $RequestedMode -ne "replace_existing" -and (Test-Path -LiteralPath $buildRoot)) {
+    Copy-ToBackup -TargetRoot $TargetRoot -RelativePath "website/build" -ExistingPath $buildRoot -BackupRoot $BackupRoot
+    if ($PSCmdlet.ShouldProcess($buildRoot, "Refresh managed website build directory")) {
+      Remove-Item -LiteralPath $buildRoot -Recurse -Force
     }
   }
 
@@ -1818,6 +1875,20 @@ function Invoke-ManagedWebsiteUpdate {
         category = $category
       }
     }
+  }
+
+  foreach ($relativePath in @($ledger.EntriesByPath.Keys | Sort-Object)) {
+    if ($nextEntries.ContainsKey($relativePath)) {
+      continue
+    }
+
+    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode "suite"
+    if ($overrideMode -eq "project") {
+      continue
+    }
+
+    Remove-ManagedWebsiteIndexedFile -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
+    $report.RemovedObsoleteManagedFiles.Add($relativePath) | Out-Null
   }
 
   Write-ManagedWebsiteLedger -TargetRoot $TargetRoot -EntriesByPath $nextEntries -PayloadVersion ([string]$PayloadManifest.PayloadVersion)

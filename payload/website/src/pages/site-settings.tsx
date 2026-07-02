@@ -3,11 +3,14 @@ import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 
 import styles from './index.module.css';
+import AuthoringConnectionStatusCard from '../theme/authoring/AuthoringConnectionStatusCard';
 import SiteAdminPanel from '../theme/authoring/SiteAdminPanel';
 import {useDocsAuthoringApi} from '../theme/authoring/api';
 
 export default function SiteSettingsPage(): ReactNode {
-  const {requestJson, runtimeAvailable, runtimeReady} = useDocsAuthoringApi();
+  const {connectionStatus, requestJson, retryConnection, runtimeAvailable, runtimeReady} = useDocsAuthoringApi();
+  const showRuntimeError =
+    runtimeReady && !runtimeAvailable && connectionStatus.kind !== 'checking' && connectionStatus.kind !== 'connected';
 
   return (
     <Layout title="Site Settings" description="Theme, branding, domain, and override controls for the docs site.">
@@ -19,10 +22,9 @@ export default function SiteSettingsPage(): ReactNode {
             <p>Manage theme, branding, domains, and suite override policy from a stable dedicated route.</p>
           </div>
           {!runtimeReady ? <p>Checking the local docs runtime...</p> : null}
-          {runtimeReady && !runtimeAvailable ? (
+          {showRuntimeError ? (
             <div className={styles.primaryCard}>
-              <Heading as="h3">Local authoring runtime not reachable</Heading>
-              <p>Start the docs API host or docs dev server, then refresh this page.</p>
+              <AuthoringConnectionStatusCard status={connectionStatus} onRetry={retryConnection} />
             </div>
           ) : null}
           {runtimeReady && runtimeAvailable ? <SiteAdminPanel requestJson={requestJson} /> : null}

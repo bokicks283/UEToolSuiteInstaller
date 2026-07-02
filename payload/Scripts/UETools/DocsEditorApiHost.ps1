@@ -22,7 +22,7 @@ if (Test-Path -LiteralPath $coreModulePath -PathType Leaf) {
 }
 $script:RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $script:DocsRoot = (& $script:DocsModule { param($resolvedRepoRoot) Get-DocsRoot -ResolvedRepoRoot $resolvedRepoRoot } $script:RepoRoot)
-$script:ApiStartedAt = (Get-Date).ToString("o")
+$script:ApiStartedAt = (Get-Date).ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
 $script:ApiVersion = 2
 $script:ApiApplicationId = "UEToolSuiteDocsEditorApi"
 
@@ -2538,7 +2538,7 @@ function Get-DocsContent {
 
   $pagePath = Resolve-PagePathFromToken -PathToken $PathToken -RequireExisting
   $content = [System.IO.File]::ReadAllText($pagePath)
-  $mtime = ([System.IO.FileInfo]::new($pagePath)).LastWriteTimeUtc.ToString("o")
+  $mtime = ([System.IO.FileInfo]::new($pagePath)).LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
   return [ordered]@{
     path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
     content     = $content
@@ -2586,7 +2586,7 @@ function Save-DocsContent {
   return [ordered]@{
     path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
     hash        = (Get-JsonHash -Value $updated)
-    modifiedUtc = ([System.IO.FileInfo]::new($pagePath)).LastWriteTimeUtc.ToString("o")
+    modifiedUtc = ([System.IO.FileInfo]::new($pagePath)).LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
   }
 }
 
@@ -2702,7 +2702,7 @@ function Set-DocsPageVisibility {
     path        = (Get-RelativePathFromDocsRoot -FullPath $pagePath)
     hidden      = (Test-DocsFrontMatterUnlisted -Content $updated)
     hash        = (Get-JsonHash -Value $updated)
-    modifiedUtc = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o")
+    modifiedUtc = (Get-Item -LiteralPath $pagePath).LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
   }
 }
 
@@ -2880,7 +2880,7 @@ function Update-DocsNodeMetadata {
       name        = [string]$Title
       hidden      = (Test-DocsFrontMatterUnlisted -Content $updated)
       hash        = (Get-JsonHash -Value $updated)
-      modifiedUtc = (Get-Item -LiteralPath ([string]$target.FullPath)).LastWriteTimeUtc.ToString("o")
+      modifiedUtc = (Get-Item -LiteralPath ([string]$target.FullPath)).LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
     }
   }
 
@@ -2917,7 +2917,7 @@ function Update-DocsNodeMetadata {
     path        = (Get-RelativePathFromDocsRoot -FullPath $sectionDir)
     type        = "section"
     name        = [string]$nextLabel
-    modifiedUtc = (Get-Item -LiteralPath $categoryPath).LastWriteTimeUtc.ToString("o")
+    modifiedUtc = (Get-Item -LiteralPath $categoryPath).LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
   }
 }
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "payloadVersion": "1.0.0",
-  "generatedUtc": "2026-06-22T01:13:37Z",
+  "generatedUtc": "2026-07-02T17:40:58Z",
   "files": [
     {
       "sha256": "7c2bf6ba263ba149a2885847a9f7186e0d7af58faae3e01f2e69a7465f7cfecc",
@@ -14,6 +14,761 @@
       "relativePath": "website/.ue-tools/site-overrides.json"
     },
     {
+      "sha256": "c230ab5a6158066f58c095fdb1d552a559c0f5fa4bc2f2f5d81d9ae67407d48d",
+      "category": "shell",
+      "relativePath": "website/AGENTS.md"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "category": "shell",
+      "relativePath": "website/build/.nojekyll"
+    },
+    {
+      "sha256": "edc3bce5b20e89f460bad79cc956f518e0e14035cadfe8688664283dcf287a86",
+      "category": "shell",
+      "relativePath": "website/build/404.html"
+    },
+    {
+      "sha256": "c2d83164a94bebd83c671780057a81b9966555114f61b9e975ff9dcb9cff2a92",
+      "category": "shell",
+      "relativePath": "website/build/assets/css/styles.1302befb.css"
+    },
+    {
+      "sha256": "30bee0616e04a4da1954431179196153d2abcdd93500d37b12bf48c22285e962",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/0058b4c6.6d8126b2.js"
+    },
+    {
+      "sha256": "22e9228411b9156de8c2dccaa5b95f5f39148e949b25f27ceed788b1194f1ee0",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/07469908.c31bb6ae.js"
+    },
+    {
+      "sha256": "dec111d82a3de35a6f78cd0e2d79e925fa4972b11c35e547edd6572ecfda656d",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/08928091.4701735b.js"
+    },
+    {
+      "sha256": "65e283d48907ddf6629aa610b80b1cca52f5cd093eaf005615104a57c86bc45e",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1301.3a94e481.js"
+    },
+    {
+      "sha256": "ecd06a77472e3297abef871f09c3d3cf0eeaac6ed6c2e38aeaf001235a52fdbf",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1482.c12ebe1e.js"
+    },
+    {
+      "sha256": "a8730dcad8d16150aeb865ac3913214b64ad0f2a80b455896d7e379bf23bcb3c",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1482.c12ebe1e.js.LICENSE.txt"
+    },
+    {
+      "sha256": "b7c68f0af367d65a2738317335b0bbe6feb6dc1da1b0e015c0c819cd7e9b7abf",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1513.b4e131d6.js"
+    },
+    {
+      "sha256": "b945b0a52e51019a57bc381633724b4b35d4e5d6a3c013743928b013c5406e68",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/165.bcb1fd8e.js"
+    },
+    {
+      "sha256": "417e4d9cd1c713dd76240fbcae19324fafce38cf4a98a6fa78ce59c19fe6d1f9",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/165.bcb1fd8e.js.LICENSE.txt"
+    },
+    {
+      "sha256": "c1452025f2b86e3694fa51f1ad8031e6c7a0793323031bac5677a4fffe3890d4",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/17896441.bf5d4e84.js"
+    },
+    {
+      "sha256": "95dae1d385ac65fd8e5c78c7f1369c5f185a41c4bb925f41b3619918aa766305",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1795.f3a65ae4.js"
+    },
+    {
+      "sha256": "dd60c1efd93fdde71010adbbd0c62bd47cdcfa2f23a5d157df991a5c6264f9fe",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1844.a8b4774c.js"
+    },
+    {
+      "sha256": "001ad34fa8479ebe8f3d43eec784e4d9ab96739bcdb56251d902fc113b9fff5c",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/1df93b7f.8e3e2f2c.js"
+    },
+    {
+      "sha256": "4fe6787bba21654ed833989c82b15e112f8bf5607aa403bae78ad2d9a54eaf5c",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/2014.a5a3f819.js"
+    },
+    {
+      "sha256": "5221392873485fca1c18a05dfd73d787d683a741ff46d7c355bf61b1c366f569",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/2130.b6382a7f.js"
+    },
+    {
+      "sha256": "d47a6ddbc3393f6fa888896dbaf1fab1bd1cad39f6fc944ecede2814bdf0dbad",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/2237.9e0bca4b.js"
+    },
+    {
+      "sha256": "6c2b46d44bcb36faddc0b66705bef4f6aa10e9afa28691c42fc3fe25608e537a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/2438.7a22fdfd.js"
+    },
+    {
+      "sha256": "9029e53854cf99b0fc04105e1e41abd2f95b695e672ae8e2bdc0abe665a166b5",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/24b2f0f7.1633a262.js"
+    },
+    {
+      "sha256": "63d04ee991757e5ed5e7f77b9cc135d166f83b464332d01f10bc2f2aec24807a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/253.e5ee29c0.js"
+    },
+    {
+      "sha256": "63e7313f69d296aa4cdde3850e8273b66f03fa92dba4bfedd1606500badda9dd",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/2555.5904f57d.js"
+    },
+    {
+      "sha256": "21104a2a184184f30fca72a77a26f5e6c44b073c0023181beeb2e1703c94e337",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/2665.a1fe5d3a.js"
+    },
+    {
+      "sha256": "2e39c32dbf7cb328fb4b38a546554bc0b749b6aa9d2ce8505432a9834226eff6",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/27fce877.14cccb21.js"
+    },
+    {
+      "sha256": "114ce22eddda0b7a6dca8828cecd4977f05b9cb9b7b07b41850b14967393097b",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3049.034c8382.js"
+    },
+    {
+      "sha256": "79c28519127d59732e399b0fead379fceef2ac2d897c8478376fa19215594ecb",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3088.509a7cc4.js"
+    },
+    {
+      "sha256": "4324a365c78dd82fc364fb89733e9ab0967c7e16eee2b11237368f6238878d41",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3593.83c71cfc.js"
+    },
+    {
+      "sha256": "052bfeb5838671cc337a7efd15cdfb78076d5b792f09d385bad197a0c6beceb6",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3674.d4c19a01.js"
+    },
+    {
+      "sha256": "b7690cb9fd24569cb09624363baac548ccd2d46e20cb82cbadcc02bd494b61d6",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3723.316646be.js"
+    },
+    {
+      "sha256": "9fd20399faec62357bb2ff7658bcc3af1f21fdbf58193e6a3ee7aadf0bea9507",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/384.fbef8142.js"
+    },
+    {
+      "sha256": "d7ad15dc6cda1d6a689d859620efeb84330e8f811a1769c9ac2b2e052423215f",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3872.1a0e2d98.js"
+    },
+    {
+      "sha256": "cc1213b3c6f7510599389ff1330ef354bfdd0fe04c0d396bbee1bac0a58ab506",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3923.cab46845.js"
+    },
+    {
+      "sha256": "d6601c9652270506326d807d742966a7a8e9fec56e2d76b1d3854bf80e22132d",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/3923.cab46845.js.LICENSE.txt"
+    },
+    {
+      "sha256": "f3240d6f502553dec98fae2c03ac74b2f42e7601134cc70130221373ad8f5e1e",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/399.8308a642.js"
+    },
+    {
+      "sha256": "96d821a8beda084f6be4752c1080b45d88e450d3076a8cbc087b5fbe9a85228a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/4045.e464c17f.js"
+    },
+    {
+      "sha256": "09323ee8bd9c085dcfdeabad32048944b43620105b407537904e8808f840d790",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/4219.a19759ca.js"
+    },
+    {
+      "sha256": "46451b3796199d64fac03c8050d97b82b9697fc094221b6466b27fb9ea947511",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/4728.18afb1ee.js"
+    },
+    {
+      "sha256": "cd3342fd7de4b442c5452901f6aeef7ae7bda9572759cd37e837934ddb341b81",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/4736.9319a02d.js"
+    },
+    {
+      "sha256": "41a13d0963ca3cf8eb78fe5a1da97c175b25bd801becbaa222d17c956129843f",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/4737.4566a617.js"
+    },
+    {
+      "sha256": "600346aef551ed00239f4c3390e51cd13cfe12cb982f990cf5187baa748ba46a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/4787.7a2c3803.js"
+    },
+    {
+      "sha256": "3d6ff67d71d4b9ee4d331258766119c417e19d082830972e8a12bf02405a9b38",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/536.5453d88b.js"
+    },
+    {
+      "sha256": "05da18814b893e410ccff131cc4aeb2966d06795f757c18acfc3eb31fae0c827",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/5692.54442568.js"
+    },
+    {
+      "sha256": "7b63070102241eece53884fa4131b38638096fb845364d63d049c5ee72fa2b1f",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/5e95c892.58f2179e.js"
+    },
+    {
+      "sha256": "2d0f269265ad0b6f7d7592d17dbdcc0baaf878f0cd2f5097c4aa9549361b4fba",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/6246.a58092ca.js"
+    },
+    {
+      "sha256": "06e41ded298f3e39bfdbf47bffd9315089188996eface3d1f6056be5172e6ae0",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/6288.5f123049.js"
+    },
+    {
+      "sha256": "7105320bb714ae9dcb005f1e336e991160ba75f8f325f6f8c9542866303be00d",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/6402.e9ba2645.js"
+    },
+    {
+      "sha256": "2c2b493d8df0c8d06a7c8ec2885caea9625eb1f0e1477ec9d8e4e3288039b06c",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/6678.a3a65d71.js"
+    },
+    {
+      "sha256": "e85e2148902c7669c1f0cd82ae4728e0c942ba764f92055e24c2bb076133a6ea",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/6735.cb8698c9.js"
+    },
+    {
+      "sha256": "de25b981926fb233fc1a1ee1b37b98cc34df26d1319b56c6ed2d49e3df94c6fa",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/685.6db8bc5f.js"
+    },
+    {
+      "sha256": "cc969cfb765f9e4af00afdc6fe1bda6486acc8a779a9a4dbcd4d1a01d574e9d3",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/697.441258fd.js"
+    },
+    {
+      "sha256": "997442d205c6ab437e665e0ae3bf9d4311b9e6c71987675d2f0049cfd5c18bc3",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/6db7fad3.66791fdc.js"
+    },
+    {
+      "sha256": "85fd1d7904356f379f58c669dcf8108147f3a025575848fa56caa23a46205d59",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/7005.b94f4183.js"
+    },
+    {
+      "sha256": "af8d1befc0f8316d68f5b66b8c0c6926676a96ea92c635b308ea6852539f371a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/7059.e542f14f.js"
+    },
+    {
+      "sha256": "0261c7a319b1f264b3a6aae20464e11e6148e1d6c17db637472ba9f95ea4fb68",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/7180.c5b8e69d.js"
+    },
+    {
+      "sha256": "4fe8f7c5a17c74ecc27e459d9e5831ddaf958c4d27efbe74b19efffcafc3c650",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/743.2f860852.js"
+    },
+    {
+      "sha256": "3b41ec68298546666c5b67ea37ae5286177f5766ae59a5eb861aaee0e3f82bfd",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/7563.d5dffa50.js"
+    },
+    {
+      "sha256": "dbbd1343ba62df83d227ed3805a07d2f2e977f7f5c745898aab9f421612a81b6",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/786.712f1aba.js"
+    },
+    {
+      "sha256": "6821a58a96f4f630ec4bf7499cd2d1a0358444d48c6f8eb3dc5cfbb0a07a69a0",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/7928.15dc6dbc.js"
+    },
+    {
+      "sha256": "619c9230bd3a8ed8cf85b81275f827e5660653757127feb3982deb86947555f6",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/7965dfc8.c78da1a2.js"
+    },
+    {
+      "sha256": "595f315267f90c5bd19bb9478bec02a37a97cd8bfe740bf352fd77e453015e73",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/8119.8603dbcc.js"
+    },
+    {
+      "sha256": "edf35b9b78e10cb713443a0f57bb04d8a2e76ccfea2cb115c516128f12fb58cb",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/82e4b3f8.fbba399a.js"
+    },
+    {
+      "sha256": "0b41c82f14dd6384885fbf577083655d76ab67d786f70ccfc6cbfdca09d30910",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/8320.9c798b19.js"
+    },
+    {
+      "sha256": "0101fc42cb2066e996ebb38387af6fb791b56befbbb5c9a6ac5bfab3ea9f8195",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/8363.f06e6f15.js"
+    },
+    {
+      "sha256": "a8076d4c2195abae2ce6dcd0b971c3f65b76b7251f0645a2903c58ecbcf7f329",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/8646.7c2954ee.js"
+    },
+    {
+      "sha256": "20ca0a241a19a04987a0f809ad595fa3a9154eb0da18a6661b21cb249947a0a4",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/8cfa3b85.d2b9e34b.js"
+    },
+    {
+      "sha256": "823334ca2b9e45c7f383924b5e2625b035d4c1b10212591575ee8c942642ae63",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/90e0707d.63174d07.js"
+    },
+    {
+      "sha256": "c429ff8d0431fb1c4168ff68ddbd2f680d6dcf17984a299dfc8590c1fe4270ea",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/9299.d2242041.js"
+    },
+    {
+      "sha256": "0eb47b40abe442129daa6d74e064df18c8e2150e80182f06725f73e230219b9d",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/9301.5ddf4b3f.js"
+    },
+    {
+      "sha256": "9518845e8b216998635e8ba6be77974bf65cb02fb5d1dec435e67eff30ccb2ec",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/9557.062381c5.js"
+    },
+    {
+      "sha256": "ba8c672993415432c38591fa123d28554c1e5be88e41276b29b89af57dceed8f",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/987a3701.f099cc0f.js"
+    },
+    {
+      "sha256": "326368618b25203177c416f23d60d42659095608138807820091256aa8f16751",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/9c415fb8.2d0d7661.js"
+    },
+    {
+      "sha256": "f49d31868d22befd967d7b65c8d43d719ecadcb46fa522cef9c4edf6fb82c505",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/a45209bb.31234179.js"
+    },
+    {
+      "sha256": "094b6dc17b9d5907f0d9f716d78e018d1846bc42ff7f637f04069001b60fb857",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/a7456010.887d6063.js"
+    },
+    {
+      "sha256": "9b771a7ed2f7ff4f447b7edb455d6bcb9edc0856fb403528eb0ee044585b0de4",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/a7bd4aaa.80f0e3a6.js"
+    },
+    {
+      "sha256": "81da92180b2de0b45728ea9a5f54062302991b69b9d3b4ade421ff2bda28ce8a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/a94703ab.f20c8201.js"
+    },
+    {
+      "sha256": "3da7c0d6d33a5f42b94c2d804c844b424ca2d196395ec6a3b714fa69bbf7c66f",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/aba21aa0.9fa4f39c.js"
+    },
+    {
+      "sha256": "5c49c65ccf06389a1d957f641643225d0d5d2d5b340f97f9b7e3e66587418218",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/common.8d6771b9.js"
+    },
+    {
+      "sha256": "edab91add156188c29d80ca7cae452cbd52ce980c289d366678b84e6d68ae4ec",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/d5d3bd5f.5f6cfbe7.js"
+    },
+    {
+      "sha256": "5223d6ee605f82f492bf0e730a1e3c92abf9cdb5bc49c0199eb56f14f4a5555a",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/fed52622.fe7acd9a.js"
+    },
+    {
+      "sha256": "9abf9503bd6675af8d92e0825bc1d28023e890fb56b1b4c6e3b2d4eb73c9eb20",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/main.9f860703.js"
+    },
+    {
+      "sha256": "73873d54ac3c29e4a95a3d9b92fc1eee8240f88bc111c0f05aea6d06cf7796db",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/main.9f860703.js.LICENSE.txt"
+    },
+    {
+      "sha256": "c7465d4289c8cb651c799acd12c20202b0c23f4215c68879da2fc64bfed5b67c",
+      "category": "shell",
+      "relativePath": "website/build/assets/js/runtime~main.2788d800.js"
+    },
+    {
+      "sha256": "aa9c66dbed8db6eb889f955bef2ef54fa9395becca5c75e11787269a6454dcd5",
+      "category": "shell",
+      "relativePath": "website/build/docs/ai-context/index.html"
+    },
+    {
+      "sha256": "413654f3172f2e6f4cbf27b252458e215d381c90e9ee2e7f35df2806f0a4edd5",
+      "category": "shell",
+      "relativePath": "website/build/docs/ai-context/shared-vs-private/index.html"
+    },
+    {
+      "sha256": "b2d2a7d9a1d3d8c71d8117e5bfe912499c3138e63ac8e07df1c57645b8b0bf00",
+      "category": "shell",
+      "relativePath": "website/build/docs/coding-standards/index.html"
+    },
+    {
+      "sha256": "39994bcf33329a0622582d27207d8d3f68604b025d6342b03fb47c2626b4d673",
+      "category": "shell",
+      "relativePath": "website/build/docs/coding-standards/unreal-cpp-standard/index.html"
+    },
+    {
+      "sha256": "0c20ebd8d36e79b72cd84b711d3d1ffe729813b4a40e23b6623a051f9dc88db9",
+      "category": "shell",
+      "relativePath": "website/build/docs/docs-site/authoring/index.html"
+    },
+    {
+      "sha256": "1b23283470b0a4e8b1c82256640b34f4858d2f6817576aa91097e32590b3e634",
+      "category": "shell",
+      "relativePath": "website/build/docs/docs-site/setup/index.html"
+    },
+    {
+      "sha256": "293443f9396520d6f9018eb905f494fc2d64e9a17de70ff1be0071352fe815e0",
+      "category": "shell",
+      "relativePath": "website/build/docs/index.html"
+    },
+    {
+      "sha256": "9d82efea5b0e6267101f32f03174e9cbfaac7d8242593c2a8218c4d8b8a38d5f",
+      "category": "shell",
+      "relativePath": "website/build/docs/project-docs/index.html"
+    },
+    {
+      "sha256": "80947c8c1a3c74176b7eec32b8e138291ab066988403db98ec109d15f82435ed",
+      "category": "shell",
+      "relativePath": "website/build/docs/setup/index.html"
+    },
+    {
+      "sha256": "aafcb065b458632f6d1fd5aee3cbbd4e199f08ffdcb7416108de5682ec6aa7c8",
+      "category": "shell",
+      "relativePath": "website/build/docs/testing/index.html"
+    },
+    {
+      "sha256": "08610d80d6352413c92c0aee8a3279a1c9bc61ec46415f9a01b4ad5ab5140c35",
+      "category": "shell",
+      "relativePath": "website/build/docs/workflow-standards/index.html"
+    },
+    {
+      "sha256": "f8398391b51fdc84c2e87530c61da8316dcc8d1e19007ceddd8a998535279607",
+      "category": "shell",
+      "relativePath": "website/build/docs/workflow/git-workflow-standards/index.html"
+    },
+    {
+      "sha256": "a31b45a16ad86985e5fe4314bf7c86dbd201916b7a618caf73b9f7325c46f77a",
+      "category": "shell",
+      "relativePath": "website/build/docs/workflow/index.html"
+    },
+    {
+      "sha256": "824816e2e33cb97af6d54ea0ba7403937a9462e06b1430edf0d334b4c4096225",
+      "category": "shell",
+      "relativePath": "website/build/img/docusaurus-social-card.svg"
+    },
+    {
+      "sha256": "7fe55819f14792d942d86092f519b6d425e995337b482a8743e363cf5ac0ae30",
+      "category": "shell",
+      "relativePath": "website/build/img/favicon.ico"
+    },
+    {
+      "sha256": "dcf680b68e9a18c4c92b0fd0b89752159b59bc2e47941b8d1698413e4426c187",
+      "category": "shell",
+      "relativePath": "website/build/img/favicon.svg"
+    },
+    {
+      "sha256": "d427be4994297bbdf7ea49f378075ce8033e94b218965cfd4c29867d93546efa",
+      "category": "shell",
+      "relativePath": "website/build/img/logo.svg"
+    },
+    {
+      "sha256": "88ce74d7396e29ae859aca7c7da1dee9e5376ed614b97704a5c3fd5500abf371",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/amber/favicon.svg"
+    },
+    {
+      "sha256": "3da58020e6d4b319b3935fe52553a2a4dbb56d6820b38155f81be55fe11914de",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/amber/logo.svg"
+    },
+    {
+      "sha256": "f34b6bb951f01b4105fdfae8e0ccf0d88651e76433a2104b5339bf548b923e8e",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/amber/social-card.svg"
+    },
+    {
+      "sha256": "2d9bc1ee191b9f609af0b3aa8d38f8500b71b57345c2ac1624be9fe03d6cc51a",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/base/unreal-engine-source.svg"
+    },
+    {
+      "sha256": "c52a2a13ff3ecd46692b5af93866463d4b664c8012639a7536fc625eb3ed3c7e",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/cobalt/favicon.svg"
+    },
+    {
+      "sha256": "02530b5546d3209740a5ba167254b50a4925762ae1fb323d26842602f0271e11",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/cobalt/logo.svg"
+    },
+    {
+      "sha256": "14f59913d1d5d4bfd58ef01b0fa662e4ab09c56d5b333bbd6fbdef39bf1c5826",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/cobalt/social-card.svg"
+    },
+    {
+      "sha256": "a3852fdd9ef8c8737964356784fa4bcc6a75b9d78931602dee19f352ed1b24d3",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/copper/favicon.svg"
+    },
+    {
+      "sha256": "faa69ef56305983accc17f42d296e9e35e4744e342292dddbcc5ebbb9ae60e55",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/copper/logo.svg"
+    },
+    {
+      "sha256": "7968b2e0448427d42073762b26bc3ec519d640f6a2e94c623f79e2d6660b31c1",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/copper/social-card.svg"
+    },
+    {
+      "sha256": "b411eeb87b9251720eedf2c96fcd46322f73b6ade9b3e22eccb215866dbbb86c",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/crimson/favicon.svg"
+    },
+    {
+      "sha256": "d4090727398553b6ef5e31ac9bf0ce4fbd6c948821c7203b2eb85024f355e5a1",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/crimson/logo.svg"
+    },
+    {
+      "sha256": "f772036068ba889852ff4fef5769ce35ef7414fdd997696ebbe738863d1bbd03",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/crimson/social-card.svg"
+    },
+    {
+      "sha256": "0f7a32d9983abf50ad788b8439ed20f0e08198bafe8f5bba7a4a0c8aebf898a6",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/forest/favicon.svg"
+    },
+    {
+      "sha256": "786f4c61521273a4e421f4f60d021191b55582f5542fe2e4007a016ae2b3c947",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/forest/logo.svg"
+    },
+    {
+      "sha256": "b887b1d53381841c0155a6272809fd3e09f2d87abe0e4c06324198b2b4b411cb",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/forest/social-card.svg"
+    },
+    {
+      "sha256": "68fcb08077ce3b0b900595f0e244b2d6f95038e36953e0b4cb3af55bfcabcf75",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/graphite/favicon.svg"
+    },
+    {
+      "sha256": "6ad1dcaa0149f630f0592b4fdac56ba6fcc4e56b3a95e7035296f8fb13f7755e",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/graphite/logo.svg"
+    },
+    {
+      "sha256": "741afaab7eb7d28f8f8c11d237860664bdc7a9a4b2bcb476a23fbf4247d466df",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/graphite/social-card.svg"
+    },
+    {
+      "sha256": "1fa634f43d4a2da6b9ad2b7280ea9f03b9a90c23b7abd437e0a19ba72aa35ddd",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/indigo/favicon.svg"
+    },
+    {
+      "sha256": "4c6f2fa03c47ca6a8a8428faccc9caeeb786f0271bc6c1edee917dfdc2429424",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/indigo/logo.svg"
+    },
+    {
+      "sha256": "8799d0db90fc6bb96182ae6a040a6e2c596985e447c1b53f88063d70beb6573e",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/indigo/social-card.svg"
+    },
+    {
+      "sha256": "f53b06a4f12be9cc7e98c738f1ca6e09b5a8e1f89f9f8dbf0ab202b6ef18e3f6",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/jade/favicon.svg"
+    },
+    {
+      "sha256": "06e4ce4e9f32d7dfadd88f52ee7afcc90294a2ff14c70e303e16ee2cca82952d",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/jade/logo.svg"
+    },
+    {
+      "sha256": "0dbb7716af586a0ecee19fbf080158f456a56270e4eed5ec7e325c3ab78f755c",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/jade/social-card.svg"
+    },
+    {
+      "sha256": "dcf680b68e9a18c4c92b0fd0b89752159b59bc2e47941b8d1698413e4426c187",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/neutral/favicon.svg"
+    },
+    {
+      "sha256": "d427be4994297bbdf7ea49f378075ce8033e94b218965cfd4c29867d93546efa",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/neutral/logo.svg"
+    },
+    {
+      "sha256": "824816e2e33cb97af6d54ea0ba7403937a9462e06b1430edf0d334b4c4096225",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/neutral/social-card.svg"
+    },
+    {
+      "sha256": "3faff3006902764217275fa744b98e6ab702918bf5768751de0577afa7c9dece",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/ocean/favicon.svg"
+    },
+    {
+      "sha256": "44ca6483e1e8d8ebc9df75447cada05d7d785429ff2eebdee626d94e53478bf4",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/ocean/logo.svg"
+    },
+    {
+      "sha256": "79435dd6d8189499cbf0c27a9fbce17b0a7bdf546124844b755f17e3ef66ae5e",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/ocean/social-card.svg"
+    },
+    {
+      "sha256": "ae7de07b832271f0f7f94a3cf69974bcbde019327a08a41a5415587381921cd6",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/rose/favicon.svg"
+    },
+    {
+      "sha256": "37348ebe478ae1d9027cf374a346a0ac57c3aa82f52808f59e94cf760ea8fb22",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/rose/logo.svg"
+    },
+    {
+      "sha256": "f52427eec9df6331ddc3e9dec6f26d40b94fd0cf5a2c4491d8dfc6d9f29a8838",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/rose/social-card.svg"
+    },
+    {
+      "sha256": "34321989e0d1e59c65e7dce195123ee662185716a82a8037921e4ec73d5e21c2",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/slate/favicon.svg"
+    },
+    {
+      "sha256": "c315064fd221cbc6dde24caa4bb3aeffb1ca74dcd35fd0f7f0ad9fde55b7dada",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/slate/logo.svg"
+    },
+    {
+      "sha256": "8eb50ec4d140219b9dda571e7d650ec8e88d4097888eb38aabb24621a7624006",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/slate/social-card.svg"
+    },
+    {
+      "sha256": "c543808c70761c9b487a1805b09c98603bd0b6b513103e1f95994c1eb2bc0e4b",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/teal/favicon.svg"
+    },
+    {
+      "sha256": "9dd9851c65b1db70fd59b204d8665f4da1028c0085d801f6119c87a767cc4edb",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/teal/logo.svg"
+    },
+    {
+      "sha256": "7d8a45a7f136994d9621fbcf2a0bce7d504caa65cf7b034b454e5fa6d02f6fab",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/teal/social-card.svg"
+    },
+    {
+      "sha256": "8576ac35a0918973cf2a605f261b1fc0ec11c4b11566c87bb63caae95f78e501",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/violet/favicon.svg"
+    },
+    {
+      "sha256": "19109c31b726f2312369dcb86a789b6a515f68b87f240354244ed4e7e89b783e",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/violet/logo.svg"
+    },
+    {
+      "sha256": "c90240961cc76ce5a82ea3b2743883830245b55f48b5ee2961e2576b849efc7d",
+      "category": "shell",
+      "relativePath": "website/build/img/themes/violet/social-card.svg"
+    },
+    {
+      "sha256": "5d63a81ff3dd5ea266e99156f8e33f76cc02df0f04e1a4487240663704660b7f",
+      "category": "shell",
+      "relativePath": "website/build/img/undraw_docusaurus_mountain.svg"
+    },
+    {
+      "sha256": "1f2c1d7bcdd4219c9869d94b45c052e2856464e91c3e0704d99b4714d32cc668",
+      "category": "shell",
+      "relativePath": "website/build/img/undraw_docusaurus_react.svg"
+    },
+    {
+      "sha256": "09704d88ef849647bf2ee02a4cb1b1b413f000de059a8d794019238ef2c5e4a7",
+      "category": "shell",
+      "relativePath": "website/build/img/undraw_docusaurus_tree.svg"
+    },
+    {
+      "sha256": "6b19b17582410d47cd85b322484f5594ea149a568f606fbdbe64d85a2abbbc5e",
+      "category": "shell",
+      "relativePath": "website/build/index.html"
+    },
+    {
+      "sha256": "b923a45a805dce8c40aa3b0c3726fc82dcc9c4b8fb4fdaf8a593c46748fbd444",
+      "category": "shell",
+      "relativePath": "website/build/site-settings/index.html"
+    },
+    {
+      "sha256": "4c981df3c7770c7e8037d77c25a54ecdae335df836a9bdeccbdc25b254864b65",
+      "category": "shell",
+      "relativePath": "website/build/sitemap.xml"
+    },
+    {
+      "sha256": "5add74bed8bdff3b124bd01c9d036a0c86b00248deddd2f8a84179713bde8bf5",
+      "category": "shell",
+      "relativePath": "website/build/ue-tools/editor-runtime.json"
+    },
+    {
       "sha256": "ce56e41777d76b271b7d4f36c578f6bcdafd82a5f8197a398c86c5540a592c6f",
       "category": "overridable",
       "relativePath": "website/docusaurus.config.ts"
@@ -24,19 +779,24 @@
       "relativePath": "website/domainCatalog.ts"
     },
     {
-      "sha256": "ce7b1b84a98ecb779b757b2699e0f5b9e13a45ee827f18b52b955d028541803a",
-      "category": "structured",
-      "relativePath": "website/package.json"
-    },
-    {
       "sha256": "4fa99bb253385369dee6dc80dc0c57acade741e4c9254f47630f792c3274d747",
       "category": "structured",
       "relativePath": "website/package-lock.json"
     },
     {
+      "sha256": "4f679189c373dbd83aecd440101a42274690a8086df6e04856acf3aeb1c7a344",
+      "category": "structured",
+      "relativePath": "website/package.json"
+    },
+    {
       "sha256": "2c60978f184ffc5d1190f3d45a0c66c5a21e1e30b09fefe31d4e309b0a3ba547",
       "category": "shell",
       "relativePath": "website/README.md"
+    },
+    {
+      "sha256": "932348b34ae8702f8799531a2710dbc98af02febfac5ecb73ac8898cc4f0ab8d",
+      "category": "shell",
+      "relativePath": "website/scripts/test-authoring-runtime.cjs"
     },
     {
       "sha256": "4f0155395dc3b38b943b8cc32067ad8405325796f3fe7f13ee62412c22c33df9",
@@ -55,7 +815,7 @@
     },
     {
       "sha256": "1a6b0cc19aa2a8b0c4b3099681ba1974c6e75816b71d9e975ac1b953ec6cc425",
-      "category": "overridable",
+      "category": "shell",
       "relativePath": "website/src/css/project-overrides.css"
     },
     {
@@ -65,23 +825,43 @@
     },
     {
       "sha256": "d30abbb35539be832f6e33954f79e0cc762e0065a7365aa56093fb7416c5a505",
-      "category": "overridable",
+      "category": "shell",
       "relativePath": "website/src/pages/index.module.css"
     },
     {
       "sha256": "cabd05af4a29cc2afcea927cb61362286d93ce6bf2c8c3dcb03ce1dc4f965817",
-      "category": "overridable",
+      "category": "shell",
       "relativePath": "website/src/pages/index.tsx"
     },
     {
-      "sha256": "42c67e4098a299b151a75fdf988b84927b4a91a0d34cf57074ce2510cc137684",
+      "sha256": "f9f4c6b3b0780ec772c83e24e5de815ace29fe43e04eeec8fcbc3a25c6c3e6b1",
       "category": "shell",
       "relativePath": "website/src/pages/site-settings.tsx"
     },
     {
-      "sha256": "cb488288528c58aaa7bf600d4104b8a6c155ebf03053cf7f031cf7945e78d504",
+      "sha256": "7abe84367c7779dd1ee1d660924b1654a65e7c4caf5f9af248ea4f08de714511",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/AGENTS.md"
+    },
+    {
+      "sha256": "fd63a97db1931b089bbebb780f4de0b8afa7ee8268e8238e6e56e4a45ebf6c6c",
       "category": "shell",
       "relativePath": "website/src/theme/authoring/api.ts"
+    },
+    {
+      "sha256": "62f806949e3a3486919aaa3c74e8674854fca8a8d1871d06022ae2e40b63411e",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/AuthoringConnectionStatusCard.tsx"
+    },
+    {
+      "sha256": "41ddb4b89118212c67ba9428512d9df228b105e5a1eb02dcd3aa72f38db59d89",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/docPageAuthoring.ts"
+    },
+    {
+      "sha256": "183dbe002dda780a518b6112ae889f38d69a0c9ab2aab0605ea3147ca0ccadff",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/runtimeDiscovery.ts"
     },
     {
       "sha256": "6b804b7fd8ae56795e979313ce6d274bf9a279a622901211a89ac05adcb5f44b",
@@ -94,12 +874,17 @@
       "relativePath": "website/src/theme/authoring/SiteAdminPanel.tsx"
     },
     {
-      "sha256": "a76af47a94042373514273ff9f52718c4c0936147c947d8ed1df7a123ea85da9",
+      "sha256": "3127ee4e86d640244be5b8403f54f4deb55ce2ed48f64d9d50263b4652ece38b",
+      "category": "shell",
+      "relativePath": "website/src/theme/DocItem/Layout/AGENTS.md"
+    },
+    {
+      "sha256": "b5acd65b4cb44b8c0562a2592b6055f26d4e3ab1a8f472061793475b94d27195",
       "category": "shell",
       "relativePath": "website/src/theme/DocItem/Layout/index.tsx"
     },
     {
-      "sha256": "4639f450602d4e3438aa9d04432f6cbf61d64a5aeb3bcf2659d15b01942e4952",
+      "sha256": "46ae805af3d0f9e466deb37ebafbf43b14cdd83e670ed3ec3093b882a8c9fb23",
       "category": "shell",
       "relativePath": "website/src/theme/DocItem/Layout/ueAuthoring.module.css"
     },
@@ -367,6 +1152,11 @@
       "sha256": "09704d88ef849647bf2ee02a4cb1b1b413f000de059a8d794019238ef2c5e4a7",
       "category": "shell",
       "relativePath": "website/static/img/undraw_docusaurus_tree.svg"
+    },
+    {
+      "sha256": "5add74bed8bdff3b124bd01c9d036a0c86b00248deddd2f8a84179713bde8bf5",
+      "category": "shell",
+      "relativePath": "website/static/ue-tools/editor-runtime.json"
     },
     {
       "sha256": "4de21ea8e07f9cce3e62600fc9a4d69175c7e4e2fb8be6dfea7472824a2a093c",

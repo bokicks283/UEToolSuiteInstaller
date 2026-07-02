@@ -1460,7 +1460,7 @@ function Write-DocsEditorRuntimeConfig {
 
   $payload = [ordered]@{
     apiUrl      = $ApiUrl
-    generatedAt = (Get-Date).ToString("o")
+    generatedAt = (Get-Date).ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
   }
   if ($null -ne $Metadata) {
     $metadataFields = @(
@@ -1483,6 +1483,10 @@ function Write-DocsEditorRuntimeConfig {
         $value = $property.Value
         if ($null -eq $value) {
           continue
+        }
+
+        if ($field.JsonKey -eq "startedAt") {
+          $value = ConvertTo-DocsTimestampString -Value $value
         }
 
         if ($value -is [string] -and [string]::IsNullOrWhiteSpace([string]$value)) {
@@ -2572,7 +2576,7 @@ function Queue-TocRequest {
     workspaceRoot = [System.IO.Path]::GetFullPath($ResolvedRepoRoot)
     filePath      = [System.IO.Path]::GetFullPath($FilePath)
     marker        = $script:TocMarker
-    createdAt     = (Get-Date).ToString("o")
+    createdAt     = (Get-Date).ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
   }
 
   $requestId = "{0}-{1}" -f (Get-Date).ToString("yyyyMMddHHmmss"), ([Guid]::NewGuid().ToString("N"))
@@ -4413,6 +4417,24 @@ function Get-DocsEditorApiPortFromUrl {
   return 0
 }
 
+function ConvertTo-DocsTimestampString {
+  param([AllowNull()]$Value)
+
+  if ($null -eq $Value) {
+    return ""
+  }
+
+  if ($Value -is [DateTimeOffset]) {
+    return $Value.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+  }
+
+  if ($Value -is [DateTime]) {
+    return $Value.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+  }
+
+  return [string]$Value
+}
+
 function Invoke-DocsEditorApiHealthProbe {
   param(
     [Parameter(Mandatory)][string]$ApiUrl,
@@ -4456,7 +4478,7 @@ function Invoke-DocsEditorApiHealthProbe {
     ProcessId      = $processId
     RepoRoot       = [string]$payload.repoRoot
     DocsRoot       = [string]$payload.docsRoot
-    StartedAt      = [string]$payload.startedAt
+    StartedAt      = ConvertTo-DocsTimestampString -Value $payload.startedAt
     ModulePath     = [string]$payload.modulePath
     ScriptPath     = [string]$payload.scriptPath
     Port           = Get-DocsEditorApiPortFromUrl -Url $apiBaseUrl
@@ -5149,7 +5171,7 @@ function Invoke-DocsStartBackground {
     version       = 1
     rootProcessId = $process.Id
     processId     = $trackedProcessId
-    startedAt     = (Get-Date).ToString("o")
+    startedAt     = (Get-Date).ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
     websiteRoot   = $websiteRoot
     logPath       = $stdoutPath
     errorLogPath  = $stderrPath
