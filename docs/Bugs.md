@@ -1,9 +1,9 @@
 # Bugs
 
-- ue docs stop doesnt kill processes started in foreground
 - ue sync may be triggering too often
   ex:
-```git 
+
+```bash
 Updating 8c43bcf6..9dcce75d
 Fast-forward
  .mcp.json                                                    | 10 ++++++++++
@@ -20,8 +20,12 @@ Fast-forward
  Source/CPP_TestsEditor.Target.cs                             |  4 ++--
  12 files changed, 38 insertions(+), 23 deletions(-)
  create mode 100644 .mcp.json
- delete mode 100644 Content/__ExternalActors__/Maps/Dev/John/Lvl_FirstPerson/0/NI/0EQA6S4EME05LRSHIFJ0CD.uasset```
+ delete mode 100644 Content/__ExternalActors__/Maps/Dev/John/Lvl_FirstPerson/0/NI/0EQA6S4EME05LRSHIFJ0CD.uasset
 
 This triggered a rebuild. NOTE: this is on a old version of ue sync. MUST VERIFY its not an issue in most uptodate version.
 - domain-key for new domains in domains.json are not created properly
   ex: DomainName dir should be -> domain-name, but is just dir name DomainName
+```
+
+- Hide From site feature only hides. Then state is broken on reload and it says hide from site again instead of Show in site.
+- Generated Index sections are broken.
