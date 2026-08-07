@@ -114,6 +114,24 @@ ue-tools docs docusaurus <args...>
 
 `start` now runs the Docusaurus dev server attached to the current terminal so you can see live stdout/stderr. Use `ue-tools docs start --background` when you want the old detached tracked-server behavior. `stop` and `status` only apply to that tracked background mode. `doctor` checks common local prerequisites such as `node`, `npm`, `website/node_modules`, and the optional VS Code TOC bridge.
 
+Legacy section normalization uses the same docs command surface:
+
+```powershell
+ue-tools docs migrate-sections
+ue-tools docs migrate-sections --what-if
+ue-tools docs doctor
+```
+
+What it does:
+
+- detects legacy section directories that the editor exposes as sections but that still lack `_category_.json`
+- plans deterministic `label` and `position` metadata from the current canonical tree order
+- writes only `_category_.json`
+- never creates `README.md`, a landing page, or a generated-index link
+- preserves existing Markdown and MDX content, slugs, links, and front matter
+
+Install/update and `ue-tools init` run the same normalization by default so SiteAdmin structural edits start from durable section metadata.
+
 Use `ue-tools docs help <command>` for the detailed option list on any command:
 
 ```powershell

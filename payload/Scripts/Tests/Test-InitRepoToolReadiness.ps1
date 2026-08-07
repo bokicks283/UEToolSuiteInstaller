@@ -9,6 +9,10 @@ $ProgressPreference = "SilentlyContinue"
 
 $repoRoot = ((git rev-parse --show-toplevel 2>$null) | Select-Object -First 1).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
+$payloadRoot = Join-Path $repoRoot "payload"
+if (Test-Path -LiteralPath (Join-Path $payloadRoot "Scripts\UETools\UEToolSuite.Init.psm1") -PathType Leaf) {
+  $repoRoot = $payloadRoot
+}
 Set-Location $repoRoot
 
 $initScript = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Init.psm1"
@@ -140,6 +144,7 @@ function New-InitRepoFixture {
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-hooks\Enable-GitHooks.ps1") -Content "Write-Host 'Enable hooks stub'`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\git-hooks\Test-Hooks.ps1") -Content "Write-Host 'Hook self-test stub'`n"
 
+  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Core.psm1") -Content "function Test-UEToolSuiteCoreStub { `$true }`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Git.psm1") -Content "function Test-GitConflictHelperStub { `$true }`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Art.psm1") -Content "function Test-UEToolSuiteArtStub { `$true }`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.AI.psm1") -Content "function Test-UEToolSuiteAIStub { `$true }`n"
@@ -178,14 +183,34 @@ if ($effectiveCommandArgs.Count -lt 1) {
 $command = [string]$effectiveCommandArgs[0]
 if ($command -eq "docs") {
   $docsArgs = if ($effectiveCommandArgs.Count -gt 1) { @($effectiveCommandArgs[1..($effectiveCommandArgs.Count - 1)]) } else { @() }
-  $docsScript = Join-Path $RepoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
-  if (-not (Test-Path -LiteralPath $docsScript -PathType Leaf)) {
-    Write-Error "Docs script missing: $docsScript"
+  $coreModulePath = Join-Path $RepoRoot "Scripts\UETools\UEToolSuite.Core.psm1"
+  $docsModulePath = Join-Path $RepoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+  if (-not (Test-Path -LiteralPath $coreModulePath -PathType Leaf)) {
+    Write-Error "Docs core module missing: $coreModulePath"
+    exit 1
+  }
+  if (-not (Test-Path -LiteralPath $docsModulePath -PathType Leaf)) {
+    Write-Error "Docs module missing: $docsModulePath"
     exit 1
   }
 
-  & $docsScript -RepoRoot $RepoRoot -CommandArgs $docsArgs
-  exit $LASTEXITCODE
+  try {
+    Import-Module -Name $coreModulePath -Force -DisableNameChecking | Out-Null
+    $docsModule = Import-Module -Name $docsModulePath -Force -DisableNameChecking -PassThru
+    $repoResolver = Get-Command -Name "Get-DocsToolsRepoRoot" -Module $docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+    $entrypoint = Get-Command -Name "Invoke-DocsToolsMain" -Module $docsModule.Name -CommandType Function -ErrorAction SilentlyContinue
+    if (-not $repoResolver -or -not $entrypoint) {
+      throw "Docs module entrypoint is unavailable."
+    }
+
+    $resolvedRepoRoot = & $repoResolver.Name -ExplicitRepoRoot $RepoRoot
+    & $entrypoint.Name -ResolvedRepoRoot $resolvedRepoRoot -CommandArguments $docsArgs
+    exit $LASTEXITCODE
+  }
+  catch {
+    Write-Error $_.Exception.Message
+    exit 1
+  }
 }
 
 Write-Output "ue-tools stub command: $command"
@@ -229,49 +254,64 @@ exit 0
 '@
 
     Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Docs.psm1") -Content @'
-[CmdletBinding()]
-param(
-  [string]$RepoRoot,
-  [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]]$CommandArgs
-)
+function Get-DocsToolsRepoRoot {
+  param([string]$ExplicitRepoRoot)
 
-$normalizedArgs = New-Object System.Collections.Generic.List[string]
-foreach ($arg in @($CommandArgs)) {
-  if ($null -eq $arg) { continue }
-  $value = [string]$arg
-  if ([string]::IsNullOrWhiteSpace($value)) { continue }
-  $normalizedArgs.Add($value) | Out-Null
-}
-$effectiveCommandArgs = @($normalizedArgs.ToArray())
-$command = if ($effectiveCommandArgs.Count -gt 0) { [string]$effectiveCommandArgs[0] } else { $null }
-
-if (-not [string]::IsNullOrWhiteSpace($env:INIT_REPO_TOOL_READINESS_LOG)) {
-  Add-Content -LiteralPath $env:INIT_REPO_TOOL_READINESS_LOG -Value ("ue-tools docs " + ($effectiveCommandArgs -join " ") + " repo=$RepoRoot")
+  return $ExplicitRepoRoot
 }
 
-switch ($command) {
-  "install-bridge" {
-    Write-Output "Installed VS Code bridge to: stub"
-    Write-Output "Markdown All in One is already installed."
-    Write-Output "Reload VS Code windows to activate the bridge."
-    exit 0
+function Invoke-DocsToolsMain {
+  param(
+    [string]$ResolvedRepoRoot,
+    [string[]]$CommandArguments
+  )
+
+  $normalizedArgs = New-Object System.Collections.Generic.List[string]
+  foreach ($arg in @($CommandArguments)) {
+    if ($null -eq $arg) { continue }
+    $value = [string]$arg
+    if ([string]::IsNullOrWhiteSpace($value)) { continue }
+    $normalizedArgs.Add($value) | Out-Null
   }
-  "doctor" {
-    Write-Output "Repo root: $RepoRoot"
-    Write-Output "Website root: $RepoRoot\website"
-    Write-Output "Node installed: True"
-    Write-Output "npm installed: True"
-    Write-Output "website/node_modules present: True"
-    Write-Output "VS Code CLI found: True"
-    Write-Output "TOC automation ready: True"
-    exit 0
+
+  $effectiveCommandArgs = @($normalizedArgs.ToArray())
+  $command = if ($effectiveCommandArgs.Count -gt 0) { [string]$effectiveCommandArgs[0] } else { $null }
+
+  if (-not [string]::IsNullOrWhiteSpace($env:INIT_REPO_TOOL_READINESS_LOG)) {
+    Add-Content -LiteralPath $env:INIT_REPO_TOOL_READINESS_LOG -Value ("ue-tools docs " + ($effectiveCommandArgs -join " ") + " repo=$ResolvedRepoRoot")
   }
-  default {
-    Write-Error "Unexpected ue-tools docs command: $($effectiveCommandArgs -join ' ')"
-    exit 1
+
+  switch ($command) {
+    "migrate-sections" {
+      if ([string]$env:INIT_REPO_DOCS_MIGRATE_FAIL -eq "1") {
+        throw "Simulated docs migration failure"
+      }
+      Write-Output "No legacy docs sections require migration."
+      return
+    }
+    "install-bridge" {
+      Write-Output "Installed VS Code bridge to: stub"
+      Write-Output "Markdown All in One is already installed."
+      Write-Output "Reload VS Code windows to activate the bridge."
+      return
+    }
+    "doctor" {
+      Write-Output "Repo root: $ResolvedRepoRoot"
+      Write-Output "Website root: $ResolvedRepoRoot\website"
+      Write-Output "Node installed: True"
+      Write-Output "npm installed: True"
+      Write-Output "website/node_modules present: True"
+      Write-Output "VS Code CLI found: True"
+      Write-Output "TOC automation ready: True"
+      return
+    }
+    default {
+      throw "Unexpected ue-tools docs command: $($effectiveCommandArgs -join ' ')"
+    }
   }
 }
+
+Export-ModuleMember -Function Get-DocsToolsRepoRoot, Invoke-DocsToolsMain
 '@
   }
 
@@ -284,7 +324,8 @@ function Invoke-InitRepo {
     [Parameter(Mandatory)][string]$StubRoot,
     [Parameter(Mandatory)][string]$CommandLog,
     [bool]$IncludeSkipUnrealSync = $true,
-    [string[]]$ExtraArgs = @()
+    [string[]]$ExtraArgs = @(),
+    [hashtable]$ExtraEnv = @{}
   )
 
   $previousPath = $env:Path
@@ -293,6 +334,7 @@ function Invoke-InitRepo {
   $previousAuthorEmail = $env:GIT_AUTHOR_EMAIL
   $previousCommitterName = $env:GIT_COMMITTER_NAME
   $previousCommitterEmail = $env:GIT_COMMITTER_EMAIL
+  $previousExtraEnv = @{}
   try {
     $env:Path = "$StubRoot;$env:Path"
     $env:INIT_REPO_TOOL_READINESS_LOG = $CommandLog
@@ -300,6 +342,10 @@ function Invoke-InitRepo {
     $env:GIT_AUTHOR_EMAIL = "init-repo-readiness@example.invalid"
     $env:GIT_COMMITTER_NAME = "Init Repo Readiness Test"
     $env:GIT_COMMITTER_EMAIL = "init-repo-readiness@example.invalid"
+    foreach ($entry in $ExtraEnv.GetEnumerator()) {
+      $previousExtraEnv[$entry.Key] = (Get-Item -Path ("Env:{0}" -f $entry.Key) -ErrorAction SilentlyContinue).Value
+      Set-Item -Path ("Env:{0}" -f $entry.Key) -Value ([string]$entry.Value)
+    }
 
     $runtimeArgs = @(
       "-RepoRoot", $TargetRepoRoot,
@@ -321,6 +367,7 @@ function Invoke-InitRepo {
         '-skipshellaliases' { $params.SkipShellAliases = $true; $i += 1; continue }
         '-skipoptionaltoolsetup' { $params.SkipOptionalToolSetup = $true; $i += 1; continue }
         '-skipdocssetup' { $params.SkipDocsSetup = $true; $i += 1; continue }
+        '-skipdocssectionmigration' { $params.SkipDocsSectionMigration = $true; $i += 1; continue }
         '-skipdocsnpminstall' { $params.SkipDocsNpmInstall = $true; $i += 1; continue }
         '-forcedocsnpminstall' { $params.ForceDocsNpmInstall = $true; $i += 1; continue }
         '-skipdocsbridgeinstall' { $params.SkipDocsBridgeInstall = $true; $i += 1; continue }
@@ -411,6 +458,15 @@ function Invoke-InitRepo {
     if ($null -eq $previousAuthorEmail) { Remove-Item Env:GIT_AUTHOR_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_AUTHOR_EMAIL = $previousAuthorEmail }
     if ($null -eq $previousCommitterName) { Remove-Item Env:GIT_COMMITTER_NAME -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_NAME = $previousCommitterName }
     if ($null -eq $previousCommitterEmail) { Remove-Item Env:GIT_COMMITTER_EMAIL -ErrorAction SilentlyContinue } else { $env:GIT_COMMITTER_EMAIL = $previousCommitterEmail }
+    foreach ($entry in $ExtraEnv.GetEnumerator()) {
+      $key = [string]$entry.Key
+      if ($previousExtraEnv.ContainsKey($key) -and $null -ne $previousExtraEnv[$key]) {
+        Set-Item -Path ("Env:{0}" -f $key) -Value ([string]$previousExtraEnv[$key])
+      }
+      else {
+        Remove-Item -Path ("Env:{0}" -f $key) -ErrorAction SilentlyContinue
+      }
+    }
   }
 }
 
@@ -430,6 +486,7 @@ try {
   $commandLogText = Get-Content -LiteralPath $commandLog -Raw
 
   Assert-Condition "case1 init exits cleanly" ($result.ExitCode -eq 0) "exit=0" "exit=$($result.ExitCode)"
+  Assert-TextContains "case1 docs migration invoked" $commandLogText "ue-tools docs migrate-sections"
   Assert-TextContains "case1 npm install invoked" $commandLogText "npm cwd="
   Assert-TextContains "case1 npm ci args" $commandLogText "args=ci"
   Assert-TextContains "case1 bridge install invoked" $commandLogText "ue-tools docs install-bridge"
@@ -438,6 +495,7 @@ try {
   Assert-TextContains "case1 summary shown" $result.OutputText "Tool readiness summary:"
   Assert-TextContains "case1 git-lfs ready" $result.OutputText "[OK] git-lfs"
   Assert-TextContains "case1 node ready" $result.OutputText "[OK] node/npm"
+  Assert-TextContains "case1 docs migration ready" $result.OutputText "[OK] docs section migration"
   Assert-TextContains "case1 docs deps ready" $result.OutputText "[OK] docs dependencies"
   Assert-TextContains "case1 docs bridge ready" $result.OutputText "[OK] docs VS Code bridge"
   Assert-TextContains "case1 docs tools ready" $result.OutputText "[OK] ue-tools docs"
@@ -491,8 +549,36 @@ try {
   Assert-TextContains "case3 docs tools skipped" $result3.OutputText "[SKIP] ue-tools docs"
   Assert-TextContains "case3 art tools skipped" $result3.OutputText "[SKIP] ue-tools art"
   Assert-TextNotContains "case3 npm install not invoked" $commandLog3Text "npm cwd="
+  Assert-TextNotContains "case3 docs migration not invoked" $commandLog3Text "ue-tools docs migrate-sections"
   Assert-TextNotContains "case3 bridge install not invoked" $commandLog3Text "ue-tools docs install-bridge"
   Assert-TextNotContains "case3 doctor not invoked" $commandLog3Text "ue-tools docs doctor"
+
+  Step "Case 3b: SkipDocsSectionMigration suppresses init migration but still runs doctor"
+  $commandLog3b = Join-Path $script:TempRoot "case3b-commands.log"
+  Write-Utf8NoBomFile -Path $commandLog3b -Content ""
+  $targetRepoSkipMigration = New-InitRepoFixture -Name "target skip docs migration" -IncludeDocsSite
+  $result3b = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepoSkipMigration `
+    -StubRoot $stubRoot `
+    -CommandLog $commandLog3b `
+    -ExtraArgs @("-SkipDocsSectionMigration")
+  $commandLog3bText = Get-Content -LiteralPath $commandLog3b -Raw
+  Assert-Condition "case3b init exits cleanly" ($result3b.ExitCode -eq 0) "exit=0" "exit=$($result3b.ExitCode)"
+  Assert-TextNotContains "case3b docs migration not invoked" $commandLog3bText "ue-tools docs migrate-sections"
+  Assert-TextContains "case3b doctor still invoked" $commandLog3bText "ue-tools docs doctor"
+  Assert-TextContains "case3b readiness reports migration skip" $result3b.OutputText "[SKIP] docs section migration"
+
+  Step "Case 3c: docs migration failure is surfaced"
+  $commandLog3c = Join-Path $script:TempRoot "case3c-commands.log"
+  Write-Utf8NoBomFile -Path $commandLog3c -Content ""
+  $targetRepoMigrationFailure = New-InitRepoFixture -Name "target docs migration failure" -IncludeDocsSite
+  $result3c = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepoMigrationFailure `
+    -StubRoot $stubRoot `
+    -CommandLog $commandLog3c `
+    -ExtraEnv @{ INIT_REPO_DOCS_MIGRATE_FAIL = "1" }
+  Assert-Condition "case3c init fails when docs migration fails" ($result3c.ExitCode -ne 0) "non-zero exit" "expected non-zero exit code"
+  Assert-TextContains "case3c output surfaces docs migration failure" $result3c.OutputText "ue-tools docs migrate-sections"
 
   Step "Case 4: Non-interactive init untracks newly ignored tracked files by default"
   $commandLog4 = Join-Path $script:TempRoot "case4-commands.log"

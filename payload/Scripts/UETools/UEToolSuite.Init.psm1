@@ -302,6 +302,7 @@ function ConvertTo-UEToolSuiteInitParameters {
     "skipshellaliases" = "SkipShellAliases"
     "skipoptionaltoolsetup" = "SkipOptionalToolSetup"
     "skipdocssetup" = "SkipDocsSetup"
+    "skipdocssectionmigration" = "SkipDocsSectionMigration"
     "skipdocsnpminstall" = "SkipDocsNpmInstall"
     "forcedocsnpminstall" = "ForceDocsNpmInstall"
     "skipdocsbridgeinstall" = "SkipDocsBridgeInstall"
@@ -407,6 +408,7 @@ function Invoke-UEToolSuiteInitRuntime {
     [switch]$SkipShellAliases,
     [switch]$SkipOptionalToolSetup,
     [switch]$SkipDocsSetup,
+    [switch]$SkipDocsSectionMigration,
     [switch]$SkipDocsNpmInstall,
     [switch]$ForceDocsNpmInstall,
     [switch]$SkipDocsBridgeInstall,
@@ -917,6 +919,7 @@ function Invoke-UEToolSuiteInitRuntime {
       [Parameter(Mandatory)][string]$ResolvedRepoRoot,
       [switch]$SkipAll,
       [switch]$SkipDocs,
+      [switch]$SkipSectionMigration,
       [switch]$SkipNpmInstall,
       [switch]$ForceNpmInstall,
       [switch]$SkipBridgeInstall
@@ -946,7 +949,20 @@ function Invoke-UEToolSuiteInitRuntime {
       Add-ToolReadiness -Tool "ue-tools docs" -Status "SKIP" -Detail "Docs tooling prerequisite setup skipped by parameter."
       return
     }
-  
+
+    if ($SkipSectionMigration) {
+      Warn "Skipping docs section migration (SkipDocsSectionMigration set)."
+      Add-ToolReadiness -Tool "docs section migration" -Status "SKIP" -Detail "Docs section migration skipped by parameter."
+    }
+    else {
+      Info "Running ue-tools docs migrate-sections..."
+      Invoke-CheckedTool `
+        -Description "ue-tools docs migrate-sections" `
+        -FilePath "pwsh" `
+        -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ueToolsScript, "-RepoRoot", $ResolvedRepoRoot, "docs", "migrate-sections")
+      Add-ToolReadiness -Tool "docs section migration" -Status "OK" -Detail "ue-tools docs migrate-sections completed."
+    }
+
     Info "Preparing docs tooling prerequisites..."
     $null = Assert-CommandAvailable -Name "node" -InstallHint "Install Node.js 20+ and rerun Init-Repo."
     $null = Assert-CommandAvailable -Name "npm" -InstallHint "Install npm and rerun Init-Repo."
@@ -1282,6 +1298,7 @@ function Invoke-UEToolSuiteInitRuntime {
     -ResolvedRepoRoot $repoRoot `
     -SkipAll:$SkipOptionalToolSetup `
     -SkipDocs:$SkipDocsSetup `
+    -SkipSectionMigration:$SkipDocsSectionMigration `
     -SkipNpmInstall:$SkipDocsNpmInstall `
     -ForceNpmInstall:$ForceDocsNpmInstall `
     -SkipBridgeInstall:$SkipDocsBridgeInstall

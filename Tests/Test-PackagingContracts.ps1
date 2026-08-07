@@ -138,6 +138,14 @@ try {
   Step "Managed payload index contract"
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "docs managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $docsManagedIndexPath
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "website managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $websiteManagedIndexPath
+  $websiteManagedIndex = Get-Content -LiteralPath $websiteManagedIndexPath -Raw | ConvertFrom-Json
+  $websiteManagedPaths = @($websiteManagedIndex.files | ForEach-Object { [string]$_.relativePath })
+  Assert-Condition -Name "website managed index includes runtime discovery source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/runtimeDiscovery.ts") -PassDetail "runtime discovery managed" -FailDetail "missing website/src/theme/authoring/runtimeDiscovery.ts"
+  Assert-Condition -Name "website managed index includes connection status card source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/AuthoringConnectionStatusCard.tsx") -PassDetail "status card managed" -FailDetail "missing website/src/theme/authoring/AuthoringConnectionStatusCard.tsx"
+  Assert-Condition -Name "website managed index includes document page authoring helper source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/docPageAuthoring.ts") -PassDetail "doc page authoring helper managed" -FailDetail "missing website/src/theme/authoring/docPageAuthoring.ts"
+  Assert-Condition -Name "website managed index includes authoring runtime tests" -Condition ($websiteManagedPaths -contains "website/scripts/test-authoring-runtime.cjs") -PassDetail "runtime tests managed" -FailDetail "missing website/scripts/test-authoring-runtime.cjs"
+  Assert-Condition -Name "website managed index excludes built index html" -Condition ($websiteManagedPaths -notcontains "website/build/index.html") -PassDetail "website/build/index.html not managed" -FailDetail "website/build/index.html should not be managed"
+  Assert-Condition -Name "website managed index excludes generated build output" -Condition (@($websiteManagedPaths | Where-Object { $_ -like "website/build/*" }).Count -eq 0) -PassDetail "website/build output not managed" -FailDetail "website/build entries should not be managed"
 
   Step "GUI publish content contract"
   [xml]$csprojXml = Get-Content -LiteralPath $csprojPath -Raw
@@ -216,6 +224,7 @@ try {
   Assert-HasLiteral -Name "docs module starts editor api in foreground start" -Text $docsModuleText -Needle "Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot"
   Assert-HasLiteral -Name "docs module writes editor runtime config" -Text $docsModuleText -Needle "editor-runtime.json"
   Assert-HasLiteral -Name "docs module exposes visibility command" -Text $docsModuleText -Needle "ue-tools docs visibility"
+  Assert-HasLiteral -Name "docs module exposes migrate-sections command" -Text $docsModuleText -Needle "ue-tools docs migrate-sections"
   Assert-LacksLiteral -Name "docs module removed docs edit command" -Text $docsModuleText -Needle "ue-tools docs edit"
   Assert-LacksLiteral -Name "docs config removed editor navbar route" -Text $docsConfigText -Needle "to: '/editor'"
   Assert-Condition -Name "docs payload omits standalone editor route" -Condition (-not (Test-Path -LiteralPath $docsStandaloneEditorPagePath -PathType Leaf)) -PassDetail "standalone editor page absent" -FailDetail "unexpected file: $docsStandaloneEditorPagePath"
@@ -229,17 +238,17 @@ try {
   Assert-HasLiteral -Name "docs sidebar wraps Docusaurus original component" -Text $docsSidebarText -Needle "@theme-original/DocSidebar"
   Assert-LacksLiteral -Name "docs sidebar no longer fetches api tree at read time" -Text $docsSidebarText -Needle "/api/tree"
   Assert-LacksLiteral -Name "docs sidebar no longer fetches domains at read time" -Text $docsSidebarText -Needle "/api/domains"
-  Assert-HasLiteral -Name "site admin panel exposes dedicated structure ordering surface" -Text $docsAuthoringPanelText -Needle 'Structure ordering'
+  Assert-HasLiteral -Name "site admin panel exposes dedicated structure ordering surface" -Text $docsAuthoringPanelText -Needle 'Save Structure'
   Assert-HasLiteral -Name "site admin panel exposes hide from site action" -Text $docsAuthoringPanelText -Needle 'Hide From Site'
   Assert-HasLiteral -Name "site admin panel exposes show in site action" -Text $docsAuthoringPanelText -Needle 'Show In Site'
-  Assert-HasLiteral -Name "site admin panel exposes landing visibility toggle" -Text $docsAuthoringPanelText -Needle 'Show landing in sidebar'
+  Assert-HasLiteral -Name "site admin panel exposes landing visibility toggle" -Text $docsAuthoringPanelText -Needle 'Show landing page in sidebar'
   Assert-HasLiteral -Name "doc layout exposes single edit entrypoint" -Text $docsDocItemLayoutText -Needle "setEditMode(true)"
   Assert-HasLiteral -Name "doc layout exposes page visibility action" -Text $docsDocItemLayoutText -Needle "toggleCurrentPageVisibility"
   Assert-HasLiteral -Name "doc layout persists unlisted visibility state" -Text $docsDocItemLayoutText -Needle "'unlisted'"
   Assert-HasLiteral -Name "doc layout renders hidden page notice from current page state" -Text $docsDocItemLayoutText -Needle "This page is hidden from site navigation."
   Assert-HasLiteral -Name "doc layout uses tiptap editor content" -Text $docsDocItemLayoutText -Needle "EditorContent"
   Assert-HasLiteral -Name "doc layout exposes formatting toolbar" -Text $docsDocItemLayoutText -Needle "toggleBold"
-  Assert-HasLiteral -Name "doc layout exposes alignment toolbar" -Text $docsDocItemLayoutText -Needle "setTextAlign('center')"
+  Assert-HasLiteral -Name "doc layout exposes alignment toolbar" -Text $docsDocItemLayoutText -Needle "applyTextAlignment(activeEditor, 'center')"
   Assert-HasLiteral -Name "doc layout exposes link insert UI" -Text $docsDocItemLayoutText -Needle "Insert link"
   Assert-HasLiteral -Name "doc layout exposes image insert UI" -Text $docsDocItemLayoutText -Needle "Insert image"
   Assert-HasLiteral -Name "doc layout exposes task list UI" -Text $docsDocItemLayoutText -Needle "Task list"
@@ -261,7 +270,9 @@ try {
   Assert-HasLiteral -Name "doc layout uses Mermaid renderer for edit previews" -Text $docsDocItemLayoutText -Needle "import('mermaid')"
   Assert-HasLiteral -Name "doc layout blocks advanced mdx with source fallback" -Text $docsDocItemLayoutText -Needle "Source Mode Required"
   Assert-HasLiteral -Name "docs editor api host exposes visibility endpoint" -Text (Get-Content -LiteralPath $docsEditorHostPath -Raw) -Needle '"/api/visibility"'
-  Assert-HasLiteral -Name "docs editor api host advertises authoring api version" -Text (Get-Content -LiteralPath $docsEditorHostPath -Raw) -Needle "authoringApiVersion = 2"
+  $docsEditorHostText = Get-Content -LiteralPath $docsEditorHostPath -Raw
+  Assert-HasLiteral -Name "docs editor api host defines shared api version" -Text $docsEditorHostText -Needle '$script:ApiVersion = 2'
+  Assert-HasLiteral -Name "docs editor api host advertises authoring api version" -Text $docsEditorHostText -Needle 'authoringApiVersion = $script:ApiVersion'
   Assert-HasLiteral -Name "docs browser QA covers toolbar readability" -Text $docsBrowserQaText -Needle "at least 28x28 px"
   Assert-HasLiteral -Name "docs browser QA covers dedicated structure ordering controls" -Text $docsBrowserQaText -Needle "Use the Site Settings structure ordering controls"
   Assert-HasLiteral -Name "docs browser QA covers hide from site visibility" -Text $docsBrowserQaText -Needle "Hide the temporary page from the site"

@@ -67,12 +67,10 @@ const config: Config = {
   baseUrl: '/',
   organizationName: 'ue-project',
   projectName: 'ue-project-docs',
-
-  onBrokenLinks: 'throw',
   markdown: {
     mermaid: true,
     hooks: {
-      onBrokenMarkdownLinks: 'throw',
+      onBrokenMarkdownLinks: 'warn',
     },
   },
 

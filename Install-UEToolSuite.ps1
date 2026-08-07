@@ -26,6 +26,7 @@ param(
   [switch]$SkipShellAliases,
   [switch]$SkipOptionalToolSetup,
   [switch]$SkipDocsSetup,
+  [switch]$SkipDocsSectionMigration,
   [switch]$SkipDocsNpmInstall,
   [switch]$ForceDocsNpmInstall,
   [switch]$SkipDocsBridgeInstall,
@@ -627,6 +628,193 @@ function Ensure-DocsCategoryMetadataFiles {
 
   Ensure-DocsCategoryMetadataChildren -DocsRootPath $docsRoot -ParentDir $docsRoot -CreatedList $created
   return @($created.ToArray())
+}
+
+function Write-DocsSectionMigrationReport {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [AllowNull()]$MigrationResult = $null,
+    [string]$Status = "completed",
+    [string]$ErrorMessage = ""
+  )
+
+  $reportRoot = Join-Path $TargetRoot ".ue-tools-installer-updates\$InstallStamp"
+  if (-not (Test-Path -LiteralPath $reportRoot -PathType Container)) {
+    New-Item -ItemType Directory -Force -Path $reportRoot | Out-Null
+  }
+
+  $jsonPath = Join-Path $reportRoot "docs-section-migration.json"
+  $markdownPath = Join-Path $reportRoot "Docs-Section-Migration.md"
+
+  $plannedFiles = @()
+  $detectedLegacySections = @()
+  $createdFiles = @()
+  $skippedEntries = @()
+  $warnings = @()
+  $changed = $false
+  if ($null -ne $MigrationResult) {
+    $plannedFiles = @($MigrationResult.PlannedFiles | ForEach-Object {
+        [ordered]@{
+          relativePath = [string]$_.RelativePath
+          label        = [string]$_.Label
+          position     = $_.Position
+        }
+      })
+    $detectedLegacySections = @($MigrationResult.DetectedLegacySections | ForEach-Object {
+        [ordered]@{
+          relativePath = [string]$_.RelativePath
+          reason       = [string]$_.Reason
+        }
+      })
+    $createdFiles = @($MigrationResult.CreatedFiles | ForEach-Object {
+        (Get-RelativePathCompat -BasePath $TargetRoot -TargetPath ([string]$_)).Replace("\", "/")
+      })
+    $skippedEntries = @($MigrationResult.SkippedEntries | ForEach-Object {
+        [ordered]@{
+          kind         = [string]$_.Kind
+          relativePath = [string]$_.RelativePath
+          reason       = [string]$_.Reason
+        }
+      })
+    $warnings = @($MigrationResult.Warnings | ForEach-Object {
+        [ordered]@{
+          relativePath = [string]$_.RelativePath
+          reason       = [string]$_.Reason
+        }
+      })
+    $changed = [bool]$MigrationResult.Changed
+  }
+
+  $document = [ordered]@{
+    schemaVersion         = 1
+    generatedUtc          = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    status                = $Status
+    changed               = $changed
+    detectedLegacySections = $detectedLegacySections
+    plannedFiles          = $plannedFiles
+    createdFiles          = $createdFiles
+    skippedEntries        = $skippedEntries
+    warnings              = $warnings
+    error                 = $ErrorMessage
+  }
+
+  $lines = New-Object System.Collections.Generic.List[string]
+  $lines.Add("# UE Tool Suite Docs Section Migration Report") | Out-Null
+  $lines.Add("") | Out-Null
+  $lines.Add("- Status: $Status") | Out-Null
+  $lines.Add("- Changed: $changed") | Out-Null
+  $lines.Add("- Legacy sections detected: $($detectedLegacySections.Count)") | Out-Null
+  $lines.Add("- Metadata files created: $($createdFiles.Count)") | Out-Null
+  $lines.Add("- Skipped entries: $($skippedEntries.Count)") | Out-Null
+  $lines.Add("") | Out-Null
+
+  if ($plannedFiles.Count -gt 0) {
+    $lines.Add("## Planned Files") | Out-Null
+    foreach ($plannedFile in $plannedFiles) {
+      $lines.Add("- $($plannedFile.relativePath) -> label=`"$($plannedFile.label)`", position=$($plannedFile.position)") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  if ($skippedEntries.Count -gt 0) {
+    $lines.Add("## Skipped Entries") | Out-Null
+    foreach ($skippedEntry in $skippedEntries) {
+      $lines.Add("- $($skippedEntry.kind): $($skippedEntry.relativePath) ($($skippedEntry.reason))") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ErrorMessage)) {
+    $lines.Add("## Error") | Out-Null
+    $lines.Add($ErrorMessage) | Out-Null
+    $lines.Add("") | Out-Null
+  }
+
+  Write-Utf8NoBomFile -Path $jsonPath -Content ($document | ConvertTo-Json -Depth 12)
+  Write-Utf8NoBomFile -Path $markdownPath -Content ($lines -join "`n")
+
+  return [pscustomobject]@{
+    JsonPath     = $jsonPath
+    MarkdownPath = $markdownPath
+  }
+}
+
+function Invoke-InstalledDocsSectionMigration {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$InstallStamp,
+    [switch]$SkipMigration
+  )
+
+  $docsRoot = Join-Path $TargetRoot "Docs"
+  $docsModulePath = Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+  if (-not (Test-Path -LiteralPath $docsRoot -PathType Container) -or -not (Test-Path -LiteralPath $docsModulePath -PathType Leaf)) {
+    return [pscustomobject]@{
+      Status     = "not-applicable"
+      Changed    = $false
+      ReportPath = $null
+      Result     = $null
+    }
+  }
+
+  if ($SkipMigration) {
+    $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -Status "skipped-by-parameter"
+    return [pscustomobject]@{
+      Status     = "skipped-by-parameter"
+      Changed    = $false
+      ReportPath = $reportPaths.MarkdownPath
+      Result     = $null
+    }
+  }
+
+  $docsModule = Import-Module -Name $docsModulePath -Force -DisableNameChecking -PassThru
+  try {
+    $result = & $docsModule { param($repoRoot) Invoke-DocsSectionMigration -ResolvedRepoRoot $repoRoot } $TargetRoot
+    $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -MigrationResult $result -Status "completed"
+    return [pscustomobject]@{
+      Status     = "completed"
+      Changed    = [bool]$result.Changed
+      ReportPath = $reportPaths.MarkdownPath
+      Result     = $result
+    }
+  }
+  catch {
+    $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -Status "failed" -ErrorMessage $_.Exception.Message
+    throw ("Docs section migration failed. Review: {0}. {1}" -f $reportPaths.MarkdownPath, $_.Exception.Message)
+  }
+}
+
+function Stop-InstalledDocsRuntimeIfPresent {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$TargetRoot
+  )
+
+  $payloadDocsModulePath = Join-Path $PayloadRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+  if (-not (Test-Path -LiteralPath $payloadDocsModulePath -PathType Leaf)) {
+    return [pscustomobject]@{
+      Status = "not-applicable"
+    }
+  }
+
+  $docsModule = Import-Module -Name $payloadDocsModulePath -Force -DisableNameChecking -PassThru
+  $statusBefore = & $docsModule { param($repoRoot) Invoke-DocsStatus -ResolvedRepoRoot $repoRoot } $TargetRoot
+  $stopResult = & $docsModule { param($repoRoot) Invoke-DocsStop -ResolvedRepoRoot $repoRoot } $TargetRoot
+  $statusAfter = & $docsModule { param($repoRoot) Invoke-DocsStatus -ResolvedRepoRoot $repoRoot } $TargetRoot
+
+  $serverStillRunning = $statusAfter.Status -in @("running", "running_multiple")
+  $editorStillRunning = $statusAfter.EditorStatus -in @("running", "running_untracked", "conflict")
+  if ($serverStillRunning -or $editorStillRunning) {
+    throw ("Installer refused to continue because the target docs runtime is still active for '{0}'. Server status: {1}. Editor status: {2}." -f $TargetRoot, $statusAfter.Status, $statusAfter.EditorStatus)
+  }
+
+  return [pscustomobject]@{
+    Status       = if (($statusBefore.Status -ne "not_running") -or ($statusBefore.EditorStatus -ne "not_running")) { "stopped" } else { "not_running" }
+    StatusBefore = $statusBefore
+    StopResult   = $stopResult
+    StatusAfter  = $statusAfter
+  }
 }
 
 function Apply-WebsiteThemeAndBranding {
@@ -1444,10 +1632,72 @@ function Copy-ManagedWebsiteIndexedFile {
 
   $parent = Split-Path -Path $targetPath -Parent
   if (-not [string]::IsNullOrWhiteSpace($parent)) {
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    $current = $parent
+    $directoryChain = New-Object System.Collections.Generic.List[string]
+    while (-not [string]::IsNullOrWhiteSpace($current) -and (Test-PathInsideRoot -Root $TargetRoot -Path $current)) {
+      $directoryChain.Add($current) | Out-Null
+      $current = Split-Path -Path $current -Parent
+    }
+
+    $directoryPaths = @($directoryChain.ToArray())
+    [array]::Reverse($directoryPaths)
+    foreach ($directoryPath in $directoryPaths) {
+      if ((Test-Path -LiteralPath $directoryPath) -and -not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+        $backupRelativePath = Get-RelativePathCompat -BasePath $TargetRoot -TargetPath $directoryPath
+        Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $backupRelativePath -ExistingPath $directoryPath -BackupRoot $BackupRoot
+        Remove-Item -LiteralPath $directoryPath -Force
+      }
+      if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $directoryPath | Out-Null
+      }
+    }
   }
 
   Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+}
+
+function Remove-ManagedWebsiteIndexedFile {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$BackupRoot
+  )
+
+  $targetPath = Join-Path $TargetRoot ($RelativePath -replace "/", "\")
+  if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $targetPath)) {
+    throw "Refusing to remove managed website path outside target repo root: $targetPath"
+  }
+
+  if (-not (Test-Path -LiteralPath $targetPath)) {
+    return
+  }
+
+  Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $RelativePath -ExistingPath $targetPath -BackupRoot $BackupRoot
+  if ($PSCmdlet.ShouldProcess($targetPath, "Remove obsolete managed website file")) {
+    Remove-Item -LiteralPath $targetPath -Recurse -Force
+  }
+
+  $websiteRoot = Join-Path $TargetRoot "website"
+  $current = Split-Path -Path $targetPath -Parent
+  while (
+    -not [string]::IsNullOrWhiteSpace($current) -and
+    (Test-PathInsideRoot -Root $websiteRoot -Path $current) -and
+    -not ([System.IO.Path]::GetFullPath($current).TrimEnd("\").Equals([System.IO.Path]::GetFullPath($websiteRoot).TrimEnd("\"), [System.StringComparison]::OrdinalIgnoreCase))
+  ) {
+    if (-not (Test-Path -LiteralPath $current -PathType Container)) {
+      break
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $current -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -gt 0) {
+      break
+    }
+
+    if ($PSCmdlet.ShouldProcess($current, "Remove empty website directory")) {
+      Remove-Item -LiteralPath $current -Force
+    }
+    $current = Split-Path -Path $current -Parent
+  }
 }
 
 function Write-WebsiteMergeReport {
@@ -1471,6 +1721,7 @@ function Write-WebsiteMergeReport {
     installMode = $Report.InstallMode
     installedNew = @($Report.InstalledNew)
     replacedSuiteManaged = @($Report.ReplacedSuiteManaged)
+    removedObsoleteManagedFiles = @($Report.RemovedObsoleteManagedFiles)
     preservedProjectOverrides = @($Report.PreservedProjectOverrides)
     mergedConfigs = @($Report.MergedConfigs)
     restoredProjectOverrides = @($Report.RestoredProjectOverrides)
@@ -1483,6 +1734,7 @@ function Write-WebsiteMergeReport {
   $lines.Add("- Install mode: $($Report.InstallMode)") | Out-Null
   $lines.Add("- Installed new files: $($Report.InstalledNew.Count)") | Out-Null
   $lines.Add("- Replaced suite-managed files: $($Report.ReplacedSuiteManaged.Count)") | Out-Null
+  $lines.Add("- Removed obsolete managed files: $($Report.RemovedObsoleteManagedFiles.Count)") | Out-Null
   $lines.Add("- Preserved project overrides: $($Report.PreservedProjectOverrides.Count)") | Out-Null
   $lines.Add("- Structured merges: $($Report.MergedConfigs.Count)") | Out-Null
   $lines.Add("- Restored project overrides after replace: $($Report.RestoredProjectOverrides.Count)") | Out-Null
@@ -1491,6 +1743,7 @@ function Write-WebsiteMergeReport {
   foreach ($section in @(
       [pscustomobject]@{ Title = "Installed New Files"; Items = @($Report.InstalledNew) },
       [pscustomobject]@{ Title = "Replaced Suite-Managed Files"; Items = @($Report.ReplacedSuiteManaged) },
+      [pscustomobject]@{ Title = "Removed Obsolete Managed Files"; Items = @($Report.RemovedObsoleteManagedFiles) },
       [pscustomobject]@{ Title = "Preserved Project Overrides"; Items = @($Report.PreservedProjectOverrides) },
       [pscustomobject]@{ Title = "Structured Merges"; Items = @($Report.MergedConfigs) },
       [pscustomobject]@{ Title = "Restored Project Overrides"; Items = @($Report.RestoredProjectOverrides) }
@@ -1524,6 +1777,7 @@ function Invoke-ManagedWebsiteUpdate {
     InstallMode = $RequestedMode
     InstalledNew = New-Object System.Collections.Generic.List[string]
     ReplacedSuiteManaged = New-Object System.Collections.Generic.List[string]
+    RemovedObsoleteManagedFiles = New-Object System.Collections.Generic.List[string]
     PreservedProjectOverrides = New-Object System.Collections.Generic.List[string]
     MergedConfigs = New-Object System.Collections.Generic.List[string]
     RestoredProjectOverrides = New-Object System.Collections.Generic.List[string]
@@ -1544,6 +1798,15 @@ function Invoke-ManagedWebsiteUpdate {
 
     if ($PSCmdlet.ShouldProcess($websiteRoot, "Replace existing website shell")) {
       Remove-Item -LiteralPath $websiteRoot -Recurse -Force
+    }
+  }
+
+  $managedBuildEntries = @($index.Files | Where-Object { ([string]$_.relativePath) -like "website/build/*" })
+  $buildRoot = Join-Path $websiteRoot "build"
+  if ($managedBuildEntries.Count -gt 0 -and $RequestedMode -ne "replace_existing" -and (Test-Path -LiteralPath $buildRoot)) {
+    Copy-ToBackup -TargetRoot $TargetRoot -RelativePath "website/build" -ExistingPath $buildRoot -BackupRoot $BackupRoot
+    if ($PSCmdlet.ShouldProcess($buildRoot, "Refresh managed website build directory")) {
+      Remove-Item -LiteralPath $buildRoot -Recurse -Force
     }
   }
 
@@ -1612,6 +1875,20 @@ function Invoke-ManagedWebsiteUpdate {
         category = $category
       }
     }
+  }
+
+  foreach ($relativePath in @($ledger.EntriesByPath.Keys | Sort-Object)) {
+    if ($nextEntries.ContainsKey($relativePath)) {
+      continue
+    }
+
+    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode "suite"
+    if ($overrideMode -eq "project") {
+      continue
+    }
+
+    Remove-ManagedWebsiteIndexedFile -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
+    $report.RemovedObsoleteManagedFiles.Add($relativePath) | Out-Null
   }
 
   Write-ManagedWebsiteLedger -TargetRoot $TargetRoot -EntriesByPath $nextEntries -PayloadVersion ([string]$PayloadManifest.PayloadVersion)
@@ -2390,6 +2667,14 @@ if (-not $SkipWebsite) {
   }
 }
 
+$docsRuntimeStopResult = $null
+if ((-not $SkipWebsite) -or (-not $SkipDocs)) {
+  $docsRuntimeStopResult = Stop-InstalledDocsRuntimeIfPresent -PayloadRoot $resolvedPayloadRoot -TargetRoot $resolvedTargetRoot
+  if ($docsRuntimeStopResult.Status -eq "stopped") {
+    Info "Stopped existing docs runtime before updating managed docs payload files."
+  }
+}
+
 $managedItems = New-Object System.Collections.Generic.List[string]
 foreach ($item in @($payloadManifest.ManagedBaseItems)) {
   [void]$managedItems.Add($item)
@@ -2473,9 +2758,18 @@ if (-not $SkipDocs) {
     -OverrideMap $websiteOverrideMap `
     -IncludeCodingStandards:(-not $SkipCodingStandardsTools)
 
-  $createdCategoryFiles = @(Ensure-DocsCategoryMetadataFiles -TargetRoot $resolvedTargetRoot -InstalledList $installed)
-  if ($createdCategoryFiles.Count -gt 0) {
-    Info "Created docs category metadata files: $($createdCategoryFiles.Count)"
+  $docsSectionMigration = Invoke-InstalledDocsSectionMigration `
+    -TargetRoot $resolvedTargetRoot `
+    -InstallStamp $installStamp `
+    -SkipMigration:$SkipDocsSectionMigration
+  if ($docsSectionMigration.ReportPath) {
+    Info "Docs section migration report: $($docsSectionMigration.ReportPath)"
+  }
+  if ($docsSectionMigration.Status -eq "skipped-by-parameter") {
+    Warn "Skipped docs section migration by parameter."
+  }
+  elseif ($docsSectionMigration.Changed) {
+    Info "Created docs section metadata files: $(@($docsSectionMigration.Result.CreatedFiles).Count)"
   }
 }
 
@@ -2546,6 +2840,7 @@ if ($RunInit) {
   if ($SkipLfsPull) { $initArgs += "-SkipLfsPull" }
   if ($SkipOptionalToolSetup) { $initArgs += "-SkipOptionalToolSetup" }
   if ($SkipDocsSetup) { $initArgs += "-SkipDocsSetup" }
+  if ($SkipDocsSectionMigration) { $initArgs += "-SkipDocsSectionMigration" }
   if ($SkipDocsNpmInstall) { $initArgs += "-SkipDocsNpmInstall" }
   if ($ForceDocsNpmInstall) { $initArgs += "-ForceDocsNpmInstall" }
   if ($SkipDocsBridgeInstall) { $initArgs += "-SkipDocsBridgeInstall" }

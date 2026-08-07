@@ -35,6 +35,14 @@ ue-tools docs start
 
 `ue-tools init` prepares installed optional tool prerequisites during first-run setup. When `website/package.json` is present, it verifies Node.js 20+ and npm, runs `npm install` if `website/node_modules` is missing, installs the optional docs VS Code bridge when the `code` CLI is available, and runs `ue-tools docs doctor`.
 
+When `Docs/` exists, install/update and `ue-tools init` also normalize legacy docs sections that still behave like sections in SiteAdmin but lack `_category_.json`. That migration:
+
+- writes only `_category_.json`
+- preserves current section order by recording the canonical tree order first
+- does not create `README.md`, landing docs, or generated-index links
+- can be previewed manually with `ue-tools docs migrate-sections --what-if`
+- is reported read-only by `ue-tools docs doctor`
+
 Init also handles repository bootstrap safety:
 - If the target folder is not a git repo, `ue-tools init -NonInteractive` runs `git init` automatically.
 - Newly ignored tracked files are untracked from the git index by default (local files are kept).
@@ -82,6 +90,7 @@ Set `UE_ENGINE_COMMON_INSTALL_ROOTS` to a semicolon-separated list when this mac
 - Use `-SkipShellAliases` on CI or any environment where PowerShell profiles should remain untouched.
 - Use `-SkipOptionalToolSetup` when you want only the core git/hook/Unreal bootstrap without optional tool prerequisite work.
 - Use `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, or `-SkipDocsBridgeInstall` to control the docs-specific setup steps.
+- Use `-SkipDocsSectionMigration` only when you explicitly need to skip legacy-section normalization during install or init recovery.
 
 ## UE Sync Behavior
 

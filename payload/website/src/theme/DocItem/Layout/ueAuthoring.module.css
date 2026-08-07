@@ -265,6 +265,7 @@ html:not([data-ue-docs-ui-ready='true']) .docTocScrollbar {
   justify-content: flex-end;
   gap: 0.55rem;
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .layoutControls {
@@ -475,6 +476,57 @@ html:not([data-ue-docs-ui-ready='true']) .docTocScrollbar {
   align-items: center;
   gap: 0.45rem;
   margin: 0;
+}
+
+.docAuthoringStatusCard {
+  min-width: min(100%, 20rem);
+  max-width: min(100%, 28rem);
+  border: 1px solid var(--ifm-toc-border-color);
+  border-radius: 10px;
+  padding: 0.85rem 0.95rem;
+  background: color-mix(in srgb, var(--ifm-color-warning) 10%, var(--ifm-background-surface-color));
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.docAuthoringStatusCard h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.docAuthoringStatusCard p {
+  margin: 0 0 0.45rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.docAuthoringStatusCard details {
+  margin: 0.55rem 0 0.75rem;
+}
+
+.docAuthoringStatusCard summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.docAuthoringStatusCard dl {
+  margin: 0.55rem 0 0;
+}
+
+.docAuthoringStatusCard dt {
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.docAuthoringStatusCard dd {
+  margin: 0.1rem 0 0.45rem;
+  font-size: 0.76rem;
+}
+
+.docAuthoringStatusCard :global(.button.button--primary) {
+  min-height: 1.95rem;
+  padding: 0 0.72rem;
+  font-size: 0.78rem;
 }
 
 .editModeToolbar {

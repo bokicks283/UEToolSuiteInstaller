@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "payloadVersion": "1.0.0",
-  "generatedUtc": "2026-06-16T17:34:39Z",
+  "generatedUtc": "2026-07-02T17:40:58Z",
   "files": [
     {
       "sha256": "7c2bf6ba263ba149a2885847a9f7186e0d7af58faae3e01f2e69a7465f7cfecc",
@@ -14,19 +14,14 @@
       "relativePath": "website/.ue-tools/site-overrides.json"
     },
     {
-      "sha256": "5e4760b7220a0220494501dc5698820954b4b0748245c3ae945bd0bcb3ca3b18",
+      "sha256": "7885a30bad9f545bb2ed517ce67115e8cf36b2110b819df6c334a9390c291849",
       "category": "overridable",
       "relativePath": "website/docusaurus.config.ts"
     },
     {
-      "sha256": "912713180edb61db558e4e33cbff4292a741e009bd4046b85ccfdfd39c8c3ee8",
+      "sha256": "4b85ed6afd2c3262d9409a8ce67768d173dd24034201a4a590db6ae0e54bbb0b",
       "category": "shell",
       "relativePath": "website/domainCatalog.ts"
-    },
-    {
-      "sha256": "ce7b1b84a98ecb779b757b2699e0f5b9e13a45ee827f18b52b955d028541803a",
-      "category": "structured",
-      "relativePath": "website/package.json"
     },
     {
       "sha256": "4fa99bb253385369dee6dc80dc0c57acade741e4c9254f47630f792c3274d747",
@@ -34,9 +29,19 @@
       "relativePath": "website/package-lock.json"
     },
     {
+      "sha256": "4f679189c373dbd83aecd440101a42274690a8086df6e04856acf3aeb1c7a344",
+      "category": "structured",
+      "relativePath": "website/package.json"
+    },
+    {
       "sha256": "2c60978f184ffc5d1190f3d45a0c66c5a21e1e30b09fefe31d4e309b0a3ba547",
       "category": "shell",
       "relativePath": "website/README.md"
+    },
+    {
+      "sha256": "932348b34ae8702f8799531a2710dbc98af02febfac5ecb73ac8898cc4f0ab8d",
+      "category": "shell",
+      "relativePath": "website/scripts/test-authoring-runtime.cjs"
     },
     {
       "sha256": "4f0155395dc3b38b943b8cc32067ad8405325796f3fe7f13ee62412c22c33df9",
@@ -55,33 +60,53 @@
     },
     {
       "sha256": "1a6b0cc19aa2a8b0c4b3099681ba1974c6e75816b71d9e975ac1b953ec6cc425",
-      "category": "overridable",
+      "category": "shell",
       "relativePath": "website/src/css/project-overrides.css"
     },
     {
-      "sha256": "f8c98b9d46c7c30d50f1dc3d36a4a2f5b877d9a980928b919b2eea64e806b7c2",
+      "sha256": "c1e33dfc0eb814b82f4e5dfafca55c9fc47374f0c36247e28b67e1ffb0b85152",
       "category": "shell",
       "relativePath": "website/src/css/suite-shell.css"
     },
     {
       "sha256": "d30abbb35539be832f6e33954f79e0cc762e0065a7365aa56093fb7416c5a505",
-      "category": "overridable",
+      "category": "shell",
       "relativePath": "website/src/pages/index.module.css"
     },
     {
       "sha256": "cabd05af4a29cc2afcea927cb61362286d93ce6bf2c8c3dcb03ce1dc4f965817",
-      "category": "overridable",
+      "category": "shell",
       "relativePath": "website/src/pages/index.tsx"
     },
     {
-      "sha256": "42c67e4098a299b151a75fdf988b84927b4a91a0d34cf57074ce2510cc137684",
+      "sha256": "f9f4c6b3b0780ec772c83e24e5de815ace29fe43e04eeec8fcbc3a25c6c3e6b1",
       "category": "shell",
       "relativePath": "website/src/pages/site-settings.tsx"
     },
     {
-      "sha256": "432c99e24ee9dd83b793f3abde24b50a41259a88d525b9a9bd8e54bcb5fbcfe9",
+      "sha256": "7abe84367c7779dd1ee1d660924b1654a65e7c4caf5f9af248ea4f08de714511",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/AGENTS.md"
+    },
+    {
+      "sha256": "fd63a97db1931b089bbebb780f4de0b8afa7ee8268e8238e6e56e4a45ebf6c6c",
       "category": "shell",
       "relativePath": "website/src/theme/authoring/api.ts"
+    },
+    {
+      "sha256": "62f806949e3a3486919aaa3c74e8674854fca8a8d1871d06022ae2e40b63411e",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/AuthoringConnectionStatusCard.tsx"
+    },
+    {
+      "sha256": "41ddb4b89118212c67ba9428512d9df228b105e5a1eb02dcd3aa72f38db59d89",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/docPageAuthoring.ts"
+    },
+    {
+      "sha256": "183dbe002dda780a518b6112ae889f38d69a0c9ab2aab0605ea3147ca0ccadff",
+      "category": "shell",
+      "relativePath": "website/src/theme/authoring/runtimeDiscovery.ts"
     },
     {
       "sha256": "6b804b7fd8ae56795e979313ce6d274bf9a279a622901211a89ac05adcb5f44b",
@@ -89,17 +114,22 @@
       "relativePath": "website/src/theme/authoring/shortcodes.ts"
     },
     {
-      "sha256": "4121baeed30ec6606e5c4d2389894dd435aa004bb93e7022e1618ecfced23c5a",
+      "sha256": "03f8ae9e6a9c0855dee3b7c085edef8fa14811c15caa458c522b70bdcc11830e",
       "category": "shell",
       "relativePath": "website/src/theme/authoring/SiteAdminPanel.tsx"
     },
     {
-      "sha256": "a9f51dde6cb0647b4301b842a659e18cce4ddf3706e5b8489037596886b1b18a",
+      "sha256": "3127ee4e86d640244be5b8403f54f4deb55ce2ed48f64d9d50263b4652ece38b",
+      "category": "shell",
+      "relativePath": "website/src/theme/DocItem/Layout/AGENTS.md"
+    },
+    {
+      "sha256": "b5acd65b4cb44b8c0562a2592b6055f26d4e3ab1a8f472061793475b94d27195",
       "category": "shell",
       "relativePath": "website/src/theme/DocItem/Layout/index.tsx"
     },
     {
-      "sha256": "fa0a8845a2362145c962b102b5d9c8c57a2e3e98c41ef49a3beeb8219f86278b",
+      "sha256": "46ae805af3d0f9e466deb37ebafbf43b14cdd83e670ed3ec3093b882a8c9fb23",
       "category": "shell",
       "relativePath": "website/src/theme/DocItem/Layout/ueAuthoring.module.css"
     },
@@ -117,16 +147,6 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "category": "shell",
       "relativePath": "website/static/.nojekyll"
-    },
-    {
-      "sha256": "9204212d3905bc1b8d1d882825d1eceb5ad942329222277d7257831a7d47d827",
-      "category": "shell",
-      "relativePath": "website/static/img/docusaurus.png"
-    },
-    {
-      "sha256": "7e3f3833e6742ffcc323c56380b3d1faf185c175534ea5591686bf879a1f7cfb",
-      "category": "shell",
-      "relativePath": "website/static/img/docusaurus-social-card.jpg"
     },
     {
       "sha256": "824816e2e33cb97af6d54ea0ba7403937a9462e06b1430edf0d334b4c4096225",
@@ -379,6 +399,11 @@
       "relativePath": "website/static/img/undraw_docusaurus_tree.svg"
     },
     {
+      "sha256": "5add74bed8bdff3b124bd01c9d036a0c86b00248deddd2f8a84179713bde8bf5",
+      "category": "shell",
+      "relativePath": "website/static/ue-tools/editor-runtime.json"
+    },
+    {
       "sha256": "4de21ea8e07f9cce3e62600fc9a4d69175c7e4e2fb8be6dfea7472824a2a093c",
       "category": "shell",
       "relativePath": "website/theme-presets/active-theme.css"
@@ -459,7 +484,7 @@
       "relativePath": "website/theme-presets/violet.css"
     },
     {
-      "sha256": "1bbddecc170d6739308972751b01e2761e1e8d1cf7f6d43bfc4e5589a9b6e059",
+      "sha256": "5eb33c6cccca2b10103117ba62b844938ba5fed15afaf70f45633b1a06e40923",
       "category": "shell",
       "relativePath": "website/tsconfig.json"
     }

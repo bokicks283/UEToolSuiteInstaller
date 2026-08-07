@@ -1,4 +1,12 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+
+import {
+  DEFAULT_EDITOR_API_URL,
+  createAuthoringConnectionController,
+  formatConnectionLogMessage,
+  normalizeApiBase,
+  type AuthoringConnectionStatus,
+} from './runtimeDiscovery';
 
 export type DocsNodeType = 'page' | 'section';
 
@@ -41,8 +49,6 @@ export type DocsDomainsPayload = {
 
 export const DOCS_STRUCTURE_CHANGED_EVENT = 'ue-docs:structure-changed';
 const DOCS_STRUCTURE_CHANGED_STORAGE_KEY = 'ue-docs:structure-changed';
-const EDITOR_API_CAPABILITY_VERSION = 2;
-
 export type DocsContentPayload = {
   path: string;
   content: string;
@@ -50,22 +56,8 @@ export type DocsContentPayload = {
   modifiedUtc: string;
 };
 
-export const DEFAULT_EDITOR_API_URL = '/__ue_docs_api__/';
-const DIRECT_EDITOR_API_URL = 'http://127.0.0.1:38473/';
-const EDITOR_API_HEALTH_PATH = 'health';
-const EDITOR_API_PROBE_TIMEOUT_MS = 1500;
-const EDITOR_API_PROBE_RETRY_DELAY_MS = 1000;
-
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
-}
-
-export function normalizeApiBase(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return DEFAULT_EDITOR_API_URL;
-  }
-  return `${trimTrailingSlash(trimmed)}/`;
 }
 
 export function broadcastDocsStructureChanged(detail?: {sidebarId?: string}): void {
@@ -183,119 +175,35 @@ export function getSidebarIdFromDomainPath(domainPath: string): string {
   return `${slug}-sidebar`;
 }
 
-function buildApiCandidates(preferredApiBase: string): string[] {
-  const candidates = new Set<string>();
-  const preferred = normalizeApiBase(preferredApiBase || DEFAULT_EDITOR_API_URL);
-  candidates.add(preferred);
-  candidates.add(normalizeApiBase(DEFAULT_EDITOR_API_URL));
-  candidates.add(normalizeApiBase(DIRECT_EDITOR_API_URL));
-  for (let port = 38474; port <= 38490; port += 1) {
-    candidates.add(normalizeApiBase(`http://127.0.0.1:${port}/`));
-  }
-  return [...candidates];
-}
-
-async function probeApiBase(apiBase: string, timeoutMs = EDITOR_API_PROBE_TIMEOUT_MS): Promise<boolean> {
-  const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(`${apiBase}${EDITOR_API_HEALTH_PATH}`, {
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      return false;
-    }
-    const payload = (await response.json()) as {
-      ok?: boolean;
-      capabilities?: {
-        authoringApiVersion?: number;
-        siteConfig?: boolean;
-        domains?: boolean;
-        tree?: boolean;
-        visibility?: boolean;
-      };
-    };
-    if (payload.ok === false) {
-      return false;
-    }
-
-    const capabilities = payload.capabilities;
-    return (
-      !!capabilities &&
-      capabilities.authoringApiVersion === EDITOR_API_CAPABILITY_VERSION &&
-      capabilities.siteConfig === true &&
-      capabilities.domains === true &&
-      capabilities.tree === true &&
-      capabilities.visibility === true
-    );
-  } catch {
-    return false;
-  } finally {
-    globalThis.clearTimeout(timeoutId);
-  }
-}
-
-async function resolveReachableApiBase(preferredApiBase: string): Promise<{apiBaseUrl: string; runtimeAvailable: boolean}> {
-  const candidates = buildApiCandidates(preferredApiBase);
-  const probeResults = await Promise.all(candidates.map(async (candidate) => ({candidate, ok: await probeApiBase(candidate)})));
-  for (const result of probeResults) {
-    if (result.ok) {
-      return {apiBaseUrl: result.candidate, runtimeAvailable: true};
-    }
-  }
-  return {apiBaseUrl: candidates[0], runtimeAvailable: false};
-}
-
 export function useDocsAuthoringApi() {
   const [apiBaseUrl, setApiBaseUrl] = useState<string>(DEFAULT_EDITOR_API_URL);
-  const [runtimeReady, setRuntimeReady] = useState<boolean>(false);
-  const [runtimeAvailable, setRuntimeAvailable] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState<AuthoringConnectionStatus>({kind: 'checking'});
+  const controllerRef = useRef<ReturnType<typeof createAuthoringConnectionController> | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    let retryTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
-
-    async function loadRuntimeConfig() {
-      let preferredApiBase = DEFAULT_EDITOR_API_URL;
-      try {
-        const runtimeConfigPaths = ['/ue-tools/editor-runtime.json', '/.ue-tools/editor-runtime.json'];
-        for (const runtimeConfigPath of runtimeConfigPaths) {
-          const response = await fetch(runtimeConfigPath, {cache: 'no-store'});
-          if (!response.ok) {
-            continue;
-          }
-
-          const payload = (await response.json()) as {apiUrl?: string};
-          if (payload.apiUrl) {
-            preferredApiBase = normalizeApiBase(payload.apiUrl);
-          }
-          break;
+    const controller = createAuthoringConnectionController({
+      onStatus: (status) => {
+        if (status.kind === 'connected') {
+          setApiBaseUrl(status.apiBaseUrl);
+        } else if ('apiBaseUrl' in status && status.apiBaseUrl) {
+          setApiBaseUrl(normalizeApiBase(status.apiBaseUrl));
         }
-      } catch {
-        // Keep default loopback API URL.
-      } finally {
-        const resolvedApi = await resolveReachableApiBase(preferredApiBase);
-        if (!cancelled) {
-          setApiBaseUrl(resolvedApi.apiBaseUrl);
-          setRuntimeAvailable(resolvedApi.runtimeAvailable);
-          setRuntimeReady(true);
-          if (!resolvedApi.runtimeAvailable) {
-            retryTimeoutId = globalThis.setTimeout(() => {
-              if (!cancelled) {
-                void loadRuntimeConfig();
-              }
-            }, EDITOR_API_PROBE_RETRY_DELAY_MS);
-          }
-        }
-      }
-    }
 
-    void loadRuntimeConfig();
+        setConnectionStatus(status);
+      },
+      logFailure: (failure) => {
+        if (typeof console !== 'undefined') {
+          console.warn(formatConnectionLogMessage(failure));
+        }
+      },
+    });
+
+    controllerRef.current = controller;
+    controller.start();
     return () => {
-      cancelled = true;
-      if (retryTimeoutId !== null) {
-        globalThis.clearTimeout(retryTimeoutId);
+      controller.stop();
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
       }
     };
   }, []);
@@ -317,9 +225,17 @@ export function useDocsAuthoringApi() {
     return trimTrailingSlash(apiBaseUrl).replace('/api', '');
   }, [apiBaseUrl]);
 
+  const runtimeReady = connectionStatus.kind !== 'checking';
+  const runtimeAvailable = connectionStatus.kind === 'connected';
+  const retryConnection = useCallback(() => {
+    controllerRef.current?.retry();
+  }, []);
+
   return {
     apiBaseUrl,
+    connectionStatus,
     docsRuntimeBaseUrl,
+    retryConnection,
     runtimeAvailable,
     runtimeReady,
     requestJson,
