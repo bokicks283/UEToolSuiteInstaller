@@ -268,13 +268,11 @@ try {
       "website\static\img\themes\neutral\social-card.svg",
       "website\.ue-tools\ownership.json",
       ".ue-tools\state\docs-managed-ledger.json",
-      ".ue-tools\state\website-managed-ledger.json",
-      "website\build\index.html"
+      ".ue-tools\state\website-managed-ledger.json"
     )) {
     Assert-PathExists "case1 installed $relativePath" (Join-Path $targetRepo $relativePath)
   }
-  $case1WebsiteBuildJsAssets = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo "website\build\assets\js") -File -Filter *.js -ErrorAction SilentlyContinue)
-  Assert-Condition "case1 installed website build javascript assets" ($case1WebsiteBuildJsAssets.Count -gt 0) "build js asset count=$($case1WebsiteBuildJsAssets.Count)" "missing website build javascript assets"
+  Assert-PathMissing "case1 excludes generated website build output" (Join-Path $targetRepo "website\build")
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
   Assert-FileContains "case1 installed binary guard uasset rule" (Join-Path $targetRepo ".gitattributes") "*.uasset filter=lfs diff=lfs merge=binary -text"
@@ -502,7 +500,7 @@ try {
     Assert-FileContains "case2f website update report lists removed obsolete asset" $websiteCleanupReport[0].FullName $staleBuildRelativePath
   }
 
-  Step "Case 2g: managed website update refreshes the build directory even when older ledgers did not track build assets"
+  Step "Case 2g: managed website update preserves untracked local build output"
   $websiteBuildRefreshRepo = New-TargetRepo "website build refresh target"
   $websiteBuildRefreshInstallResult = Invoke-Installer -TargetRoot $websiteBuildRefreshRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2g initial install exits cleanly" ($websiteBuildRefreshInstallResult.Code -eq 0) "exit=0" "exit=$($websiteBuildRefreshInstallResult.Code)"
@@ -524,9 +522,9 @@ try {
   Write-Utf8NoBomFile -Path $websiteBuildRefreshLedgerPath -Content ($websiteBuildRefreshLedger | ConvertTo-Json -Depth 10)
   $websiteBuildRefreshUpdateResult = Invoke-Installer -TargetRoot $websiteBuildRefreshRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2g update exits cleanly" ($websiteBuildRefreshUpdateResult.Code -eq 0) "exit=0" "exit=$($websiteBuildRefreshUpdateResult.Code)"
-  Assert-PathMissing "case2g legacy build asset removed by build refresh" $legacyBuildPath
+  Assert-PathExists "case2g untracked local build asset preserved" $legacyBuildPath
   $websiteBuildRefreshNewMain = @(Get-ChildItem -LiteralPath (Join-Path $websiteBuildRefreshRepo "website\build\assets\js") -File -Filter "main.*.js" -ErrorAction SilentlyContinue)
-  Assert-Condition "case2g refreshed build directory still contains managed main bundle" ($websiteBuildRefreshNewMain.Count -gt 0) "main bundle count=$($websiteBuildRefreshNewMain.Count)" "managed main bundle missing after build refresh"
+  Assert-Condition "case2g installer does not add generated main bundles" ($websiteBuildRefreshNewMain.Count -eq 0) "no generated main bundles installed" "unexpected managed main bundle count=$($websiteBuildRefreshNewMain.Count)"
 
   Step "Case 3: installer can run target Init-Repo"
   $initRepo = New-TargetRepo "run init target"

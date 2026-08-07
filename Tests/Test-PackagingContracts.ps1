@@ -144,8 +144,8 @@ try {
   Assert-Condition -Name "website managed index includes connection status card source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/AuthoringConnectionStatusCard.tsx") -PassDetail "status card managed" -FailDetail "missing website/src/theme/authoring/AuthoringConnectionStatusCard.tsx"
   Assert-Condition -Name "website managed index includes document page authoring helper source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/docPageAuthoring.ts") -PassDetail "doc page authoring helper managed" -FailDetail "missing website/src/theme/authoring/docPageAuthoring.ts"
   Assert-Condition -Name "website managed index includes authoring runtime tests" -Condition ($websiteManagedPaths -contains "website/scripts/test-authoring-runtime.cjs") -PassDetail "runtime tests managed" -FailDetail "missing website/scripts/test-authoring-runtime.cjs"
-  Assert-Condition -Name "website managed index includes built index html" -Condition ($websiteManagedPaths -contains "website/build/index.html") -PassDetail "website/build/index.html managed" -FailDetail "missing website/build/index.html"
-  Assert-Condition -Name "website managed index includes built javascript assets" -Condition (@($websiteManagedPaths | Where-Object { $_ -like "website/build/assets/js/*.js" }).Count -gt 0) -PassDetail "build js assets managed" -FailDetail "no website/build/assets/js/*.js entries found"
+  Assert-Condition -Name "website managed index excludes built index html" -Condition ($websiteManagedPaths -notcontains "website/build/index.html") -PassDetail "website/build/index.html not managed" -FailDetail "website/build/index.html should not be managed"
+  Assert-Condition -Name "website managed index excludes generated build output" -Condition (@($websiteManagedPaths | Where-Object { $_ -like "website/build/*" }).Count -eq 0) -PassDetail "website/build output not managed" -FailDetail "website/build entries should not be managed"
 
   Step "GUI publish content contract"
   [xml]$csprojXml = Get-Content -LiteralPath $csprojPath -Raw

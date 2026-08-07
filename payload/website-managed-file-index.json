@@ -14,7 +14,7 @@
       "relativePath": "website/.ue-tools/site-overrides.json"
     },
     {
-      "sha256": "ce56e41777d76b271b7d4f36c578f6bcdafd82a5f8197a398c86c5540a592c6f",
+      "sha256": "7885a30bad9f545bb2ed517ce67115e8cf36b2110b819df6c334a9390c291849",
       "category": "overridable",
       "relativePath": "website/docusaurus.config.ts"
     },
