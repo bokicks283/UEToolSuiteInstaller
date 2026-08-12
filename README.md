@@ -19,7 +19,9 @@ Install/update into a target UE5 repo:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 -TargetRepoRoot C:\Path\To\UEProject -RunInit -SkipUnrealSync
 ```
 
-Every install places the reusable CLI runtime under `%LOCALAPPDATA%\UEToolSuite\versions\<version>`, maintains stable launchers under `%LOCALAPPDATA%\UEToolSuite\bin`, and leaves a small `Scripts\ue-tools.ps1` forwarding shim in the project. Git hooks, tests, docs content, and the Docusaurus site remain project-local.
+Every install places the reusable CLI runtime under `%LOCALAPPDATA%\UEToolSuite\versions\<version>`, maintains stable launchers under `%LOCALAPPDATA%\UEToolSuite\bin`, and leaves a small `Scripts\ue-tools.ps1` forwarding shim in the project. Git hooks, docs content, and the Docusaurus site remain project-local. Repository test suites stay in this source repository and are not shipped to installed projects.
+
+Unless `-SkipArtSourceTools` is selected, installation creates the project-local `ArtSource/_Template` layout with `Source`, `Textures`, and `Exports` folders so a new project is immediately ready for `ue-tools art`.
 
 The installer uses `payload/ue-tool-suite.manifest.json` to decide managed paths and marker-managed root text blocks (`.gitattributes`, `.gitignore`).
 
@@ -46,7 +48,7 @@ By default, replaced managed content is backed up under:
 - `-SkipUnrealSync`
 - `-NoBuild`
 - `-NoRegen`
-- `-SkipDocs`, `-SkipWebsite`, `-SkipTests`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
+- `-SkipDocs`, `-SkipWebsite`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
 - `-AdoptExistingWebsite` (explicitly convert an existing unmanaged `website/` folder to installer-managed)
 - `-WebsiteTheme <id>` (default: `neutral`)
 - `-WebsiteLogoPath <path-to-svg-or-png>`

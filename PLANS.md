@@ -441,7 +441,7 @@ Store the reusable PowerShell runtime once per Windows user for every installati
 - Do not globalize the Docusaurus website, its dependencies, themes, or project Docs content.
 - Do not retain a second project-local runtime installation mode.
 - Do not add simultaneous multi-project docs authoring or dynamic editor API ports. A second project must fail clearly when the fixed API port belongs to another project.
-- Do not combine this feature with the broader payload-test or generated-output cleanup.
+- Keep payload cleanup bounded to excluding repository test suites and generated test output; do not expand into unrelated payload reclassification.
 - Do not add a machine-wide elevated installation in this change.
 
 ### Current limitation
@@ -490,6 +490,8 @@ Store the reusable PowerShell runtime once per Windows user for every installati
 | Keep a project-local forwarding shim | Existing Git hooks, Git aliases, and direct script paths continue to work | Requiring PATH-only invocation would break non-interactive hooks and existing project contracts |
 | Keep the website and Docs project-local | This matches Docusaurus's project model and preserves independent dependencies and customization | A global multi-project Docusaurus host would be a much larger architecture migration |
 | Keep one fixed editor API port | Concurrent docs editing is not required; a clear ownership error is sufficient | Dynamic ports add lifecycle and browser-discovery work without current product value |
+| Keep repository tests source-only | Tests validate the suite from this repository and do not belong in every Unreal project or public installer bundle | Project-local test payload duplicates maintainer infrastructure and bloats installations |
+| Create the ArtSource layout by default | New projects should be ready for `ue-tools art`; only the dedicated ArtSource skip option should disable this project-local setup | Treating a missing folder or the general optional docs setup switch as an implicit ArtSource opt-out |
 
 ### Validation
 
@@ -509,12 +511,19 @@ Validation completed for this focused change:
 |---|---|---|
 | PowerShell parser checks for installer, Init, and hook scripts | Passed | No parser errors |
 | `dotnet build src/UEToolSuiteInstaller.Gui/UEToolSuiteInstaller.Gui.csproj --configuration Release` | Passed | 0 warnings, 0 errors |
-| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=529 FAIL=0` |
-| `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=194 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=535 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=202 FAIL=0` |
 | `Tests/Run-UEToolSuiteTests.ps1 -Name upgrade-compatibility -FailFast` | Passed | `PASS=70 FAIL=0` |
-| `Tests/Run-UEToolSuiteTests.ps1 -Name shell-aliases -FailFast` | Passed | `PASS=33 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name shell-aliases -FailFast` | Passed | `PASS=43 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name init-repo-tool-readiness -FailFast` | Passed | `PASS=60 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name new-artsource-path -FailFast` | Passed | `PASS=26 FAIL=0` |
 | `Tests/Run-UEToolSuiteTests.ps1 -Name docs-tools -FailFast` | Passed on clean rerun | `PASS=652 FAIL=0 WARN=0 SKIP=1` |
 | Direct global `-RunInit` smoke case with spaces in project/global paths | Passed | Hook self-test and repo initialization completed |
+| Clean install and retired-test upgrade cleanup | Passed | PowerShell and website tests absent; suite-owned legacy tests removed; project-owned `Scripts/Tests` file preserved |
+| Default and skipped ArtSource install/init cases | Passed | Canonical template created by default; `-SkipArtSourceTools` leaves it absent |
+| Rebuilt single-file installer extraction smoke | Passed | Installer remained running, manifest extracted, `payload/Scripts/Tests` absent, no .NET runtime errors |
+| `npm run build` in `payload/website` | Passed | Docusaurus client and server compiled successfully |
+| `npm run typecheck` in `payload/website` | Known configuration conflict | Pinned compiler rejects `ignoreDeprecations: "6.0"`; value intentionally preserved for the VS Code language service |
 
 ### Rollback/recovery
 

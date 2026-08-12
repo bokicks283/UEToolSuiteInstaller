@@ -270,7 +270,7 @@ try {
 
   Step "Case 1: fresh install copies portable tools, docs, and website"
   $targetRepo = New-TargetRepo "fresh target"
-  $result = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @("-SkipTests")
+  $result = Invoke-Installer -TargetRoot $targetRepo -ExtraArgs @()
   Assert-Condition "case1 installer exits cleanly" ($result.Code -eq 0) "exit=0" "exit=$($result.Code)"
   foreach ($relativePath in @(
       ".gitattributes",
@@ -296,8 +296,13 @@ try {
   }
   Assert-FileContains "case1 project entrypoint is global forwarding shim" (Join-Path $targetRepo "Scripts\ue-tools.ps1") "UE Tool Suite global project shim"
   Assert-PathMissing "case1 reusable core module is not duplicated in project" (Join-Path $targetRepo "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-PathMissing "case1 repository test suite is not installed in project" (Join-Path $targetRepo "Scripts\Tests")
+  Assert-PathMissing "case1 repository website test is not installed in project" (Join-Path $targetRepo "website\scripts\test-authoring-runtime.cjs")
   Assert-PathExists "case1 global core module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Core.psm1")
   Assert-PathExists "case1 global docs module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Docs.psm1")
+  foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
+    Assert-PathExists "case1 created $relativePath" (Join-Path $targetRepo $relativePath)
+  }
   Assert-PathMissing "case1 excludes generated website build output" (Join-Path $targetRepo "website\build")
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
@@ -319,6 +324,12 @@ try {
     )) {
     Assert-PathMissing "case1 skipped $relativePath" (Join-Path $targetRepo $relativePath)
   }
+
+  Step "Case 1a: SkipArtSourceTools leaves the ArtSource layout absent"
+  $skipArtSourceRepo = New-TargetRepo "skip artsource target"
+  $skipArtSourceResult = Invoke-Installer -TargetRoot $skipArtSourceRepo -ExtraArgs @("-SkipArtSourceTools", "-SkipDocs", "-SkipWebsite")
+  Assert-Condition "case1a skip artsource install exits cleanly" ($skipArtSourceResult.Code -eq 0) "exit=0" "exit=$($skipArtSourceResult.Code)"
+  Assert-PathMissing "case1a ArtSource layout is absent" (Join-Path $skipArtSourceRepo "ArtSource")
 
   Step "Case 2: update removes legacy installer and writes backup"
   Write-Utf8NoBomFile -Path (Join-Path $targetRepo "Scripts\Install-UEProjectTools.ps1") -Content "legacy installer`n"
@@ -389,16 +400,14 @@ try {
     Assert-PathExists "case2 candidate generated for missing managed file" (Join-Path $candidateRoot ($missingRelativePath -replace "/", "\"))
   }
 
-  Step "Case 2b: update merges managed test directory without removing target-only files"
-  $managedDirectoryRepo = New-TargetRepo "managed directory merge target"
-  $managedDirectoryInstallResult = Invoke-Installer -TargetRoot $managedDirectoryRepo -ExtraArgs @()
-  Assert-Condition "case2b initial install exits cleanly" ($managedDirectoryInstallResult.Code -eq 0) "exit=0" "exit=$($managedDirectoryInstallResult.Code)"
+  Step "Case 2b: update removes retired suite tests without removing target-only files"
+  $managedDirectoryRepo = New-TargetRepo "retired test payload cleanup target"
   Write-Utf8NoBomFile -Path (Join-Path $managedDirectoryRepo "Scripts\Tests\ProjectSpecific-Test.ps1") -Content "project-specific test should survive`n"
   Write-Utf8NoBomFile -Path (Join-Path $managedDirectoryRepo "Scripts\Tests\TestManifest.ps1") -Content "stale test manifest`n"
   $managedDirectoryUpdateResult = Invoke-Installer -TargetRoot $managedDirectoryRepo -ExtraArgs @()
   Assert-Condition "case2b update exits cleanly" ($managedDirectoryUpdateResult.Code -eq 0) "exit=0" "exit=$($managedDirectoryUpdateResult.Code)"
   Assert-FileContains "case2b preserved target-only test file" (Join-Path $managedDirectoryRepo "Scripts\Tests\ProjectSpecific-Test.ps1") "project-specific test should survive"
-  Assert-FileContains "case2b refreshed managed test file" (Join-Path $managedDirectoryRepo "Scripts\Tests\TestManifest.ps1") "function Get-ProjectTestManifest"
+  Assert-PathMissing "case2b removed retired managed test file" (Join-Path $managedDirectoryRepo "Scripts\Tests\TestManifest.ps1")
   $testManifestBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $managedDirectoryRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*Scripts*Tests*TestManifest.ps1" })
   Assert-Condition "case2b backup created for managed test file" ($testManifestBackupMatches.Count -gt 0) "backup count=$($testManifestBackupMatches.Count)" "backup missing"
 
@@ -498,9 +507,16 @@ try {
   Assert-Condition "case2f initial install exits cleanly" ($websiteCleanupInstallResult.Code -eq 0) "exit=0" "exit=$($websiteCleanupInstallResult.Code)"
   $websiteCleanupLedgerPath = Join-Path $websiteCleanupRepo ".ue-tools\state\website-managed-ledger.json"
   Assert-PathExists "case2f website ledger exists before update" $websiteCleanupLedgerPath
+  $websiteCleanupPackagePath = Join-Path $websiteCleanupRepo "website\package.json"
+  $websiteCleanupPackage = Get-Content -LiteralPath $websiteCleanupPackagePath -Raw | ConvertFrom-Json
+  $websiteCleanupPackage.scripts | Add-Member -NotePropertyName "test:unit" -NotePropertyValue "node --test ./scripts/test-authoring-runtime.cjs" -Force
+  Write-Utf8NoBomFile -Path $websiteCleanupPackagePath -Content ($websiteCleanupPackage | ConvertTo-Json -Depth 20)
   $staleBuildRelativePath = "website/build/assets/js/stale-runtime.bundle.js"
   $staleBuildPath = Join-Path $websiteCleanupRepo ($staleBuildRelativePath -replace "/", "\")
   Write-Utf8NoBomFile -Path $staleBuildPath -Content "stale managed asset`n"
+  $retiredWebsiteTestRelativePath = "website/scripts/test-authoring-runtime.cjs"
+  $retiredWebsiteTestPath = Join-Path $websiteCleanupRepo ($retiredWebsiteTestRelativePath -replace "/", "\")
+  Write-Utf8NoBomFile -Path $retiredWebsiteTestPath -Content "retired repository test`n"
   $websiteCleanupLedger = Get-Content -LiteralPath $websiteCleanupLedgerPath -Raw | ConvertFrom-Json
   $websiteCleanupFiles = New-Object System.Collections.Generic.List[object]
   foreach ($entry in @($websiteCleanupLedger.files)) {
@@ -515,11 +531,21 @@ try {
       updatedUtc = "2026-01-01T00:00:00Z"
       category = "shell"
     }) | Out-Null
+  $websiteCleanupFiles.Add([pscustomobject]@{
+      relativePath = $retiredWebsiteTestRelativePath
+      installedPayloadVersion = "0.9.0"
+      installedHash = (Get-FileHash -LiteralPath $retiredWebsiteTestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+      updatedUtc = "2026-01-01T00:00:00Z"
+      category = "shell"
+    }) | Out-Null
   $websiteCleanupLedger.files = @($websiteCleanupFiles.ToArray())
   Write-Utf8NoBomFile -Path $websiteCleanupLedgerPath -Content ($websiteCleanupLedger | ConvertTo-Json -Depth 10)
   $websiteCleanupUpdateResult = Invoke-Installer -TargetRoot $websiteCleanupRepo -ExtraArgs @("-SkipTests")
   Assert-Condition "case2f update exits cleanly" ($websiteCleanupUpdateResult.Code -eq 0) "exit=0" "exit=$($websiteCleanupUpdateResult.Code)"
   Assert-PathMissing "case2f stale managed build asset removed" $staleBuildPath
+  Assert-PathMissing "case2f retired repository website test removed" $retiredWebsiteTestPath
+  $websiteCleanupUpdatedPackage = Get-Content -LiteralPath $websiteCleanupPackagePath -Raw | ConvertFrom-Json
+  Assert-Condition "case2f retired repository website test command removed" ($null -eq $websiteCleanupUpdatedPackage.scripts.'test:unit') "test:unit absent" "test:unit still present"
   $websiteCleanupReport = @(Get-ChildItem -LiteralPath (Join-Path $websiteCleanupRepo ".ue-tools-installer-updates") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "Website-Update-Report.md" } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
   Assert-Condition "case2f website update report emitted" ($websiteCleanupReport.Count -eq 1) "report written" "website update report missing"
   if ($websiteCleanupReport.Count -eq 1) {

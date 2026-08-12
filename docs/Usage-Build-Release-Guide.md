@@ -68,7 +68,7 @@ The installer copies managed paths from `payload/` into the selected UE project:
 - `Scripts/Unreal/ProjectContext.ps1`
 - `Scripts/UETools/UEToolSuite.Unreal.psm1`
 - optional `Scripts/Docs/`
-- optional `Scripts/Tests/`
+- repository tests are excluded from the published installer and installed projects
 - generic `Docs/`
 - `website/`
 

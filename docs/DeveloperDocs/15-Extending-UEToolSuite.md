@@ -42,7 +42,7 @@ Extend the smallest layer that owns the behavior already. Do not fix an installe
 ### Add a test
 
 - root install/packaging behavior: `Tests/`
-- installed payload behavior: `payload/Scripts/Tests/`
+- payload behavior: `payload/Scripts/Tests/` in this source repository; these suites are not shipped to installed projects
 - prefer a new named case over weakening an existing assertion
 
 ## Compatibility checklist

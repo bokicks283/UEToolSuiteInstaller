@@ -32,9 +32,6 @@
     ],
     "artTools": [],
     "aiTools": [],
-    "tests": [
-      "Scripts/Tests"
-    ],
     "docs": [
       "Docs/_domains.json",
       "Docs/README.md",
@@ -60,6 +57,22 @@
     "Scripts/git-tools/conflicts.ps1",
     "Scripts/Unreal/ProjectShellAliases.ps1",
     "Scripts/Unreal/UESyncShellAliases.ps1",
+    "Scripts/Tests/AGENTS.md",
+    "Scripts/Tests/BinaryGuard-Test-Functions.ps1",
+    "Scripts/Tests/Collect-CrashEvidence.ps1",
+    "Scripts/Tests/Run-AllTests.ps1",
+    "Scripts/Tests/Run-CrashCaptureSession.ps1",
+    "Scripts/Tests/Test-AIStartupPrompt.ps1",
+    "Scripts/Tests/Test-BinaryGuard-Fixes.ps1",
+    "Scripts/Tests/Test-DocsTools.ps1",
+    "Scripts/Tests/Test-InitRepoToolReadiness.ps1",
+    "Scripts/Tests/Test-New-ArtSourcePath.ps1",
+    "Scripts/Tests/Test-Setup-UESync-Manual.ps1",
+    "Scripts/Tests/Test-UESyncShellAliases.ps1",
+    "Scripts/Tests/Test-UnrealSync-Regeneration.ps1",
+    "Scripts/Tests/Test-UnrealSync.ps1",
+    "Scripts/Tests/TestHarness.ps1",
+    "Scripts/Tests/TestManifest.ps1",
     "website/src/pages/editor.tsx",
     "website/src/pages/editor.module.css"
   ]

@@ -20,7 +20,7 @@
   <ItemGroup>
     <Content Include="..\..\Install-UEToolSuite.ps1" Link="Install-UEToolSuite.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
     <Content Include="..\..\payload\**\*"
-             Exclude="..\..\payload\website\node_modules\**\*;..\..\payload\website\build\**\*;..\..\payload\website\.docusaurus\**\*;..\..\payload\website\.cache\**\*;..\..\payload\**\*Results\**\*"
+             Exclude="..\..\payload\website\node_modules\**\*;..\..\payload\website\build\**\*;..\..\payload\website\.docusaurus\**\*;..\..\payload\website\.cache\**\*;..\..\payload\website\scripts\test-*.*;..\..\payload\Scripts\Tests\**\*;..\..\payload\**\*Results\**\*"
              Link="payload\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="Always" />

@@ -29,7 +29,7 @@
       "relativePath": "website/package-lock.json"
     },
     {
-      "sha256": "4f679189c373dbd83aecd440101a42274690a8086df6e04856acf3aeb1c7a344",
+      "sha256": "ce7b1b84a98ecb779b757b2699e0f5b9e13a45ee827f18b52b955d028541803a",
       "category": "structured",
       "relativePath": "website/package.json"
     },
@@ -37,11 +37,6 @@
       "sha256": "2c60978f184ffc5d1190f3d45a0c66c5a21e1e30b09fefe31d4e309b0a3ba547",
       "category": "shell",
       "relativePath": "website/README.md"
-    },
-    {
-      "sha256": "932348b34ae8702f8799531a2710dbc98af02febfac5ecb73ac8898cc4f0ab8d",
-      "category": "shell",
-      "relativePath": "website/scripts/test-authoring-runtime.cjs"
     },
     {
       "sha256": "4f0155395dc3b38b943b8cc32067ad8405325796f3fe7f13ee62412c22c33df9",

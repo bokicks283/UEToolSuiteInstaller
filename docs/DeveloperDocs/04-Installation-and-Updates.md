@@ -14,9 +14,11 @@ The installer parameter block starts at `Install-UEToolSuite.ps1:4` and includes
 
 - target selection: `-TargetRepoRoot`, `-PayloadRoot`, `-TargetUProjectPath`
 - website behavior: `-WebsiteInstallMode`, `-WebsiteTheme`, branding paths, force-suite/project path arrays, `-AdoptExistingWebsite`
-- init forwarding: `-RunInit`, `-InitNonInteractive`, `-SkipLfsPull`, `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, `-SkipDocsBridgeInstall`, `-SkipUnrealSync`, `-NoBuild`, `-NoRegen`
-- payload scope: `-SkipDocs`, `-SkipWebsite`, `-SkipTests`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
+- init forwarding: `-RunInit`, `-InitNonInteractive`, `-SkipLfsPull`, `-SkipArtSourceTools`, `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, `-SkipDocsBridgeInstall`, `-SkipUnrealSync`, `-NoBuild`, `-NoRegen`
+- payload scope: `-SkipDocs`, `-SkipWebsite`, `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools`
 - safety/control: `-NoBackup`, `-NoLegacyCleanup`, `-SkipDocsSectionMigration`
+
+`-SkipTests` remains accepted as a compatibility no-op for older automation. Repository test suites are always excluded from published installers and installed projects.
 
 ## Installer phases
 
@@ -30,6 +32,7 @@ The installer parameter block starts at `Install-UEToolSuite.ps1:4` and includes
 | Docs smart update | `Invoke-ManagedDocsSmartUpdate` | docs index, ledger, overrides | auto-update, preserve customized files, emit candidates/reports | installer Case 2, 2c, 2d, 2f |
 | Website install/update | website ledger helpers, `Merge-WebsitePackageJson`, website indexed file copy/remove helpers | website index, overrides, install mode | merge package config, copy/update build/source assets, cleanup obsolete managed assets | installer Case 1, 2f, 2g, 5g, 5h |
 | Legacy cleanup | `legacyCleanupPaths` application | manifest list | removes retired managed paths unless `-NoLegacyCleanup` | installer Case 2, Case 7 |
+| ArtSource layout | default installer block and init readiness | `-SkipArtSourceTools` | creates `ArtSource/_Template/{Source,Textures,Exports}` unless explicitly skipped | installer Case 1/1a, init readiness Cases 1-3a |
 | Optional init | `if ($RunInit)` block at `Install-UEToolSuite.ps1:2828` | forwarded switches | runs installed `ue-tools init` flow | installer Case 3 |
 
 ## Install sequence

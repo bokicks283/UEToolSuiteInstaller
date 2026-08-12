@@ -18,7 +18,6 @@ When you install into a UE5 repo, the suite provides:
 - ArtSource scaffolding helpers
 - Docs tooling + optional docs bridge integration
 - AI startup prompt helper
-- Optional payload test scripts
 
 It also supports repeated updates, preserves project-local files where possible, and keeps managed changes auditable through backup snapshots.
 
@@ -27,14 +26,14 @@ It also supports repeated updates, preserves project-local files where possible,
 ### Installer boundary vs payload boundary
 
 - Installer logic lives in this repo root (`Install-UEToolSuite.ps1`).
-- Every install places reusable runtime scripts once per user while retaining project-specific hooks, docs, tests, and website assets in each project.
+- Every install places reusable runtime scripts once per user while retaining project-specific hooks, docs, and website assets in each project. Repository tests are not shipped.
 - Payload does **not** self-update; updates are driven by running installer again.
 
 ### Manifest-driven install/update
 
 `payload/ue-tool-suite.manifest.json` defines:
 - `managedTextItems`: marker-managed root text files (`.gitattributes`, `.gitignore`)
-- `managedItems` by category (base, docs, website, tests, ai, art tools, etc.)
+- `managedItems` by category (base, docs, website, ai, art tools, etc.)
 - `managedItems.projectBase` for files that must remain in every project when global CLI mode is selected
 - `managedItems.globalCli` for the exact reusable runtime files installed into the per-user version directory
 - `legacyCleanupPaths` for old-path removals
@@ -73,7 +72,7 @@ Payload structure:
 - `payload/Scripts/UETools/UEToolSuite.Docs.psm1`: docs command system
 - `payload/Scripts/git-hooks/` + `.githooks/`: hook plumbing
 - `payload/Scripts/git-tools/`: binary conflict helper internals for `ue-tools git` + git aliases
-- `payload/Scripts/Tests/`: payload-level suites
+- `payload/Scripts/Tests/`: source-repository validation suites; excluded from installer artifacts and installed projects
 - `payload/Docs/`, `payload/website/`: docs content and Docusaurus app
 
 ## 4) Installer Internals (`Install-UEToolSuite.ps1`)
@@ -126,7 +125,6 @@ Primary:
 Install scope toggles:
 - `-SkipDocs`
 - `-SkipWebsite`
-- `-SkipTests`
 - `-SkipAITools`
 - `-SkipArtSourceTools`
 - `-SkipCodingStandardsTools`
@@ -161,7 +159,7 @@ Responsibilities:
 - Installs shell alias bootstrap block (unless skipped)
 - Runs hook self-test
 - Optionally prepares docs tooling prerequisites
-- Optionally validates ArtSource template shape
+- Creates or repairs the canonical `ArtSource/_Template` shape unless ArtSource tools were explicitly skipped
 - Creates an initial commit when init had to create the git repository
 - Optionally runs initial Unreal sync
 - Emits readiness summary (`OK` / `WARN` / `SKIP`)
@@ -169,7 +167,7 @@ Responsibilities:
 Key switches:
 - `-RepoRoot`, `-UProjectPath`, `-WorkspacePath`
 - `-NonInteractive`, `-SkipIgnoredUntrack`
-- `-SkipLfsPull`, `-SkipShellAliases`, `-SkipOptionalToolSetup`
+- `-SkipLfsPull`, `-SkipShellAliases`, `-SkipOptionalToolSetup`, `-SkipArtSourceTools`
 - `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, `-SkipDocsBridgeInstall`
 - `-SkipUnrealSync`, `-NoBuild`, `-NoRegen`
 - `-Config`, `-Platform`
@@ -221,6 +219,7 @@ Important switches:
 
 Responsibilities:
 - Normalizes ArtSource template shape to canonical `ArtSource/_Template`
+- Creates the canonical project-local layout during install/init unless `-SkipArtSourceTools` is selected
 - Supports creating new art item folders from canonical template
 - Handles path/domain selection and folder naming checks
 
@@ -296,9 +295,10 @@ Responsibilities:
 This suite is designed so multiple UE repos can coexist on one machine without alias conflicts.
 
 Mechanism:
-- One managed profile block:
-  - `# >>> ue project shell aliases >>>`
-  - `# <<< ue project shell aliases <<<`
+- One foldable managed profile region:
+  - `#region ue project shell aliases`
+  - `#endregion`
+- Existing installs using the older `# >>>` / `# <<<` markers are migrated the next time shell aliases are installed.
 - Block registers lazy aliases (`ue-tools`, `ue`) and loads `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1` only on first command use
 - Bootstrap resolves **current git repo at command runtime** and invokes that repo's scripts
 

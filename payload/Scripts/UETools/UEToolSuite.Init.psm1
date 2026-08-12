@@ -270,23 +270,14 @@ function Get-UEToolSuiteInitArtTemplateReadiness {
   }
 
   $artSourceRoot = Join-Path $ResolvedRepoRoot "ArtSource"
-  if (-not (Test-Path -LiteralPath $artSourceRoot -PathType Container)) {
-    return [pscustomobject]@{ Status = "SKIP"; Detail = "No ArtSource folder found; art tooling is not applicable yet." }
-  }
-
-  $missing = @()
   foreach ($relativePath in @("_Template", "_Template\\Source", "_Template\\Textures", "_Template\\Exports")) {
     $candidate = Join-Path $artSourceRoot $relativePath
     if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
-      $missing += (Join-Path "ArtSource" $relativePath)
+      New-Item -ItemType Directory -Path $candidate -Force | Out-Null
     }
   }
 
-  if ($missing.Count -gt 0) {
-    return [pscustomobject]@{ Status = "WARN"; Detail = "Missing template folder(s): $($missing -join ', '). Run ue-tools art once after restoring the template." }
-  }
-
-  return [pscustomobject]@{ Status = "OK"; Detail = "ArtSource/_Template contains Source, Textures, and Exports." }
+  return [pscustomobject]@{ Status = "OK"; Detail = "ArtSource/_Template is ready with Source, Textures, and Exports." }
 }
 
 function ConvertTo-UEToolSuiteInitParameters {
@@ -301,6 +292,7 @@ function ConvertTo-UEToolSuiteInitParameters {
     "skipunrealsync" = "SkipUnrealSync"
     "skipshellaliases" = "SkipShellAliases"
     "skipoptionaltoolsetup" = "SkipOptionalToolSetup"
+    "skipartsourcetools" = "SkipArtSourceTools"
     "skipdocssetup" = "SkipDocsSetup"
     "skipdocssectionmigration" = "SkipDocsSectionMigration"
     "skipdocsnpminstall" = "SkipDocsNpmInstall"
@@ -407,6 +399,7 @@ function Invoke-UEToolSuiteInitRuntime {
     [switch]$SkipUnrealSync,
     [switch]$SkipShellAliases,
     [switch]$SkipOptionalToolSetup,
+    [switch]$SkipArtSourceTools,
     [switch]$SkipDocsSetup,
     [switch]$SkipDocsSectionMigration,
     [switch]$SkipDocsNpmInstall,
@@ -446,12 +439,6 @@ function Invoke-UEToolSuiteInitRuntime {
     throw "UETools module entry not found under $script:InitScriptsRoot\UETools."
   }
 
-  $initDomainModulePath = Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.Init.psm1"
-  if (-not (Test-Path -LiteralPath $initDomainModulePath -PathType Leaf)) {
-    throw "Init domain module not found: $initDomainModulePath"
-  }
-  Import-Module -Name $initDomainModulePath -Force
-  
   $aliasDomainModulePath = Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.Aliases.psm1"
   if (-not (Test-Path -LiteralPath $aliasDomainModulePath -PathType Leaf)) {
     throw "Aliases domain module not found: $aliasDomainModulePath"
@@ -1306,8 +1293,8 @@ function Invoke-UEToolSuiteInitRuntime {
     -ForceNpmInstall:$ForceDocsNpmInstall `
     -SkipBridgeInstall:$SkipDocsBridgeInstall
   
-  if ($SkipOptionalToolSetup) {
-    Add-ToolReadiness -Tool "ue-tools art" -Status "SKIP" -Detail "Optional tool setup skipped by parameter."
+  if ($SkipArtSourceTools) {
+    Add-ToolReadiness -Tool "ue-tools art" -Status "SKIP" -Detail "ArtSource tools skipped by parameter."
   }
   else {
     Test-ArtSourceTemplateReady -ResolvedRepoRoot $repoRoot

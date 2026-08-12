@@ -12,8 +12,10 @@ function Get-ProjectAliasBootstrapMarkers {
   param()
 
   return [pscustomobject]@{
-    Start = "# >>> ue project shell aliases >>>"
-    End = "# <<< ue project shell aliases <<<"
+    Start = "#region ue project shell aliases"
+    End = "#endregion"
+    LegacyStart = "# >>> ue project shell aliases >>>"
+    LegacyEnd = "# <<< ue project shell aliases <<<"
   }
 }
 
@@ -324,6 +326,7 @@ function Install-ProjectShellAliases {
   Write-UEToolSuiteUtf8NoBomFile -Path $resolvedBootstrapScriptPath -Content $bootstrapContent -EnsureParentDirectory
 
   $markers = Get-ProjectAliasBootstrapMarkers
+  Remove-ProfileSnippet -ProfilePath $resolvedProfilePath -StartMarker $markers.LegacyStart -EndMarker $markers.LegacyEnd
   Remove-ProfileSnippet -ProfilePath $resolvedProfilePath -StartMarker $markers.Start -EndMarker $markers.End
   Set-ProfileSnippet `
     -ProfilePath $resolvedProfilePath `

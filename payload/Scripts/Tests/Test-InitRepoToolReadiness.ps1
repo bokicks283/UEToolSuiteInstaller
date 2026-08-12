@@ -142,7 +142,9 @@ function New-InitRepoFixture {
 
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Core.psm1") -Content "function Test-UEToolSuiteCoreStub { `$true }`n"
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Git.psm1") -Content "function Test-GitConflictHelperStub { `$true }`n"
-  Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Art.psm1") -Content "function Test-UEToolSuiteArtStub { `$true }`n"
+  if ($IncludeArtSourceTool) {
+    Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.Art.psm1") -Content "function Test-UEToolSuiteArtStub { `$true }`n"
+  }
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.AI.psm1") -Content "function Test-UEToolSuiteAIStub { `$true }`n"
 
   New-Item -ItemType Directory -Force -Path (Join-Path $target "Scripts\Unreal") | Out-Null
@@ -213,12 +215,6 @@ if ($command -eq "docs") {
 Write-Output "ue-tools stub command: $command"
 exit 0
 '@
-
-  if ($IncludeArtSourceTool) {
-    foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
-      New-Item -ItemType Directory -Force -Path (Join-Path $target $relativePath) | Out-Null
-    }
-  }
 
   if ($IncludeDocsSite) {
     Write-Utf8NoBomFile -Path (Join-Path $target "website\package.json") -Content @'
@@ -363,6 +359,7 @@ function Invoke-InitRepo {
         '-skipunrealsync' { $params.SkipUnrealSync = $true; $i += 1; continue }
         '-skipshellaliases' { $params.SkipShellAliases = $true; $i += 1; continue }
         '-skipoptionaltoolsetup' { $params.SkipOptionalToolSetup = $true; $i += 1; continue }
+        '-skipartsourcetools' { $params.SkipArtSourceTools = $true; $i += 1; continue }
         '-skipdocssetup' { $params.SkipDocsSetup = $true; $i += 1; continue }
         '-skipdocssectionmigration' { $params.SkipDocsSectionMigration = $true; $i += 1; continue }
         '-skipdocsnpminstall' { $params.SkipDocsNpmInstall = $true; $i += 1; continue }
@@ -497,6 +494,9 @@ try {
   Assert-TextContains "case1 docs bridge ready" $result.OutputText "[OK] docs VS Code bridge"
   Assert-TextContains "case1 docs tools ready" $result.OutputText "[OK] ue-tools docs"
   Assert-TextContains "case1 art tools ready" $result.OutputText "[OK] ue-tools art"
+  foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
+    Assert-Condition "case1 created $relativePath" (Test-Path -LiteralPath (Join-Path $targetRepo $relativePath) -PathType Container) "$relativePath present" "$relativePath missing"
+  }
   Assert-TextContains "case1 aliases skipped" $result.OutputText "[SKIP] PowerShell aliases"
   Assert-TextContains "case1 ue-tools skipped" $result.OutputText "[SKIP] ue-tools"
 
@@ -522,17 +522,18 @@ try {
   $case1bState = Get-Content -LiteralPath $case1bStatePath -Raw | ConvertFrom-Json
   Assert-Condition "case1b state hash updated" ([string]$case1bState.dependencyHash -ne "stale-hash") "dependencyHash refreshed" "dependencyHash remained stale"
 
-  Step "Case 2: init succeeds when optional docs and ArtSource tools are not installed"
+  Step "Case 2: init skips missing docs but creates the default ArtSource layout"
   $commandLog2 = Join-Path $script:TempRoot "case2-commands.log"
   Write-Utf8NoBomFile -Path $commandLog2 -Content ""
   $targetRepoWithoutOptionalTools = New-InitRepoFixture -Name "target without optional tools"
   $result2 = Invoke-InitRepo -TargetRepoRoot $targetRepoWithoutOptionalTools -StubRoot $stubRoot -CommandLog $commandLog2
   Assert-Condition "case2 init exits cleanly" ($result2.ExitCode -eq 0) "exit=0" "exit=$($result2.ExitCode)"
   Assert-TextContains "case2 docs tools skipped" $result2.OutputText "[SKIP] ue-tools docs"
-  Assert-TextContains "case2 art tools skipped" $result2.OutputText "[SKIP] ue-tools art"
+  Assert-TextContains "case2 art tools ready" $result2.OutputText "[OK] ue-tools art"
+  Assert-Condition "case2 ArtSource template created" (Test-Path -LiteralPath (Join-Path $targetRepoWithoutOptionalTools "ArtSource\_Template\Source") -PathType Container) "ArtSource template present" "ArtSource template missing"
   Assert-TextContains "case2 ue-tools skipped" $result2.OutputText "[SKIP] ue-tools"
 
-  Step "Case 3: SkipOptionalToolSetup leaves installed optional tools alone"
+  Step "Case 3: SkipOptionalToolSetup skips docs setup but still prepares ArtSource"
   $commandLog3 = Join-Path $script:TempRoot "case3-commands.log"
   Write-Utf8NoBomFile -Path $commandLog3 -Content ""
   $targetRepoWithSkippedOptionalSetup = New-InitRepoFixture -Name "target skip optional setup" -IncludeDocsSite -IncludeArtSourceTool
@@ -544,11 +545,25 @@ try {
   $commandLog3Text = Get-Content -LiteralPath $commandLog3 -Raw
   Assert-Condition "case3 init exits cleanly" ($result3.ExitCode -eq 0) "exit=0" "exit=$($result3.ExitCode)"
   Assert-TextContains "case3 docs tools skipped" $result3.OutputText "[SKIP] ue-tools docs"
-  Assert-TextContains "case3 art tools skipped" $result3.OutputText "[SKIP] ue-tools art"
+  Assert-TextContains "case3 art tools ready" $result3.OutputText "[OK] ue-tools art"
+  Assert-Condition "case3 ArtSource template created" (Test-Path -LiteralPath (Join-Path $targetRepoWithSkippedOptionalSetup "ArtSource\_Template\Source") -PathType Container) "ArtSource template present" "ArtSource template missing"
   Assert-TextNotContains "case3 npm install not invoked" $commandLog3Text "npm cwd="
   Assert-TextNotContains "case3 docs migration not invoked" $commandLog3Text "ue-tools docs migrate-sections"
   Assert-TextNotContains "case3 bridge install not invoked" $commandLog3Text "ue-tools docs install-bridge"
   Assert-TextNotContains "case3 doctor not invoked" $commandLog3Text "ue-tools docs doctor"
+
+  Step "Case 3a: SkipArtSourceTools is the explicit ArtSource opt-out"
+  $commandLog3a = Join-Path $script:TempRoot "case3a-commands.log"
+  Write-Utf8NoBomFile -Path $commandLog3a -Content ""
+  $targetRepoWithSkippedArtSource = New-InitRepoFixture -Name "target skip artsource" -IncludeArtSourceTool
+  $result3a = Invoke-InitRepo `
+    -TargetRepoRoot $targetRepoWithSkippedArtSource `
+    -StubRoot $stubRoot `
+    -CommandLog $commandLog3a `
+    -ExtraArgs @("-SkipArtSourceTools", "-SkipDocsSetup")
+  Assert-Condition "case3a init exits cleanly" ($result3a.ExitCode -eq 0) "exit=0" "exit=$($result3a.ExitCode)"
+  Assert-TextContains "case3a art tools skipped" $result3a.OutputText "[SKIP] ue-tools art"
+  Assert-Condition "case3a ArtSource layout remains absent" (-not (Test-Path -LiteralPath (Join-Path $targetRepoWithSkippedArtSource "ArtSource"))) "ArtSource absent" "ArtSource unexpectedly created"
 
   Step "Case 3b: SkipDocsSectionMigration suppresses init migration but still runs doctor"
   $commandLog3b = Join-Path $script:TempRoot "case3b-commands.log"

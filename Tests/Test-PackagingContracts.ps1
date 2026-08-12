@@ -113,6 +113,7 @@ try {
   $docsStandaloneEditorPagePath = Join-Path $repoRoot "payload\website\src\pages\editor.tsx"
   $docsStandaloneEditorStylesPath = Join-Path $repoRoot "payload\website\src\pages\editor.module.css"
   $payloadManifestPath = Join-Path $repoRoot "payload\ue-tool-suite.manifest.json"
+  $testRunnerPath = Join-Path $repoRoot "Tests\Run-UEToolSuiteTests.ps1"
   $docsManagedIndexPath = Join-Path $repoRoot "payload\docs-managed-file-index.json"
   $websiteManagedIndexPath = Join-Path $repoRoot "payload\website-managed-file-index.json"
 
@@ -134,6 +135,7 @@ try {
   Assert-Condition -Name "Docs package-lock.json exists" -Condition (Test-Path -LiteralPath $docsPackageLockPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsPackageLockPath"
   Assert-Condition -Name "Docs browser QA checklist exists" -Condition (Test-Path -LiteralPath $docsBrowserQaPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsBrowserQaPath"
   Assert-Condition -Name "Payload manifest exists" -Condition (Test-Path -LiteralPath $payloadManifestPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $payloadManifestPath"
+  Assert-Condition -Name "Repository test runner exists" -Condition (Test-Path -LiteralPath $testRunnerPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $testRunnerPath"
 
   Step "Managed payload index contract"
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "docs managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $docsManagedIndexPath
@@ -143,7 +145,7 @@ try {
   Assert-Condition -Name "website managed index includes runtime discovery source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/runtimeDiscovery.ts") -PassDetail "runtime discovery managed" -FailDetail "missing website/src/theme/authoring/runtimeDiscovery.ts"
   Assert-Condition -Name "website managed index includes connection status card source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/AuthoringConnectionStatusCard.tsx") -PassDetail "status card managed" -FailDetail "missing website/src/theme/authoring/AuthoringConnectionStatusCard.tsx"
   Assert-Condition -Name "website managed index includes document page authoring helper source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/docPageAuthoring.ts") -PassDetail "doc page authoring helper managed" -FailDetail "missing website/src/theme/authoring/docPageAuthoring.ts"
-  Assert-Condition -Name "website managed index includes authoring runtime tests" -Condition ($websiteManagedPaths -contains "website/scripts/test-authoring-runtime.cjs") -PassDetail "runtime tests managed" -FailDetail "missing website/scripts/test-authoring-runtime.cjs"
+  Assert-Condition -Name "website managed index excludes repository authoring tests" -Condition ($websiteManagedPaths -notcontains "website/scripts/test-authoring-runtime.cjs") -PassDetail "runtime tests source-only" -FailDetail "repository authoring test is managed into installed websites"
   Assert-Condition -Name "website managed index excludes built index html" -Condition ($websiteManagedPaths -notcontains "website/build/index.html") -PassDetail "website/build/index.html not managed" -FailDetail "website/build/index.html should not be managed"
   Assert-Condition -Name "website managed index excludes generated build output" -Condition (@($websiteManagedPaths | Where-Object { $_ -like "website/build/*" }).Count -eq 0) -PassDetail "website/build output not managed" -FailDetail "website/build entries should not be managed"
 
@@ -161,7 +163,13 @@ try {
   Assert-Condition -Name "GUI bundles payload content tree" -Condition ($contentInclude -contains "..\..\payload\**\*") -PassDetail "payload content include present" -FailDetail "missing payload content include"
   $payloadContentNode = @($contentNodes | Where-Object { $_.Include -eq "..\..\payload\**\*" }) | Select-Object -First 1
   $payloadContentExcludes = @(([string]$payloadContentNode.Exclude) -split ";")
+  Assert-Condition -Name "GUI excludes repository test scripts" -Condition ($payloadContentExcludes -contains "..\..\payload\Scripts\Tests\**\*") -PassDetail "repository test scripts excluded" -FailDetail "payload/Scripts/Tests is bundled into the public installer"
+  Assert-Condition -Name "GUI excludes repository website tests" -Condition ($payloadContentExcludes -contains "..\..\payload\website\scripts\test-*.*") -PassDetail "website test scripts excluded" -FailDetail "repository website tests are bundled into the public installer"
   Assert-Condition -Name "GUI excludes generated test result trees" -Condition ($payloadContentExcludes -contains "..\..\payload\**\*Results\**\*") -PassDetail "generated test result trees excluded" -FailDetail "payload content can bundle generated *Results directories and exceed Windows extraction path limits"
+
+  $testRunnerText = Get-Content -LiteralPath $testRunnerPath -Raw
+  Assert-HasLiteral -Name "installed fixtures source tests from repository payload" -Text $testRunnerText -Needle '$sourceTestsRoot = Join-Path $repoRoot "payload\Scripts\Tests"'
+  Assert-HasLiteral -Name "installed fixtures copy repository test files after install" -Text $testRunnerText -Needle 'Copy-Item -LiteralPath $sourceFile.FullName -Destination $fixtureTestPath -Force'
 
   Step "GUI runtime contract"
   $programText = Get-Content -LiteralPath $programPath -Raw
@@ -190,7 +198,7 @@ try {
   Assert-HasLiteral -Name "gui exposes skip shell aliases option explicitly" -Text $programText -Needle "Skip PowerShell shell alias install during init (-SkipShellAliases)"
   Assert-HasLiteral -Name "gui supports skip docs payload option" -Text $programText -Needle "-SkipDocs"
   Assert-HasLiteral -Name "gui supports skip website payload option" -Text $programText -Needle "-SkipWebsite"
-  Assert-HasLiteral -Name "gui supports skip tests payload option" -Text $programText -Needle "-SkipTests"
+  Assert-LacksLiteral -Name "gui omits obsolete test payload option" -Text $programText -Needle "-SkipTests"
   Assert-LacksLiteral -Name "gui does not expose obsolete global cli opt-in" -Text $programText -Needle "-GlobalCli"
   Assert-HasLiteral -Name "gui supports skip ai tools payload option" -Text $programText -Needle "-SkipAITools"
   Assert-HasLiteral -Name "gui supports skip artsource tools payload option" -Text $programText -Needle "-SkipArtSourceTools"
@@ -225,6 +233,8 @@ try {
   $docsAuthoringPanelText = Get-Content -LiteralPath $docsAuthoringPanelPath -Raw
   $docsBrowserQaText = Get-Content -LiteralPath $docsBrowserQaPath -Raw
   $payloadManifestText = Get-Content -LiteralPath $payloadManifestPath -Raw
+  $payloadManifest = $payloadManifestText | ConvertFrom-Json
+  Assert-Condition -Name "payload manifest omits repository test install category" -Condition ($null -eq $payloadManifest.managedItems.tests) -PassDetail "managedItems.tests absent" -FailDetail "managedItems.tests still installs repository tests"
   Assert-HasLiteral -Name "docs module starts editor api in foreground start" -Text $docsModuleText -Needle "Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot"
   Assert-HasLiteral -Name "docs module writes editor runtime config" -Text $docsModuleText -Needle "editor-runtime.json"
   Assert-HasLiteral -Name "docs module exposes visibility command" -Text $docsModuleText -Needle "ue-tools docs visibility"
@@ -284,6 +294,7 @@ try {
 
   Step "Docs dependency contract"
   $docsPackage = Get-Content -LiteralPath $docsPackageJsonPath -Raw | ConvertFrom-Json
+  Assert-Condition -Name "installed website package omits repository test command" -Condition ($null -eq $docsPackage.scripts.'test:unit') -PassDetail "test:unit absent" -FailDetail "test:unit references a repository-only script"
   $packageDependencyNames = @($docsPackage.dependencies.PSObject.Properties.Name)
   $lockDependencyNames = Get-NpmLockRootDependencyNames -LockPath $docsPackageLockPath
   Assert-Condition -Name "docs package declares tiptap react dependency" -Condition ($packageDependencyNames -contains "@tiptap/react") -PassDetail "@tiptap/react declared" -FailDetail "@tiptap/react missing from package.json dependencies"

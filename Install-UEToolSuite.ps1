@@ -211,7 +211,6 @@ function Read-UEToolSuitePayloadManifest {
     ManagedGlobalCliItems = $globalCliItems
     ManagedArtToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.artTools -Name "managedItems.artTools"
     ManagedAIToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.aiTools -Name "managedItems.aiTools"
-    ManagedTestsItems = ConvertTo-StringArray -Value $manifest.managedItems.tests -Name "managedItems.tests"
     ManagedDocsItems = ConvertTo-StringArray -Value $manifest.managedItems.docs -Name "managedItems.docs"
     ManagedCodingStandardsItems = ConvertTo-StringArray -Value $manifest.managedItems.codingStandards -Name "managedItems.codingStandards"
     ManagedWebsiteItems = ConvertTo-StringArray -Value $manifest.managedItems.website -Name "managedItems.website"
@@ -1577,6 +1576,21 @@ function Merge-WebsitePackageJson {
     @{}
   }
 
+  $retiredWebsiteTestCommand = "node --test ./scripts/test-authoring-runtime.cjs"
+  if (
+    $target.ContainsKey("scripts") -and
+    $target["scripts"] -is [hashtable] -and
+    $target["scripts"].ContainsKey("test:unit") -and
+    ([string]$target["scripts"]["test:unit"]).Equals($retiredWebsiteTestCommand, [System.StringComparison]::Ordinal) -and
+    (
+      -not $source.ContainsKey("scripts") -or
+      $source["scripts"] -isnot [hashtable] -or
+      -not $source["scripts"].ContainsKey("test:unit")
+    )
+  ) {
+    $target["scripts"].Remove("test:unit")
+  }
+
   $merged = [ordered]@{}
   foreach ($key in @($target.Keys)) {
     $merged[$key] = $target[$key]
@@ -2917,12 +2931,6 @@ if (-not $SkipAITools) {
     [void]$managedItems.Add($item)
   }
 }
-if (-not $SkipTests) {
-  foreach ($item in @($payloadManifest.ManagedTestsItems)) {
-    [void]$managedItems.Add($item)
-  }
-}
-
 if ($resolvedWebsiteInstallMode -in @("merge_existing", "replace_existing")) {
   $existingWebsitePath = Join-Path $resolvedTargetRoot "website"
   if (Test-Path -LiteralPath $existingWebsitePath) {
@@ -3053,6 +3061,16 @@ if (-not $NoLegacyCleanup) {
   }
 }
 
+if (-not $SkipArtSourceTools) {
+  foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
+    $artSourcePath = Join-Path $resolvedTargetRoot $relativePath
+    if (-not (Test-Path -LiteralPath $artSourcePath -PathType Container)) {
+      New-Item -ItemType Directory -Path $artSourcePath -Force | Out-Null
+    }
+  }
+  Info "ArtSource template layout ready: ArtSource\_Template"
+}
+
 Ok "Installed/updated UE tool suite paths: $($installed.Count)"
 
 if ($RunInit) {
@@ -3069,6 +3087,7 @@ if ($RunInit) {
   if ($SkipShellAliases) { $initArgs += "-SkipShellAliases" }
   if ($SkipLfsPull) { $initArgs += "-SkipLfsPull" }
   if ($SkipOptionalToolSetup) { $initArgs += "-SkipOptionalToolSetup" }
+  if ($SkipArtSourceTools) { $initArgs += "-SkipArtSourceTools" }
   if ($SkipDocsSetup) { $initArgs += "-SkipDocsSetup" }
   if ($SkipDocsSectionMigration) { $initArgs += "-SkipDocsSectionMigration" }
   if ($SkipDocsNpmInstall) { $initArgs += "-SkipDocsNpmInstall" }

@@ -111,9 +111,10 @@ Run the checks that match the change before rewriting the branch history.
 Example for docs or tooling work:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Scripts/Tests/Test-DocsTools.ps1
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Scripts/ue-tools.ps1 -RepoRoot . docs check
 ```
+
+Run the full regression suites from the UEToolSuiteInstaller source repository; they are not included in installed projects.
 
 ### 3. Run one interactive rebase onto current `main`
 

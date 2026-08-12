@@ -13,7 +13,6 @@ The manifest separates:
 - `managedTextItems`
 - `managedItems.projectBase`
 - `managedItems.globalCli`
-- `managedItems.tests`
 - `managedItems.docs`
 - `managedItems.website`
 - optional categories such as `aiTools`, `artTools`, `codingStandards`
@@ -27,6 +26,7 @@ The manifest separates:
 | docs defaults | docs managed-file index + docs ledger | smart-update and candidate model |
 | website files | website managed-file index + website ledger | includes built site assets in the current checkout |
 | retired payload files | legacy cleanup + obsolete-ledger cleanup | removed only when identified as managed/retired |
+| repository tests | source-only; excluded by GUI publish contract | run from this repository and never copied into projects |
 
 ## Generated assets
 
