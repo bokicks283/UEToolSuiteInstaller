@@ -15,11 +15,6 @@ if (Test-Path -LiteralPath (Join-Path $payloadRoot "Scripts\UETools\UEToolSuite.
 }
 Set-Location $repoRoot
 
-$initScript = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Init.psm1"
-if (-not (Test-Path -LiteralPath $initScript)) {
-  throw "Init script not found: $initScript"
-}
-
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-InitRepoToolReadinessResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
@@ -29,6 +24,7 @@ if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
 }
 . $testHarnessPath
+$initScript = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Init.psm1"
 
 $script:PassCount = 0
 $script:FailCount = 0
@@ -150,8 +146,9 @@ function New-InitRepoFixture {
   Write-Utf8NoBomFile -Path (Join-Path $target "Scripts\UETools\UEToolSuite.AI.psm1") -Content "function Test-UEToolSuiteAIStub { `$true }`n"
 
   New-Item -ItemType Directory -Force -Path (Join-Path $target "Scripts\Unreal") | Out-Null
+  $projectContextSource = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\Unreal\ProjectContext.ps1"
   Copy-Item `
-    -LiteralPath (Join-Path $repoRoot "Scripts\Unreal\ProjectContext.ps1") `
+    -LiteralPath $projectContextSource `
     -Destination (Join-Path $target "Scripts\Unreal\ProjectContext.ps1") `
     -Force
 

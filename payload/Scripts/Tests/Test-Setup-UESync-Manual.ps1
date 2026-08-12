@@ -16,10 +16,10 @@ if (-not $repoRoot) {
 
 Set-Location $repoRoot
 
-$projectContextHelper = Join-Path $repoRoot "Scripts\Unreal\ProjectContext.ps1"
-if (-not (Test-Path -LiteralPath $projectContextHelper)) {
-  throw "Project context helper not found: $projectContextHelper"
-}
+$testHarnessPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) { throw "Test harness not found: $testHarnessPath" }
+. $testHarnessPath
+$projectContextHelper = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\Unreal\ProjectContext.ps1"
 
 . $projectContextHelper
 $projectContext = Get-ProjectContext -RepoRoot $repoRoot

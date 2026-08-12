@@ -57,7 +57,7 @@ try {
   Set-Content -LiteralPath (Join-Path $charactersTemplate "Exports\CharacterTemplate.txt") -Value "character template marker" -Encoding UTF8
   Set-Content -LiteralPath (Join-Path $sharedTemplate "Exports\SharedTemplate.txt") -Value "shared template marker" -Encoding UTF8
 
-  $artModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Art.psm1"
+  $artModulePath = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Art.psm1"
   Assert-Condition -Name "art domain module exists" -Condition (Test-Path -LiteralPath $artModulePath -PathType Leaf) -FailDetail "missing: $artModulePath"
   Import-Module -Name $artModulePath -Force -DisableNameChecking
 

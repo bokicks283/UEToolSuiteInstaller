@@ -301,14 +301,16 @@ Ensure-Dir -Path $eventsDir
 Ensure-Dir -Path $dumpsDir
 
 $uprojectPath = $null
-$projectContextHelper = Join-Path $ProjectRoot "Scripts\Unreal\ProjectContext.ps1"
-if (Test-Path -LiteralPath $projectContextHelper) {
+$testHarnessPath = Join-Path $ProjectRoot "Scripts\Tests\TestHarness.ps1"
+if (Test-Path -LiteralPath $testHarnessPath -PathType Leaf) {
     try {
+        . $testHarnessPath
+        $projectContextHelper = Resolve-UEToolSuiteRuntimeFile -RepoRoot $ProjectRoot -RelativePath "Scripts\Unreal\ProjectContext.ps1"
         . $projectContextHelper
         $uprojectPath = (Get-ProjectContext -RepoRoot $ProjectRoot).UProjectPath
     }
     catch {
-        Add-WarningText "Could not resolve project context from '$projectContextHelper': $($_.Exception.Message)"
+        Add-WarningText "Could not resolve project context from the UE Tool Suite runtime: $($_.Exception.Message)"
     }
 }
 

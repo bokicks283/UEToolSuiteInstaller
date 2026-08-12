@@ -103,6 +103,14 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 `
 - [ ] Validate `-SkipTests` (payload test scripts excluded).
 - [ ] Validate `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools` category handling against manifest expectations.
 
+### 4.4 Per-user global CLI
+
+- [ ] Install Env A normally; confirm `%LOCALAPPDATA%\UEToolSuite\current.json`, `bin\ue-tools.ps1`, `bin\ue-tools.cmd`, and `versions\<payloadVersion>\Scripts\ue-tools.ps1` exist.
+- [ ] Confirm Env A retains `.githooks`, `Scripts\git-hooks`, `Docs`, and `website`, but its `Scripts\ue-tools.ps1` is a forwarding shim and reusable `Scripts\UETools` modules are not duplicated.
+- [ ] Install Env B normally; run both project shims and the stable launcher with `help` and explicit `-RepoRoot` values containing spaces.
+- [ ] Update an existing legacy project-local install; confirm known suite runtime files are backed up/removed while an unknown neighboring file under `Scripts\UETools` is preserved.
+- [ ] Start docs authoring for Env A, then attempt Env B. Confirm the second instance fails with the clear fixed-port ownership error and does not stop Env A.
+
 ## 5) Unified CLI and Alias Contract
 
 Run these in an initialized target repo shell (Env A).

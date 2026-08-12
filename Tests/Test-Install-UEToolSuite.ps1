@@ -19,6 +19,8 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "Install-UEToolSuite-$stamp.log"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ue tool suite installer tests " + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+$testGlobalCliRoot = Join-Path $tempRoot "global cli root with spaces"
+$testGlobalVersionRoot = Join-Path $testGlobalCliRoot "versions\1.0.0"
 $testHarnessPath = Join-Path $installerRoot "payload\Scripts\Tests\TestHarness.ps1"
 if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
@@ -59,7 +61,8 @@ function Invoke-Installer {
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
-    "-TargetRepoRoot", $TargetRoot
+    "-TargetRepoRoot", $TargetRoot,
+    "-GlobalCliRoot", $testGlobalCliRoot
   ) + @($ExtraArgs)
 
   Write-Log ">> pwsh $($pwshArgs -join ' ')" DarkGray
@@ -77,6 +80,30 @@ function Invoke-Installer {
   [pscustomobject]@{
     Code = $code
     Output = ($normalized | ForEach-Object { "$_" }) -join "`n"
+  }
+}
+
+function Invoke-ToolEntrypoint {
+  param(
+    [Parameter(Mandatory)][string]$EntrypointPath,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [string[]]$CommandArguments = @("help")
+  )
+
+  $pwshArgs = @(
+    "-NoLogo",
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $EntrypointPath,
+    "-RepoRoot", $RepoRoot
+  ) + @($CommandArguments)
+
+  $out = @(& pwsh @pwshArgs 2>&1)
+  $code = $LASTEXITCODE
+  $normalized = @($out | ForEach-Object { Remove-AnsiEscapeSequences "$_" })
+  return [pscustomobject]@{
+    Code = $code
+    Output = ($normalized -join "`n")
   }
 }
 
@@ -249,13 +276,8 @@ try {
       ".gitattributes",
       ".gitignore",
       ".githooks\post-checkout",
-      "Scripts\UETools\UEToolSuite.Init.psm1",
       "Scripts\ue-tools.ps1",
-      "Scripts\UETools\UEToolSuite.Core.psm1",
-      "Scripts\UETools\UEToolSuite.Dispatcher.psm1",
-      "Scripts\UETools\UEToolSuite.Aliases.psm1",
-      "Scripts\UETools\UEToolSuite.Unreal.psm1",
-      "Scripts\UETools\UEToolSuite.Docs.psm1",
+      ".ue-tools\global-cli.json",
       "Docs\WorkflowStandards\Setup.md",
       "Docs\WorkflowStandards\Pipeline\README.md",
       "Docs\WorkflowStandards\DocsSite\Docusaurus-Setup.md",
@@ -269,9 +291,13 @@ try {
       "website\.ue-tools\ownership.json",
       ".ue-tools\state\docs-managed-ledger.json",
       ".ue-tools\state\website-managed-ledger.json"
-    )) {
+  )) {
     Assert-PathExists "case1 installed $relativePath" (Join-Path $targetRepo $relativePath)
   }
+  Assert-FileContains "case1 project entrypoint is global forwarding shim" (Join-Path $targetRepo "Scripts\ue-tools.ps1") "UE Tool Suite global project shim"
+  Assert-PathMissing "case1 reusable core module is not duplicated in project" (Join-Path $targetRepo "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-PathExists "case1 global core module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-PathExists "case1 global docs module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Docs.psm1")
   Assert-PathMissing "case1 excludes generated website build output" (Join-Path $targetRepo "website\build")
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
@@ -569,7 +595,8 @@ try {
   $skipWebsiteResult = Invoke-Installer -TargetRoot $skipWebsiteRepo -ExtraArgs @("-SkipTests", "-SkipWebsite")
   Assert-Condition "case5 skip website exits cleanly" ($skipWebsiteResult.Code -eq 0) "exit=0" "exit=$($skipWebsiteResult.Code)"
   Assert-PathMissing "case5 website skipped" (Join-Path $skipWebsiteRepo "website\package.json")
-  Assert-PathExists "case5 docs tooling retained" (Join-Path $skipWebsiteRepo "Scripts\UETools\UEToolSuite.Docs.psm1")
+  Assert-PathExists "case5 docs tooling retained globally" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Docs.psm1")
+  Assert-PathMissing "case5 docs tooling is not duplicated in project" (Join-Path $skipWebsiteRepo "Scripts\UETools\UEToolSuite.Docs.psm1")
   Assert-PathExists "case5 docs retained" (Join-Path $skipWebsiteRepo "Docs\README.md")
 
   Step "Case 5b: explicit website theme and SVG logo are applied"
@@ -670,6 +697,83 @@ try {
   $noLegacyCleanupResult = Invoke-Installer -TargetRoot $noLegacyCleanupRepo -ExtraArgs @("-SkipTests", "-NoLegacyCleanup")
   Assert-Condition "case7 no legacy cleanup exits cleanly" ($noLegacyCleanupResult.Code -eq 0) "exit=0" "exit=$($noLegacyCleanupResult.Code)"
   Assert-PathExists "case7 legacy installer preserved" (Join-Path $noLegacyCleanupRepo "Scripts\Install-UEProjectTools.ps1")
+
+  Step "Case 8: default installs reuse one shared runtime and project-local forwarding shims"
+  $globalCliRoot = $testGlobalCliRoot
+  $globalRepoA = New-TargetRepo "global cli target a"
+  $globalInstallA = Invoke-Installer -TargetRoot $globalRepoA -ExtraArgs @(
+    "-SkipTests"
+  )
+  Assert-Condition "case8 first global install exits cleanly" ($globalInstallA.Code -eq 0) "exit=0" "exit=$($globalInstallA.Code)"
+
+  $globalCurrentPath = Join-Path $globalCliRoot "current.json"
+  $globalLauncherPath = Join-Path $globalCliRoot "bin\ue-tools.ps1"
+  $globalCmdPath = Join-Path $globalCliRoot "bin\ue-tools.cmd"
+  $globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.0"
+  Assert-PathExists "case8 global current descriptor installed" $globalCurrentPath
+  Assert-PathExists "case8 stable PowerShell launcher installed" $globalLauncherPath
+  Assert-PathExists "case8 stable cmd launcher installed" $globalCmdPath
+  Assert-PathExists "case8 versioned entrypoint installed" (Join-Path $globalVersionRoot "Scripts\ue-tools.ps1")
+  Assert-PathExists "case8 versioned core module installed" (Join-Path $globalVersionRoot "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-PathExists "case8 versioned docs API host installed" (Join-Path $globalVersionRoot "Scripts\UETools\DocsEditorApiHost.ps1")
+  Assert-PathExists "case8 versioned project context helper installed" (Join-Path $globalVersionRoot "Scripts\Unreal\ProjectContext.ps1")
+  Assert-PathExists "case8 versioned docs bridge source installed" (Join-Path $globalVersionRoot "Scripts\Docs\VSCodeBridge\extension.js")
+
+  $globalProjectShimA = Join-Path $globalRepoA "Scripts\ue-tools.ps1"
+  Assert-FileContains "case8 project A receives global forwarding shim" $globalProjectShimA "UE Tool Suite global project shim"
+  Assert-PathMissing "case8 project A omits duplicated core module" (Join-Path $globalRepoA "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-PathMissing "case8 project A omits duplicated project context helper" (Join-Path $globalRepoA "Scripts\Unreal\ProjectContext.ps1")
+  Assert-PathExists "case8 project A keeps docs content" (Join-Path $globalRepoA "Docs\README.md")
+  Assert-PathExists "case8 project A keeps Docusaurus site" (Join-Path $globalRepoA "website\package.json")
+  Assert-PathExists "case8 project A keeps Git hooks" (Join-Path $globalRepoA ".githooks\pre-commit")
+
+  $currentDescriptor = Get-Content -LiteralPath $globalCurrentPath -Raw | ConvertFrom-Json
+  Assert-Condition "case8 descriptor records payload version" ([string]$currentDescriptor.version -eq "1.0.0") "version=1.0.0" "version=$([string]$currentDescriptor.version)"
+  Assert-Condition "case8 descriptor records versioned runtime path" ([System.IO.Path]::GetFullPath([string]$currentDescriptor.installRoot).Equals([System.IO.Path]::GetFullPath($globalVersionRoot), [System.StringComparison]::OrdinalIgnoreCase)) "install root matches" "install root mismatch"
+
+  $projectAHelp = Invoke-ToolEntrypoint -EntrypointPath $globalProjectShimA -RepoRoot $globalRepoA -CommandArguments @("help")
+  Assert-Condition "case8 project A shim invokes global CLI" ($projectAHelp.Code -eq 0 -and $projectAHelp.Output -like "*UE Tool Suite*") "global help returned" "exit=$($projectAHelp.Code) output=$($projectAHelp.Output)"
+
+  $globalRepoB = New-TargetRepo "global cli target b with spaces"
+  $globalInstallB = Invoke-Installer -TargetRoot $globalRepoB -ExtraArgs @(
+    "-SkipTests"
+  )
+  Assert-Condition "case8 second project global install exits cleanly" ($globalInstallB.Code -eq 0) "exit=0" "exit=$($globalInstallB.Code)"
+  $globalProjectShimB = Join-Path $globalRepoB "Scripts\ue-tools.ps1"
+  $projectBHelp = Invoke-ToolEntrypoint -EntrypointPath $globalProjectShimB -RepoRoot $globalRepoB -CommandArguments @("help")
+  Assert-Condition "case8 project B reuses global CLI" ($projectBHelp.Code -eq 0 -and $projectBHelp.Output -like "*UE Tool Suite*") "global help returned" "exit=$($projectBHelp.Code) output=$($projectBHelp.Output)"
+  $stableLauncherHelp = Invoke-ToolEntrypoint -EntrypointPath $globalLauncherPath -RepoRoot $globalRepoB -CommandArguments @("help")
+  Assert-Condition "case8 stable launcher resolves project B" ($stableLauncherHelp.Code -eq 0 -and $stableLauncherHelp.Output -like "*UE Tool Suite*") "global launcher help returned" "exit=$($stableLauncherHelp.Code) output=$($stableLauncherHelp.Output)"
+
+  Step "Case 8a: default global RunInit resolves shared runtime helpers and project-local hooks"
+  $globalInitResult = Invoke-Installer -TargetRoot $globalRepoA -ExtraArgs @(
+    "-SkipTests",
+    "-RunInit",
+    "-InitNonInteractive",
+    "-SkipLfsPull",
+    "-SkipShellAliases",
+    "-SkipOptionalToolSetup",
+    "-SkipUnrealSync"
+  )
+  Assert-Condition "case8a global init exits cleanly" ($globalInitResult.Code -eq 0) "exit=0" "exit=$($globalInitResult.Code) output=$($globalInitResult.Output)"
+  Assert-Condition "case8a global init completes hook self-test" ($globalInitResult.Output -like "*Hook self-test completed.*") "hook self-test completed" "hook self-test completion missing"
+  Assert-Condition "case8a global init completes repo initialization" ($globalInitResult.Output -like "*Repo initialization complete.*") "repo initialization completed" "repo initialization completion missing"
+
+  Step "Case 8b: default install migrates legacy project-local runtime files and preserves project-owned neighbors"
+  $globalMigrationRepo = New-TargetRepo "global cli migration target"
+  Write-Utf8NoBomFile -Path (Join-Path $globalMigrationRepo "Scripts\UETools\UEToolSuite.Core.psm1") -Content "# legacy suite-owned core module`n"
+  Copy-Item -LiteralPath (Join-Path $payloadRoot "Scripts\ue-tools.ps1") -Destination (Join-Path $globalMigrationRepo "Scripts\ue-tools.ps1") -Force
+  $projectOwnedModuleNeighbor = Join-Path $globalMigrationRepo "Scripts\UETools\ProjectOwned.Helper.psm1"
+  Write-Utf8NoBomFile -Path $projectOwnedModuleNeighbor -Content "# project-owned helper`n"
+  $migrateToGlobal = Invoke-Installer -TargetRoot $globalMigrationRepo -ExtraArgs @(
+    "-SkipTests"
+  )
+  Assert-Condition "case8b migration to global exits cleanly" ($migrateToGlobal.Code -eq 0) "exit=0" "exit=$($migrateToGlobal.Code)"
+  Assert-FileContains "case8b project entrypoint replaced by forwarding shim" (Join-Path $globalMigrationRepo "Scripts\ue-tools.ps1") "UE Tool Suite global project shim"
+  Assert-PathMissing "case8b suite-owned local module removed" (Join-Path $globalMigrationRepo "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-FileContains "case8b project-owned module neighbor preserved" $projectOwnedModuleNeighbor "project-owned helper"
+  $migrationBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $globalMigrationRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UEToolSuite.Core.psm1" })
+  Assert-Condition "case8b removed suite runtime was backed up" ($migrationBackupMatches.Count -gt 0) "backup count=$($migrationBackupMatches.Count)" "suite runtime backup missing"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

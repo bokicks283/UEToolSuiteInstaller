@@ -8,15 +8,27 @@
     ".gitignore"
   ],
   "managedItems": {
-    "base": [
+    "projectBase": [
       ".githooks",
-      "Scripts/UETools/UEToolSuite.Init.psm1",
       "Scripts/README.md",
+      "Scripts/git-hooks"
+    ],
+    "globalCli": [
       "Scripts/ue-tools.ps1",
-      "Scripts/git-hooks",
-      "Scripts/UETools",
+      "Scripts/UETools/DocsEditorApiHost.ps1",
+      "Scripts/UETools/UETools.psd1",
+      "Scripts/UETools/UEToolSuite.AI.psm1",
+      "Scripts/UETools/UEToolSuite.Aliases.psm1",
+      "Scripts/UETools/UEToolSuite.Art.psm1",
+      "Scripts/UETools/UEToolSuite.Core.psm1",
+      "Scripts/UETools/UEToolSuite.Dispatcher.psm1",
+      "Scripts/UETools/UEToolSuite.Docs.psm1",
+      "Scripts/UETools/UEToolSuite.Git.psm1",
+      "Scripts/UETools/UEToolSuite.Init.psm1",
+      "Scripts/UETools/UEToolSuite.Unreal.psm1",
       "Scripts/Unreal/ProjectContext.ps1",
-      "Scripts/UETools/UEToolSuite.Unreal.psm1"
+      "Scripts/Docs/VSCodeBridge/extension.js",
+      "Scripts/Docs/VSCodeBridge/package.json"
     ],
     "artTools": [],
     "aiTools": [],
@@ -31,9 +43,6 @@
     ],
     "codingStandards": [
       "Docs/WorkflowStandards/CodingStandards"
-    ],
-    "docsTools": [
-      "Scripts/Docs"
     ],
     "website": [
       "website"

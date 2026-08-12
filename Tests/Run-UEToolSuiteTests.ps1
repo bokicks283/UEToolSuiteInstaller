@@ -103,6 +103,7 @@ function New-InstalledToolSuiteFixture {
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
     "-TargetRepoRoot", $fixtureRepo,
+    "-GlobalCliRoot", (Join-Path $scratchRoot "global cli root with spaces"),
     "-AdoptExistingWebsite",
     "-RunInit",
     "-InitNonInteractive",

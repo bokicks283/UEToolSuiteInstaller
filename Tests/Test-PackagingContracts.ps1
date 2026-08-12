@@ -159,6 +159,9 @@ try {
   $contentInclude = @($contentNodes | ForEach-Object { $_.Include })
   Assert-Condition -Name "GUI bundles installer script content" -Condition ($contentInclude -contains "..\..\Install-UEToolSuite.ps1") -PassDetail "installer script content present" -FailDetail "missing installer script content include"
   Assert-Condition -Name "GUI bundles payload content tree" -Condition ($contentInclude -contains "..\..\payload\**\*") -PassDetail "payload content include present" -FailDetail "missing payload content include"
+  $payloadContentNode = @($contentNodes | Where-Object { $_.Include -eq "..\..\payload\**\*" }) | Select-Object -First 1
+  $payloadContentExcludes = @(([string]$payloadContentNode.Exclude) -split ";")
+  Assert-Condition -Name "GUI excludes generated test result trees" -Condition ($payloadContentExcludes -contains "..\..\payload\**\*Results\**\*") -PassDetail "generated test result trees excluded" -FailDetail "payload content can bundle generated *Results directories and exceed Windows extraction path limits"
 
   Step "GUI runtime contract"
   $programText = Get-Content -LiteralPath $programPath -Raw
@@ -188,6 +191,7 @@ try {
   Assert-HasLiteral -Name "gui supports skip docs payload option" -Text $programText -Needle "-SkipDocs"
   Assert-HasLiteral -Name "gui supports skip website payload option" -Text $programText -Needle "-SkipWebsite"
   Assert-HasLiteral -Name "gui supports skip tests payload option" -Text $programText -Needle "-SkipTests"
+  Assert-LacksLiteral -Name "gui does not expose obsolete global cli opt-in" -Text $programText -Needle "-GlobalCli"
   Assert-HasLiteral -Name "gui supports skip ai tools payload option" -Text $programText -Needle "-SkipAITools"
   Assert-HasLiteral -Name "gui supports skip artsource tools payload option" -Text $programText -Needle "-SkipArtSourceTools"
   Assert-HasLiteral -Name "gui supports skip coding standards payload option" -Text $programText -Needle "-SkipCodingStandardsTools"

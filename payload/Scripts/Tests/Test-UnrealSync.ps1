@@ -12,10 +12,10 @@ $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$projectContextHelper = Join-Path $repoRoot "Scripts\Unreal\ProjectContext.ps1"
-if (-not (Test-Path -LiteralPath $projectContextHelper)) {
-  throw "Project context helper not found: $projectContextHelper"
-}
+$runtimeResolverPath = Join-Path $repoRoot "Scripts\Tests\TestHarness.ps1"
+if (-not (Test-Path -LiteralPath $runtimeResolverPath -PathType Leaf)) { throw "Test harness not found: $runtimeResolverPath" }
+. $runtimeResolverPath
+$projectContextHelper = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\Unreal\ProjectContext.ps1"
 . $projectContextHelper
 $projectContext = Get-ProjectContext -RepoRoot $repoRoot
 
@@ -461,7 +461,7 @@ try {
   $postCommitPath = Join-Path $repoRoot ".githooks\post-commit"
   $postRewritePath = Join-Path $repoRoot ".githooks\post-rewrite"
   $hookCommonPath = Join-Path $repoRoot "Scripts\git-hooks\hook-common.sh"
-  $unrealSyncPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Unreal.psm1"
+  $unrealSyncPath = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Unreal.psm1"
 
   $postCheckoutText = Get-Content -LiteralPath $postCheckoutPath -Raw
   $postMergeText = Get-Content -LiteralPath $postMergePath -Raw

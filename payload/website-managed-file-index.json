@@ -484,7 +484,7 @@
       "relativePath": "website/theme-presets/violet.css"
     },
     {
-      "sha256": "5eb33c6cccca2b10103117ba62b844938ba5fed15afaf70f45633b1a06e40923",
+      "sha256": "d80fa88f1a85c1b35546da04ec182013fbe846651a7804a58027ce687525afc5",
       "category": "shell",
       "relativePath": "website/tsconfig.json"
     }

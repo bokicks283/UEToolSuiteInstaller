@@ -34,7 +34,7 @@ if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
 }
 . $testHarnessPath
 
-$script:DocsToolsScriptPath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+$script:DocsToolsScriptPath = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Docs.psm1"
 $script:PassCount = 0
 $script:FailCount = 0
 $script:WarnCount = 0
@@ -436,7 +436,7 @@ try {
   Step "Case 1g: editor API host serves tree/reorder/save endpoints without argument conversion failures"
   $apiHostRepo = New-MinimalDocsRepo -Name "repo-editor-api-host"
   $apiHostPort = Get-FreeTcpPort
-  $apiHostScriptPath = Join-Path $repoRoot "Scripts\UETools\DocsEditorApiHost.ps1"
+  $apiHostScriptPath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "DocsEditorApiHost.ps1"
   if (-not (Test-Path -LiteralPath $apiHostScriptPath -PathType Leaf)) {
     $script:SkipCount += 1
     Write-Log "[SKIP] case1g editor API host script is not present in this payload build." Yellow
@@ -645,7 +645,7 @@ try {
   Step "Case 1h: cross-domain move rewrites known displayed_sidebar values and preserves destination landing docs"
   $crossDomainRepo = New-MinimalDocsRepo -Name "repo-editor-cross-domain"
   $crossDomainPort = Get-FreeTcpPort
-  $crossDomainApiHostScriptPath = Join-Path $repoRoot "Scripts\UETools\DocsEditorApiHost.ps1"
+  $crossDomainApiHostScriptPath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "DocsEditorApiHost.ps1"
   if (-not (Test-Path -LiteralPath $crossDomainApiHostScriptPath -PathType Leaf)) {
     $script:SkipCount += 1
     Write-Log "[SKIP] case1h editor API host script is not present in this payload build." Yellow
@@ -897,7 +897,7 @@ sidebar_class_name: custom-sidebar-class
   Step "Case 1i: cross-domain move normalizes legacy sections before persisting the move"
   $legacySectionRepo = New-MinimalDocsRepo -Name "repo-editor-legacy-section"
   $legacySectionPort = Get-FreeTcpPort
-  $legacySectionApiHostScriptPath = Join-Path $repoRoot "Scripts\UETools\DocsEditorApiHost.ps1"
+  $legacySectionApiHostScriptPath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "DocsEditorApiHost.ps1"
   if (-not (Test-Path -LiteralPath $legacySectionApiHostScriptPath -PathType Leaf)) {
     $script:SkipCount += 1
     Write-Log "[SKIP] case1i editor API host script is not present in this payload build." Yellow
@@ -1145,7 +1145,7 @@ displayed_sidebar: test-domain-sidebar
   }
 
   Step "Case 1ii: domain-root same-parent moves persist exact long-distance order across tree, restart, and sidebar output"
-  $domainRootApiHostScriptPath = Join-Path $repoRoot "Scripts\UETools\DocsEditorApiHost.ps1"
+  $domainRootApiHostScriptPath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "DocsEditorApiHost.ps1"
   if (-not (Test-Path -LiteralPath $domainRootApiHostScriptPath -PathType Leaf)) {
     $script:SkipCount += 1
     Write-Log "[SKIP] case1ii editor API host script is not present in this payload build." Yellow

@@ -748,6 +748,10 @@ function Import-UEToolSuiteGitConflictHelpers {
 
   $domainPath = Join-Path $RepoRoot "Scripts\UETools\UEToolSuite.Git.psm1"
   if (-not (Test-Path -LiteralPath $domainPath -PathType Leaf)) {
+    $runtimeDomainPath = Join-Path $PSScriptRoot "UEToolSuite.Git.psm1"
+    if (Test-Path -LiteralPath $runtimeDomainPath -PathType Leaf) {
+      return (Resolve-Path -LiteralPath $runtimeDomainPath).Path
+    }
     throw "The 'git' domain is not installed for this repo. Missing required path: $domainPath. Re-run the installer with git helper tooling included."
   }
 
@@ -2001,4 +2005,3 @@ function Sync-BinaryConflictLock {
   # Old behavior returned lock contents; now return the required set
   return @(Get-RequiredGuardedPaths)
 }
-

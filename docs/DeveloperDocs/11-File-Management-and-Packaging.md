@@ -11,10 +11,10 @@ The payload contract is declared by:
 The manifest separates:
 
 - `managedTextItems`
-- `managedItems.base`
+- `managedItems.projectBase`
+- `managedItems.globalCli`
 - `managedItems.tests`
 - `managedItems.docs`
-- `managedItems.docsTools`
 - `managedItems.website`
 - optional categories such as `aiTools`, `artTools`, `codingStandards`
 - `legacyCleanupPaths`

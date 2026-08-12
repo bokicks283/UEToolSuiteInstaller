@@ -264,7 +264,7 @@ function Get-UEToolSuiteInitArtTemplateReadiness {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $artModulePath = Join-Path $ResolvedRepoRoot "Scripts\UETools\UEToolSuite.Art.psm1"
+  $artModulePath = Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.Art.psm1"
   if (-not (Test-Path -LiteralPath $artModulePath -PathType Leaf)) {
     return [pscustomobject]@{ Status = "SKIP"; Detail = "Art module is not installed in this repo." }
   }
@@ -931,7 +931,7 @@ function Invoke-UEToolSuiteInitRuntime {
       return
     }
   
-    $docsDomainScript = Join-Path $ResolvedRepoRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
+    $docsDomainScript = Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.Docs.psm1"
     if (-not (Test-Path -LiteralPath $docsDomainScript)) {
       Add-ToolReadiness -Tool "ue-tools docs" -Status "SKIP" -Detail "Docs domain is not installed in this repo."
       return
@@ -1075,7 +1075,7 @@ function Invoke-UEToolSuiteInitRuntime {
     Add-ToolReadiness -Tool "git repository" -Status "OK" -Detail "Git repository already initialized."
   }
   
-  $projectContextHelpers = Join-Path $repoRoot "Scripts\Unreal\ProjectContext.ps1"
+  $projectContextHelpers = Join-Path $script:InitScriptsRoot "Unreal\ProjectContext.ps1"
   if (-not (Test-Path -LiteralPath $projectContextHelpers)) {
     throw "Project context helpers not found: $projectContextHelpers"
   }
@@ -1180,12 +1180,12 @@ function Invoke-UEToolSuiteInitRuntime {
     "Scripts\git-hooks\hook-common.sh"
   )
   
-  $requiredHelpers = @(
-    "Scripts\UETools\UEToolSuite.Git.psm1",
-    "Scripts\UETools\UEToolSuite.Art.psm1",
-    "Scripts\UETools\UEToolSuite.AI.psm1",
-    "Scripts\Unreal\ProjectContext.ps1",
-    "Scripts\ue-tools.ps1"
+  $requiredHelpers = @("Scripts\ue-tools.ps1")
+  $requiredRuntimeHelpers = @(
+    "UETools\UEToolSuite.Git.psm1",
+    "UETools\UEToolSuite.Art.psm1",
+    "UETools\UEToolSuite.AI.psm1",
+    "Unreal\ProjectContext.ps1"
   )
   
   $requiredTests = @(
@@ -1195,6 +1195,9 @@ function Invoke-UEToolSuiteInitRuntime {
   $missing = @()
   foreach ($p in @($requiredHooks + $requiredShared + $requiredHelpers + $requiredTests)) {
     if (-not (Test-Path (Join-Path $repoRoot $p))) { $missing += $p }
+  }
+  foreach ($p in $requiredRuntimeHelpers) {
+    if (-not (Test-Path (Join-Path $script:InitScriptsRoot $p))) { $missing += "runtime:$p" }
   }
   
   if ($missing.Count -gt 0) {
@@ -1382,13 +1385,13 @@ function Invoke-UEToolSuiteInitRuntime {
   Write-Host "  - Verify hooks by attempting a small commit" -ForegroundColor Cyan
   Write-Host "  - During merge/rebase conflicts of binary files, use: git ours / git theirs" -ForegroundColor Cyan
   Write-Host "  - Run Unreal tools manually with: ue-tools help" -ForegroundColor Cyan
-  if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Docs.psm1") -PathType Leaf) {
+  if (Test-Path -LiteralPath (Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.Docs.psm1") -PathType Leaf) {
     Write-Host "  - Run docs tools manually with: ue-tools docs help" -ForegroundColor Cyan
   }
-  if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Art.psm1") -PathType Leaf) {
+  if (Test-Path -LiteralPath (Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.Art.psm1") -PathType Leaf) {
     Write-Host "  - Run ArtSource tools manually with: ue-tools art" -ForegroundColor Cyan
   }
-  if (Test-Path -LiteralPath (Join-Path $repoRoot "Scripts\UETools\UEToolSuite.AI.psm1") -PathType Leaf) {
+  if (Test-Path -LiteralPath (Join-Path $script:InitScriptsRoot "UETools\UEToolSuite.AI.psm1") -PathType Leaf) {
     Write-Host "  - Build an AI startup prompt with: ue-tools ai prompt -IncludePrivate" -ForegroundColor Cyan
   }
   

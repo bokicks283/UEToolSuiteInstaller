@@ -19,6 +19,8 @@ Install/update into a target UE5 repo:
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 -TargetRepoRoot C:\Path\To\UEProject -RunInit -SkipUnrealSync
 ```
 
+Every install places the reusable CLI runtime under `%LOCALAPPDATA%\UEToolSuite\versions\<version>`, maintains stable launchers under `%LOCALAPPDATA%\UEToolSuite\bin`, and leaves a small `Scripts\ue-tools.ps1` forwarding shim in the project. Git hooks, tests, docs content, and the Docusaurus site remain project-local.
+
 The installer uses `payload/ue-tool-suite.manifest.json` to decide managed paths and marker-managed root text blocks (`.gitattributes`, `.gitignore`).
 
 Docs and website updates are preserve-first:

@@ -71,6 +71,11 @@ function New-TestRepo {
 
   $scriptsSource = Join-Path $repoRoot "Scripts"
   Copy-Item -LiteralPath $scriptsSource -Destination (Join-Path $path "Scripts") -Recurse -Force
+  $globalMarkerSource = Join-Path $repoRoot ".ue-tools\global-cli.json"
+  if (Test-Path -LiteralPath $globalMarkerSource -PathType Leaf) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $path ".ue-tools") | Out-Null
+    Copy-Item -LiteralPath $globalMarkerSource -Destination (Join-Path $path ".ue-tools\global-cli.json") -Force
+  }
 
   Write-Utf8NoBomFile -Path (Join-Path $path "PortableSample.uproject") -Content @'
 {
@@ -96,7 +101,7 @@ try {
   Write-Log "Repo: $repoRoot" Cyan
   Write-Log "Log : $logPath" Cyan
 
-  $aliasModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Aliases.psm1"
+  $aliasModulePath = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Aliases.psm1"
   Assert-Condition "case1 alias module path exists" (Test-Path -LiteralPath $aliasModulePath -PathType Leaf) "module found" "module missing: $aliasModulePath"
   Import-Module -Name $aliasModulePath -Force
 
