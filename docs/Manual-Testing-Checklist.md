@@ -100,8 +100,17 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 `
 - [ ] Validate `-NoLegacyCleanup` (legacy paths remain after update).
 - [ ] Validate `-SkipDocs` (docs payload excluded, base payload still installed).
 - [ ] Validate `-SkipWebsite` (website excluded, docs tooling still usable when expected).
-- [ ] Validate `-SkipTests` (payload test scripts excluded).
-- [ ] Validate `-SkipAITools`, `-SkipArtSourceTools`, `-SkipCodingStandardsTools` category handling against manifest expectations.
+- [ ] Confirm `Scripts/Tests/` is absent from a clean installed project.
+- [ ] Confirm a default install creates `ArtSource/_Template/{Source,Textures,Exports}` even without `-RunInit`.
+- [ ] Validate `-SkipArtSourceTools` leaves a missing `ArtSource/` directory absent; validate the remaining category switches against manifest expectations.
+
+### 4.4 Per-user global CLI
+
+- [ ] Install Env A normally; confirm `%LOCALAPPDATA%\UEToolSuite\current.json`, `bin\ue-tools.ps1`, `bin\ue-tools.cmd`, and `versions\<payloadVersion>\Scripts\ue-tools.ps1` exist.
+- [ ] Confirm Env A retains `.githooks`, `Scripts\git-hooks`, `Docs`, and `website`, but its `Scripts\ue-tools.ps1` is a forwarding shim and reusable `Scripts\UETools` modules are not duplicated.
+- [ ] Install Env B normally; run both project shims and the stable launcher with `help` and explicit `-RepoRoot` values containing spaces.
+- [ ] Update an existing legacy project-local install; confirm known suite runtime files are backed up/removed while an unknown neighboring file under `Scripts\UETools` is preserved.
+- [ ] Start docs authoring for Env A, then attempt Env B. Confirm the second instance fails with the clear fixed-port ownership error and does not stop Env A.
 
 ## 5) Unified CLI and Alias Contract
 
@@ -117,9 +126,10 @@ Run these in an initialized target repo shell (Env A).
 
 ### 5.1 Profile/bootstrap behavior
 
-- [ ] Verify profile contains exactly one managed block:
-  - `# >>> ue project shell aliases >>>`
-  - `# <<< ue project shell aliases <<<`
+- [ ] Verify profile contains exactly one foldable managed region:
+  - `#region ue project shell aliases`
+  - `#endregion`
+- [ ] If the profile started with the older `# >>>` / `# <<<` markers, verify installation removes that block and replaces it with the region above.
 - [ ] Verify bootstrap file exists:
   - `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1`
 - [ ] Verify profile block uses lazy load wrappers (`Initialize-UEToolsShell` / `Invoke-UEToolsLazyShellCommand`) and does not eagerly dot-source bootstrap on shell startup.
@@ -192,7 +202,8 @@ Run from Env A repo root.
   - `-SkipDocsNpmInstall`
   - `-ForceDocsNpmInstall`
   - `-SkipDocsBridgeInstall`
-- [ ] Validate `-SkipOptionalToolSetup` skips optional setup while leaving core init behavior intact.
+- [ ] Validate `-SkipOptionalToolSetup` skips optional docs setup while still creating the ArtSource template layout.
+- [ ] Validate `-SkipArtSourceTools` is the only init switch that skips ArtSource layout creation.
 
 ### 6.6 Git domain (`ue-tools git`)
 

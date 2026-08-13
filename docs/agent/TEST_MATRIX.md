@@ -64,7 +64,7 @@
 ```powershell
 Push-Location payload/website
 try {
-  npm run test:unit
+  node --test ./scripts/test-authoring-runtime.cjs
   npm run test:editor
   npm run test:e2e -- --project=chromium
   npm run typecheck

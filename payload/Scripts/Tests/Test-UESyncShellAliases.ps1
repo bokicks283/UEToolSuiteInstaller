@@ -71,6 +71,11 @@ function New-TestRepo {
 
   $scriptsSource = Join-Path $repoRoot "Scripts"
   Copy-Item -LiteralPath $scriptsSource -Destination (Join-Path $path "Scripts") -Recurse -Force
+  $globalMarkerSource = Join-Path $repoRoot ".ue-tools\global-cli.json"
+  if (Test-Path -LiteralPath $globalMarkerSource -PathType Leaf) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $path ".ue-tools") | Out-Null
+    Copy-Item -LiteralPath $globalMarkerSource -Destination (Join-Path $path ".ue-tools\global-cli.json") -Force
+  }
 
   Write-Utf8NoBomFile -Path (Join-Path $path "PortableSample.uproject") -Content @'
 {
@@ -96,7 +101,7 @@ try {
   Write-Log "Repo: $repoRoot" Cyan
   Write-Log "Log : $logPath" Cyan
 
-  $aliasModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Aliases.psm1"
+  $aliasModulePath = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Aliases.psm1"
   Assert-Condition "case1 alias module path exists" (Test-Path -LiteralPath $aliasModulePath -PathType Leaf) "module found" "module missing: $aliasModulePath"
   Import-Module -Name $aliasModulePath -Force
 
@@ -113,7 +118,7 @@ try {
   Assert-Condition "case1 no ai-prompt alias" (-not (Get-Alias -Name "ai-prompt" -ErrorAction SilentlyContinue)) "ai-prompt absent" "ai-prompt alias unexpectedly present"
   Assert-Condition "case1 metadata aliases" ((@($registered.Aliases) -join ",") -eq "ue-tools,ue") "metadata aliases are ue-tools,ue" ("metadata aliases: " + (@($registered.Aliases) -join ","))
 
-  Step "Case 2: Install-ProjectShellAliases writes bootstrap markers and file"
+  Step "Case 2: Install-ProjectShellAliases writes a foldable profile region and bootstrap file"
   Reset-LoadedAliases
   $profilePath = Join-Path $scratchRoot "profile.ps1"
   $bootstrapPath = Join-Path $scratchRoot "bootstrap\UEToolsBootstrap.ps1"
@@ -121,8 +126,10 @@ try {
   Assert-Condition "case2 profile created" (Test-Path -LiteralPath $profilePath -PathType Leaf) "profile created" "profile missing"
   Assert-Condition "case2 bootstrap created" (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) "bootstrap created" "bootstrap missing"
   $profileText = Get-Content -LiteralPath $profilePath -Raw
-  Assert-TextContains "case2 start marker present" $profileText "# >>> ue project shell aliases >>>"
-  Assert-TextContains "case2 end marker present" $profileText "# <<< ue project shell aliases <<<"
+  Assert-TextContains "case2 region start present" $profileText "#region ue project shell aliases"
+  Assert-TextContains "case2 region end present" $profileText "#endregion"
+  Assert-TextNotContains "case2 legacy start marker absent" $profileText "# >>> ue project shell aliases >>>"
+  Assert-TextNotContains "case2 legacy end marker absent" $profileText "# <<< ue project shell aliases <<<"
   Assert-TextContains "case2 profile defines lazy bootstrap initializer" $profileText "function Initialize-UEToolsShell"
   Assert-TextContains "case2 profile defines lazy command wrapper" $profileText "function Invoke-UEToolsLazyShellCommand"
   Assert-TextContains "case2 profile sets ue-tools alias to lazy wrapper" $profileText "Set-Alias -Name `"ue-tools`" -Value `"Invoke-UEToolsLazyShellCommand`" -Scope Global"
@@ -132,6 +139,32 @@ try {
   Assert-TextContains "case2 bootstrap registers ue-tools alias" $bootstrapText "Set-Alias -Name `"ue-tools`" -Value `"Invoke-UEToolSuiteShellCommand`" -Scope Global"
   Assert-TextContains "case2 bootstrap registers ue alias" $bootstrapText "Set-Alias -Name `"ue`" -Value `"Invoke-UEToolSuiteShellCommand`" -Scope Global"
   Assert-Condition "case2 metadata aliases" ((@($installed.Aliases) -join ",") -eq "ue-tools,ue") "metadata aliases are ue-tools,ue" ("metadata aliases: " + (@($installed.Aliases) -join ","))
+
+  Step "Case 2a: legacy profile markers migrate to one foldable region"
+  $legacyProfilePath = Join-Path $scratchRoot "legacy-profile.ps1"
+  $legacyProfileText = @(
+    "# project-owned prefix"
+    "# >>> ue project shell aliases >>>"
+    "function Old-UEToolsAliasSnippet { 'old' }"
+    "# <<< ue project shell aliases <<<"
+    "# project-owned suffix"
+  ) -join "`r`n"
+  Write-Utf8NoBomFile -Path $legacyProfilePath -Content $legacyProfileText
+
+  $null = Install-ProjectShellAliases -ProfilePath $legacyProfilePath -BootstrapScriptPath $bootstrapPath -ScriptsRoot (Join-Path $repoRoot "Scripts")
+  $migratedProfileText = Get-Content -LiteralPath $legacyProfilePath -Raw
+  Assert-TextContains "case2a preserves profile prefix" $migratedProfileText "# project-owned prefix"
+  Assert-TextContains "case2a preserves profile suffix" $migratedProfileText "# project-owned suffix"
+  Assert-TextContains "case2a region start present" $migratedProfileText "#region ue project shell aliases"
+  Assert-TextContains "case2a region end present" $migratedProfileText "#endregion"
+  Assert-TextNotContains "case2a legacy start marker removed" $migratedProfileText "# >>> ue project shell aliases >>>"
+  Assert-TextNotContains "case2a legacy end marker removed" $migratedProfileText "# <<< ue project shell aliases <<<"
+  Assert-TextNotContains "case2a legacy body removed" $migratedProfileText "Old-UEToolsAliasSnippet"
+
+  $null = Install-ProjectShellAliases -ProfilePath $legacyProfilePath -BootstrapScriptPath $bootstrapPath -ScriptsRoot (Join-Path $repoRoot "Scripts")
+  $reinstalledProfileText = Get-Content -LiteralPath $legacyProfilePath -Raw
+  $regionCount = [regex]::Matches($reinstalledProfileText, [regex]::Escape("#region ue project shell aliases")).Count
+  Assert-Condition "case2a reinstall keeps one managed region" ($regionCount -eq 1) "one managed region" "managed region count: $regionCount"
 
   Step "Case 2b: profile load is lazy; missing bootstrap fails only on command invocation"
   Remove-Item -LiteralPath $bootstrapPath -Force

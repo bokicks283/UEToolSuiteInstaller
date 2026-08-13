@@ -10,7 +10,6 @@ This folder contains automation that keeps Git/LFS/Unreal workflows consistent f
 - `Scripts/git-tools/`: conflict helper commands (`git ours`, `git theirs`, `git conflicts`).
 - `Scripts/UETools/`: dispatcher and domain modules for `ue-tools`.
 - `Scripts/Unreal/`: Unreal sync/build helper scripts and project-context resolution helpers.
-- `Scripts/Tests/`: script tests and structured test output folders.
 
 Concrete examples:
 
@@ -20,13 +19,12 @@ Concrete examples:
 - `Scripts/UETools/UEToolSuite.Git.psm1`
 - `Scripts/UETools/UEToolSuite.Unreal.psm1`
 - `Scripts/UETools/UEToolSuite.Dispatcher.psm1`
-- `Scripts/Tests/Test-BinaryGuard-Fixes.ps1`
 
 ## Do
 
 - Place new scripts in the closest existing category folder.
 - Use verb-based script names (`Enable-*`, `Sync-*`, `Test-*`).
-- Add/update tests in `Scripts/Tests` for behavior changes.
+- Add or update tests in the UEToolSuiteInstaller source repository for behavior changes.
 - Document user-facing workflow changes in `Docs/Pipeline/README.md`.
 - Keep docs-site authoring helpers in `Scripts/Docs/` instead of mixing them into Unreal-only tooling folders.
 - Return non-zero exit code on script failure.
@@ -38,7 +36,6 @@ Concrete examples:
 - Add generic names like `script1.ps1`.
 - Add destructive behavior without explicit user confirmation.
 - Swallow errors and continue silently.
-- Commit ad-hoc logs outside `Scripts/Tests/*Results/`.
 
 ## Naming And Path Examples
 
@@ -46,7 +43,6 @@ Good:
 
 - `Scripts/UETools/UEToolSuite.AI.psm1`
 - `Scripts/Unreal/Sync-ProjectAssets.ps1`
-- `Scripts/Tests/Test-PluginBootstrap.ps1`
 
 Bad:
 
@@ -59,13 +55,10 @@ Goal: add a script that validates plugin bootstrap setup.
 
 1. Create script:
    - `Scripts/Unreal/Sync-PluginBootstrap.ps1`
-2. Add test:
-   - `Scripts/Tests/Test-PluginBootstrap.ps1`
-3. Run test locally and write output to:
-   - `Scripts/Tests/Test-PluginBootstrapResults/`
-4. Verify script fails fast with clear errors and supports safe execution.
-5. Update `Docs/Pipeline/README.md` if daily workflow changes.
-6. Commit script and test with explicit message.
+2. Add its regression coverage in the UEToolSuiteInstaller source repository.
+3. Verify the script fails fast with clear errors and supports safe execution.
+4. Update `Docs/Pipeline/README.md` if daily workflow changes.
+5. Commit the script and test with an explicit message.
 
 ## Repo Init Readiness
 
@@ -85,7 +78,7 @@ Docs section normalization is also part of installed repo readiness:
 - `ue-tools docs doctor` reports qualifying legacy sections and points to `ue-tools docs migrate-sections` as the remediation command.
 - Normalization writes only deterministic `_category_.json` files. It does not create `README.md`, landing docs, or generated-index links.
 
-Use `-SkipOptionalToolSetup` to skip optional prerequisite work entirely. Use `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, or `-SkipDocsBridgeInstall` for docs-specific control.
+Use `-SkipOptionalToolSetup` to skip optional docs prerequisite work entirely. ArtSource initialization remains enabled unless `-SkipArtSourceTools` is explicitly supplied. Use `-SkipDocsSetup`, `-SkipDocsNpmInstall`, `-ForceDocsNpmInstall`, or `-SkipDocsBridgeInstall` for docs-specific control.
 Use `-SkipDocsSectionMigration` only when you intentionally need installer or init recovery without touching the target `Docs/` tree.
 
 ## UE Sync Workflow
@@ -100,15 +93,6 @@ Build-only hook runs skip `Binaries/` and `Intermediate/` cleanup by default. Us
 
 When regeneration runs, the script snapshots VS Code workspace artifacts and `.ignore` first. After Unreal regenerates project files, it merges user workspace customization, including extra folders, settings, extension recommendations, custom tasks, and custom launch configurations, back into the generated `.code-workspace` and restores `.ignore` content that existed before the regen.
 
-## Test Output Hygiene
+## Validation Ownership
 
-Recommended layout:
-
-```text
-Scripts/Tests/
-|- Test-BinaryGuard-Fixes.ps1
-|- Test-BinaryGuard-FixesResults/
-|  |- BinaryGuardTest-20260221-173435.log
-```
-
-Keep cleanup of old logs in separate maintenance commits.
+The full PowerShell regression suites live in the UEToolSuiteInstaller source repository. They are intentionally excluded from published installers and installed Unreal projects. The project-local `Scripts/git-hooks/Test-Hooks.ps1` health check remains available because `ue-tools init` uses it to validate hook setup.

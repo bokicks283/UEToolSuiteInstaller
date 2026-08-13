@@ -8,21 +8,30 @@
     ".gitignore"
   ],
   "managedItems": {
-    "base": [
+    "projectBase": [
       ".githooks",
-      "Scripts/UETools/UEToolSuite.Init.psm1",
       "Scripts/README.md",
+      "Scripts/git-hooks"
+    ],
+    "globalCli": [
       "Scripts/ue-tools.ps1",
-      "Scripts/git-hooks",
-      "Scripts/UETools",
+      "Scripts/UETools/DocsEditorApiHost.ps1",
+      "Scripts/UETools/UETools.psd1",
+      "Scripts/UETools/UEToolSuite.AI.psm1",
+      "Scripts/UETools/UEToolSuite.Aliases.psm1",
+      "Scripts/UETools/UEToolSuite.Art.psm1",
+      "Scripts/UETools/UEToolSuite.Core.psm1",
+      "Scripts/UETools/UEToolSuite.Dispatcher.psm1",
+      "Scripts/UETools/UEToolSuite.Docs.psm1",
+      "Scripts/UETools/UEToolSuite.Git.psm1",
+      "Scripts/UETools/UEToolSuite.Init.psm1",
+      "Scripts/UETools/UEToolSuite.Unreal.psm1",
       "Scripts/Unreal/ProjectContext.ps1",
-      "Scripts/UETools/UEToolSuite.Unreal.psm1"
+      "Scripts/Docs/VSCodeBridge/extension.js",
+      "Scripts/Docs/VSCodeBridge/package.json"
     ],
     "artTools": [],
     "aiTools": [],
-    "tests": [
-      "Scripts/Tests"
-    ],
     "docs": [
       "Docs/_domains.json",
       "Docs/README.md",
@@ -31,9 +40,6 @@
     ],
     "codingStandards": [
       "Docs/WorkflowStandards/CodingStandards"
-    ],
-    "docsTools": [
-      "Scripts/Docs"
     ],
     "website": [
       "website"
@@ -51,6 +57,22 @@
     "Scripts/git-tools/conflicts.ps1",
     "Scripts/Unreal/ProjectShellAliases.ps1",
     "Scripts/Unreal/UESyncShellAliases.ps1",
+    "Scripts/Tests/AGENTS.md",
+    "Scripts/Tests/BinaryGuard-Test-Functions.ps1",
+    "Scripts/Tests/Collect-CrashEvidence.ps1",
+    "Scripts/Tests/Run-AllTests.ps1",
+    "Scripts/Tests/Run-CrashCaptureSession.ps1",
+    "Scripts/Tests/Test-AIStartupPrompt.ps1",
+    "Scripts/Tests/Test-BinaryGuard-Fixes.ps1",
+    "Scripts/Tests/Test-DocsTools.ps1",
+    "Scripts/Tests/Test-InitRepoToolReadiness.ps1",
+    "Scripts/Tests/Test-New-ArtSourcePath.ps1",
+    "Scripts/Tests/Test-Setup-UESync-Manual.ps1",
+    "Scripts/Tests/Test-UESyncShellAliases.ps1",
+    "Scripts/Tests/Test-UnrealSync-Regeneration.ps1",
+    "Scripts/Tests/Test-UnrealSync.ps1",
+    "Scripts/Tests/TestHarness.ps1",
+    "Scripts/Tests/TestManifest.ps1",
     "website/src/pages/editor.tsx",
     "website/src/pages/editor.module.css"
   ]

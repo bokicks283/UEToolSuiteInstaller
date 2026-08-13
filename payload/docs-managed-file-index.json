@@ -41,7 +41,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/AI/Shared-vs-Private.md",
       "category": "docs",
-      "sha256": "e4884057ca97401a755b046aab0d4b28f7971093c8575b5b02c9f03cfda1c096"
+      "sha256": "642cf82169356e1589bb2916ffa5cd083d881ef91175f047dc9da7c714298931"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CodingStandards/_category_.json",
@@ -106,7 +106,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/Pipeline/Git-Branch-And-PR-Workflow.md",
       "category": "docs",
-      "sha256": "1b06fa75aab16f7e0e1302c7cd331c3912865c0307286d4e3b80371268b73b97"
+      "sha256": "82ba186a7cb978c95677462071d5026348b801857975f920e334858bf7a777eb"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Pipeline/README.md",
@@ -126,7 +126,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/Testing.md",
       "category": "docs",
-      "sha256": "6c7f49f61c2b261d3b31da3dffd59448232ed898b3d2078f2cf22e6a1f028e02"
+      "sha256": "f601e98f2247f9f2e198ab71c4552064a398b4628ac1449f28f1f70a3e795b89"
     }
   ]
 }

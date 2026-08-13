@@ -26,6 +26,8 @@ $resultsDir = Join-Path $PSScriptRoot "Test-UpgradeCompatibilityResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "UpgradeCompatibility-$stamp.log"
 $scratchRoot = New-TestScratchRoot -Prefix "ue tool suite upgrade compatibility"
+$globalCliRoot = Join-Path $scratchRoot "global cli root with spaces"
+$globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.0"
 
 $script:PassCount = 0
 $script:FailCount = 0
@@ -73,7 +75,8 @@ function Invoke-InstallerForUpgradeTest {
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
-    "-TargetRepoRoot", $TargetRoot
+    "-TargetRepoRoot", $TargetRoot,
+    "-GlobalCliRoot", $globalCliRoot
   )
 
   if ($RunInit) {
@@ -97,7 +100,7 @@ function Install-TestProfileAliases {
     [Parameter(Mandatory)][string]$ProfilePath
   )
 
-  $aliasModulePath = Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Aliases.psm1"
+  $aliasModulePath = Join-Path $globalVersionRoot "Scripts\UETools\UEToolSuite.Aliases.psm1"
   $bootstrapPath = Join-Path (Split-Path -Parent $ProfilePath) "UEToolsBootstrap.ps1"
   $escapedAliasModule = $aliasModulePath.Replace("'", "''")
   $escapedProfile = $ProfilePath.Replace("'", "''")
@@ -193,10 +196,12 @@ function Assert-InstalledPayloadContract {
   param([Parameter(Mandatory)][string]$TargetRoot)
 
   Assert-Condition -Name "payload contract ue-tools path present" -Condition (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\ue-tools.ps1") -PathType Leaf) -PassDetail "Scripts\\ue-tools.ps1 present" -FailDetail "Scripts\\ue-tools.ps1 missing"
-  Assert-Condition -Name "payload contract init runtime module present" -Condition (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Init.psm1") -PathType Leaf) -PassDetail "UEToolSuite.Init.Runtime present" -FailDetail "UEToolSuite.Init.Runtime missing"
-  Assert-Condition -Name "payload contract unreal runtime module present" -Condition (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Unreal.psm1") -PathType Leaf) -PassDetail "UEToolSuite.Unreal.Runtime present" -FailDetail "UEToolSuite.Unreal.Runtime missing"
-  Assert-Condition -Name "payload contract docs runtime module present" -Condition (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Docs.psm1") -PathType Leaf) -PassDetail "UEToolSuite.Docs.Runtime present" -FailDetail "UEToolSuite.Docs.Runtime missing"
-  Assert-Condition -Name "payload contract git runtime module present" -Condition (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Git.psm1") -PathType Leaf) -PassDetail "UEToolSuite.Git.Runtime present" -FailDetail "UEToolSuite.Git.Runtime missing"
+  Assert-TextContains -Name "payload contract ue-tools path is forwarding shim" -Text (Get-Content -LiteralPath (Join-Path $TargetRoot "Scripts\ue-tools.ps1") -Raw) -Needle "UE Tool Suite global project shim"
+  Assert-Condition -Name "payload contract project omits runtime modules" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Init.psm1"))) -PassDetail "runtime modules not duplicated" -FailDetail "project-local runtime module found"
+  Assert-Condition -Name "payload contract init runtime module present globally" -Condition (Test-Path -LiteralPath (Join-Path $globalVersionRoot "Scripts\UETools\UEToolSuite.Init.psm1") -PathType Leaf) -PassDetail "global Init module present" -FailDetail "global Init module missing"
+  Assert-Condition -Name "payload contract unreal runtime module present globally" -Condition (Test-Path -LiteralPath (Join-Path $globalVersionRoot "Scripts\UETools\UEToolSuite.Unreal.psm1") -PathType Leaf) -PassDetail "global Unreal module present" -FailDetail "global Unreal module missing"
+  Assert-Condition -Name "payload contract docs runtime module present globally" -Condition (Test-Path -LiteralPath (Join-Path $globalVersionRoot "Scripts\UETools\UEToolSuite.Docs.psm1") -PathType Leaf) -PassDetail "global Docs module present" -FailDetail "global Docs module missing"
+  Assert-Condition -Name "payload contract git runtime module present globally" -Condition (Test-Path -LiteralPath (Join-Path $globalVersionRoot "Scripts\UETools\UEToolSuite.Git.psm1") -PathType Leaf) -PassDetail "global Git module present" -FailDetail "global Git module missing"
   Assert-Condition -Name "payload contract legacy init script removed" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\Init-Repo.ps1"))) -PassDetail "legacy Init-Repo absent" -FailDetail "legacy Init-Repo still present"
   Assert-Condition -Name "payload contract legacy unreal script removed" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\Unreal\UnrealSync.ps1"))) -PassDetail "legacy UnrealSync absent" -FailDetail "legacy UnrealSync still present"
   Assert-Condition -Name "payload contract legacy docs script removed" -Condition (-not (Test-Path -LiteralPath (Join-Path $TargetRoot "Scripts\Docs\DocsTools.ps1"))) -PassDetail "legacy DocsTools absent" -FailDetail "legacy DocsTools still present"

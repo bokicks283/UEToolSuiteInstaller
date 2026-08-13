@@ -7,6 +7,15 @@ if (-not $repoRoot) {
 
 $gitModulePath = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Git.psm1"
 $facadeManifestPath = Join-Path $repoRoot "Scripts\UETools\UETools.psd1"
+if (-not (Test-Path -LiteralPath $gitModulePath -PathType Leaf) -and -not (Test-Path -LiteralPath $facadeManifestPath -PathType Leaf)) {
+  $globalMarkerPath = Join-Path $repoRoot ".ue-tools\global-cli.json"
+  if (Test-Path -LiteralPath $globalMarkerPath -PathType Leaf) {
+    $globalMarker = Get-Content -LiteralPath $globalMarkerPath -Raw | ConvertFrom-Json
+    $globalScriptsRoot = Join-Path ([string]$globalMarker.installRoot) "Scripts"
+    $gitModulePath = Join-Path $globalScriptsRoot "UETools\UEToolSuite.Git.psm1"
+    $facadeManifestPath = Join-Path $globalScriptsRoot "UETools\UETools.psd1"
+  }
+}
 if (Test-Path -LiteralPath $gitModulePath -PathType Leaf) {
   Import-Module -Name $gitModulePath -Force
 }

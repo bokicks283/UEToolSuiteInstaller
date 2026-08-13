@@ -57,10 +57,10 @@ function Get-CrashCaptureProjectContext {
         [string]$InUProjectPath
     )
 
-    $projectContextHelper = Join-Path $InProjectRoot "Scripts\Unreal\ProjectContext.ps1"
-    if (-not (Test-Path -LiteralPath $projectContextHelper)) {
-        throw "Project context helper not found: $projectContextHelper"
-    }
+    $testHarnessPath = Join-Path $InProjectRoot "Scripts\Tests\TestHarness.ps1"
+    if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) { throw "Test harness not found: $testHarnessPath" }
+    . $testHarnessPath
+    $projectContextHelper = Resolve-UEToolSuiteRuntimeFile -RepoRoot $InProjectRoot -RelativePath "Scripts\Unreal\ProjectContext.ps1"
 
     . $projectContextHelper
     return (Get-ProjectContext -RepoRoot $InProjectRoot -UProjectPath $InUProjectPath)

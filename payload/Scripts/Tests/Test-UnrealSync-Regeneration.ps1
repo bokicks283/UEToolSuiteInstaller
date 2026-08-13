@@ -11,11 +11,6 @@ $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw "Not inside a git repository." }
 Set-Location $repoRoot
 
-$syncScript = Join-Path $repoRoot "Scripts\UETools\UEToolSuite.Unreal.psm1"
-if (-not (Test-Path -LiteralPath $syncScript)) {
-  throw "Unreal sync module not found: $syncScript"
-}
-
 $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $resultsDir = Join-Path $repoRoot "Scripts\Tests\Test-UnrealSync-RegenerationResults"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
@@ -25,6 +20,7 @@ if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
 }
 . $testHarnessPath
+$syncScript = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Unreal.psm1"
 
 $script:PassCount = 0
 $script:FailCount = 0

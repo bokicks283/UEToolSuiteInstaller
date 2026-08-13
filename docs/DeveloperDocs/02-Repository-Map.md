@@ -56,7 +56,7 @@ UEToolSuiteInstaller/
 |---|---|---|---|---|
 | `payload/Docs/` | default docs content and metadata | Yes | Yes | Installer treats docs smart-update differently from raw overwrite |
 | `payload/Scripts/UETools/` | nested PowerShell modules | Yes | Yes | Main command and docs runtime logic live here |
-| `payload/Scripts/Tests/` | payload-level tests | Optional | Yes | Copied when test payload is included |
+| `payload/Scripts/Tests/` | source-repository validation suites | No | Yes | Used by maintainers and CI; excluded from published installers |
 | `payload/Scripts/Docs/VSCodeBridge/` | optional docs bridge | Yes | Yes | Installed by docs/init flows when requested |
 | `payload/Scripts/git-hooks/` | hook setup and validation | Yes | Yes | Works with `.githooks/` payload path |
 | `payload/Scripts/Unreal/` | Unreal project context helper | Yes | Yes | Used by Unreal/build flows |

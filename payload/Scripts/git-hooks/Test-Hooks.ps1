@@ -4,13 +4,23 @@
 
 $ErrorActionPreference = "Stop"
 
-$scriptsRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
+if (-not $repoRoot) { throw "Not inside a git repo." }
+$scriptsRoot = Join-Path $repoRoot "Scripts"
 $coreModuleEntryPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
 if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
   $coreModuleEntryPath = Join-Path $scriptsRoot "UETools\UEToolSuite.Core.psm1"
 }
 if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
-  throw "Core module entry not found: $coreModuleEntryPath"
+  $globalMarkerPath = Join-Path $repoRoot ".ue-tools\global-cli.json"
+  if (Test-Path -LiteralPath $globalMarkerPath -PathType Leaf) {
+    $globalMarker = Get-Content -LiteralPath $globalMarkerPath -Raw | ConvertFrom-Json
+    $scriptsRoot = Join-Path ([string]$globalMarker.installRoot) "Scripts"
+    $coreModuleEntryPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
+  }
+}
+if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
+  throw "Core module entry not found locally or through .ue-tools/global-cli.json: $coreModuleEntryPath"
 }
 Import-Module -Name $coreModuleEntryPath -Force -DisableNameChecking
 Set-UEToolSuiteRuntimeContext -ScriptsRoot $scriptsRoot -StateKey "hook-tests" -LogPrefix "[HookTest]"
@@ -71,8 +81,6 @@ function Find-GitBash([string]$gitRoot) {
 }
 
 # Must be in repo root
-$repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
-if (-not $repoRoot) { throw "Not inside a git repo." }
 Set-Location $repoRoot
 
 Info "Repo root: $repoRoot"

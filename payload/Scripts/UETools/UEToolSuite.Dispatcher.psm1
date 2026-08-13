@@ -14,7 +14,7 @@ function Get-UEToolSuiteDispatcherDomainStatus {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$RepoRoot)
 
-  $moduleRoot = Join-Path $RepoRoot "Scripts\UETools"
+  $moduleRoot = $PSScriptRoot
   return [ordered]@{
     docs = (Test-Path -LiteralPath (Join-Path $moduleRoot "UEToolSuite.Docs.psm1") -PathType Leaf)
     ai   = (Test-Path -LiteralPath (Join-Path $moduleRoot "UEToolSuite.AI.psm1") -PathType Leaf)
@@ -123,7 +123,8 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
         "  -SkipLfsPull                 Skip git lfs pull."
         "  -SkipUnrealSync              Skip first-run ue-tools build."
         "  -SkipShellAliases            Skip profile alias registration."
-        "  -SkipOptionalToolSetup       Skip optional docs/art setup."
+        "  -SkipOptionalToolSetup       Skip optional docs setup."
+        "  -SkipArtSourceTools          Skip ArtSource layout setup."
         "  -SkipDocsSetup               Skip docs setup workflow."
         "  -SkipDocsNpmInstall          Skip npm install in website/."
         "  -ForceDocsNpmInstall         Force npm install in website/."
@@ -189,6 +190,13 @@ function Assert-UEToolSuiteDispatcherDomainInstalled {
   )
 
   $requiredPath = Join-Path $RepoRoot $RequiredRelativePath
+  if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+    $runtimeRelativePath = $RequiredRelativePath -replace '^Scripts[\\/]+UETools[\\/]+', ''
+    $runtimeCandidate = Join-Path $PSScriptRoot $runtimeRelativePath
+    if (Test-Path -LiteralPath $runtimeCandidate -PathType Leaf) {
+      return $runtimeCandidate
+    }
+  }
   if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
     throw (Get-UEToolSuiteDispatcherDomainMissingMessage -Domain $Domain -RequiredPath $requiredPath)
   }

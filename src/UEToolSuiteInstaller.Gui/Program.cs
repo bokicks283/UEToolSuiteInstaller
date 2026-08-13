@@ -61,7 +61,6 @@ internal sealed class InstallerForm : Form
     private readonly CheckBox noBackupCheckBox = new();
     private readonly CheckBox skipDocsCheckBox = new();
     private readonly CheckBox skipWebsiteCheckBox = new();
-    private readonly CheckBox skipTestsCheckBox = new();
     private readonly CheckBox skipAiToolsCheckBox = new();
     private readonly CheckBox skipArtSourceToolsCheckBox = new();
     private readonly CheckBox skipCodingStandardsToolsCheckBox = new();
@@ -932,13 +931,11 @@ internal sealed class InstallerForm : Form
         payloadColumn.Controls.Add(CreateSectionLabel("Payload scope"));
         ConfigureOptionCheckBox(skipDocsCheckBox, "Skip Docs payload", false);
         ConfigureOptionCheckBox(skipWebsiteCheckBox, "Skip website payload", false);
-        ConfigureOptionCheckBox(skipTestsCheckBox, "Skip payload test scripts", false);
         ConfigureOptionCheckBox(skipAiToolsCheckBox, "Skip AI docs/tooling payload", false);
-        ConfigureOptionCheckBox(skipArtSourceToolsCheckBox, "Skip ArtSource tooling payload", false);
+        ConfigureOptionCheckBox(skipArtSourceToolsCheckBox, "Skip ArtSource project layout", false);
         ConfigureOptionCheckBox(skipCodingStandardsToolsCheckBox, "Skip coding standards payload", false);
         payloadColumn.Controls.Add(skipDocsCheckBox);
         payloadColumn.Controls.Add(skipWebsiteCheckBox);
-        payloadColumn.Controls.Add(skipTestsCheckBox);
         payloadColumn.Controls.Add(skipAiToolsCheckBox);
         payloadColumn.Controls.Add(skipArtSourceToolsCheckBox);
         payloadColumn.Controls.Add(skipCodingStandardsToolsCheckBox);
@@ -953,7 +950,7 @@ internal sealed class InstallerForm : Form
             Margin = new Padding(12, 0, 0, 0),
         };
         initColumn.Controls.Add(CreateSectionLabel("Init and build advanced"));
-        ConfigureOptionCheckBox(skipOptionalToolSetupCheckBox, "Skip optional tool setup during init", false);
+        ConfigureOptionCheckBox(skipOptionalToolSetupCheckBox, "Skip optional docs setup during init", false);
         ConfigureOptionCheckBox(skipDocsSetupCheckBox, "Skip docs setup during init", false);
         ConfigureOptionCheckBox(skipDocsNpmInstallCheckBox, "Skip docs npm install during init", false);
         ConfigureOptionCheckBox(forceDocsNpmInstallCheckBox, "Force docs npm install during init", false);
@@ -1346,7 +1343,6 @@ internal sealed class InstallerForm : Form
             NoRegen: runInit && !skipUnrealSync && noRegenCheckBox.Checked,
             SkipDocs: skipDocsCheckBox.Checked,
             SkipWebsite: skipWebsiteCheckBox.Checked,
-            SkipTests: skipTestsCheckBox.Checked,
             SkipAITools: skipAiToolsCheckBox.Checked,
             SkipArtSourceTools: skipArtSourceToolsCheckBox.Checked,
             SkipCodingStandardsTools: skipCodingStandardsToolsCheckBox.Checked,
@@ -1380,7 +1376,6 @@ internal sealed class InstallerForm : Form
 
         if (options.SkipDocs) { args.Add("-SkipDocs"); }
         if (options.SkipWebsite) { args.Add("-SkipWebsite"); }
-        if (options.SkipTests) { args.Add("-SkipTests"); }
         if (options.SkipAITools) { args.Add("-SkipAITools"); }
         if (options.SkipArtSourceTools) { args.Add("-SkipArtSourceTools"); }
         if (options.SkipCodingStandardsTools) { args.Add("-SkipCodingStandardsTools"); }
@@ -1896,7 +1891,6 @@ internal sealed class InstallerForm : Form
         noBackupCheckBox.Enabled = enabled;
         skipDocsCheckBox.Enabled = enabled;
         skipWebsiteCheckBox.Enabled = enabled;
-        skipTestsCheckBox.Enabled = enabled;
         skipAiToolsCheckBox.Enabled = enabled;
         skipArtSourceToolsCheckBox.Enabled = enabled;
         skipCodingStandardsToolsCheckBox.Enabled = enabled;
@@ -2118,7 +2112,6 @@ internal sealed record InstallOptions(
     bool NoRegen,
     bool SkipDocs,
     bool SkipWebsite,
-    bool SkipTests,
     bool SkipAITools,
     bool SkipArtSourceTools,
     bool SkipCodingStandardsTools,

@@ -36,8 +36,8 @@ Use the following split.
 
 ```md
 ## Unreal Tooling
-- Use Scripts/Tests/Run-AllTests.ps1 as the default test runner.
-- Read Docs/WorkflowStandards/Testing.md before running branch-mutating tests.
+- Use the UEToolSuiteInstaller source repository for suite validation.
+- Installed Unreal projects do not contain the repository test harness.
 ```
 
 ## Example Private Note

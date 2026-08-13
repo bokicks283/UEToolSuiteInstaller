@@ -72,16 +72,15 @@ Advanced payload scope options:
 | Skip Docs payload | `-SkipDocs` |
 | Skip website payload | `-SkipWebsite` |
 | Adopt existing unmanaged website | `-AdoptExistingWebsite` |
-| Skip payload test scripts | `-SkipTests` |
 | Skip AI docs/tooling payload | `-SkipAITools` |
-| Skip ArtSource tooling payload | `-SkipArtSourceTools` |
+| Skip ArtSource project layout | `-SkipArtSourceTools` |
 | Skip coding standards payload | `-SkipCodingStandardsTools` |
 
 Advanced init/build options:
 
 | GUI option | Installer switch |
 |---|---|
-| Skip optional tool setup during init | `-SkipOptionalToolSetup` |
+| Skip optional docs setup during init | `-SkipOptionalToolSetup` |
 | Skip docs setup during init | `-SkipDocsSetup` |
 | Skip docs npm install during init | `-SkipDocsNpmInstall` |
 | Force docs npm install during init | `-ForceDocsNpmInstall` |

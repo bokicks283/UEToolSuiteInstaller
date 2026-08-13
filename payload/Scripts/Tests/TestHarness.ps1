@@ -1,6 +1,25 @@
 $script:TestHarnessLogPath = $null
 $script:TestHarnessFailFast = $false
 
+function Resolve-UEToolSuiteRuntimeFile {
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$RelativePath
+  )
+
+  $localPath = Join-Path $RepoRoot $RelativePath
+  if (Test-Path -LiteralPath $localPath -PathType Leaf) { return (Resolve-Path -LiteralPath $localPath).Path }
+
+  $markerPath = Join-Path $RepoRoot ".ue-tools\global-cli.json"
+  if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+    $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+    $globalPath = Join-Path ([string]$marker.installRoot) $RelativePath
+    if (Test-Path -LiteralPath $globalPath -PathType Leaf) { return (Resolve-Path -LiteralPath $globalPath).Path }
+  }
+
+  throw "UE Tool Suite runtime file not found locally or through .ue-tools/global-cli.json: $RelativePath"
+}
+
 function Initialize-TestHarness {
   param(
     [Parameter(Mandatory)][string]$LogPath,

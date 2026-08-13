@@ -15,6 +15,7 @@ param(
   [string[]]$WebsiteForceProjectPath = @(),
   [switch]$AdoptExistingWebsite,
   [switch]$RunInit,
+  [string]$GlobalCliRoot,
   [switch]$InitNonInteractive,
   [switch]$SkipLfsPull,
   [switch]$SkipDocs,
@@ -195,10 +196,10 @@ function Read-UEToolSuitePayloadManifest {
     throw "Payload manifest missing required object: managedItems"
   }
 
-  $baseItems = ConvertTo-StringArray -Value $manifest.managedItems.base -Name "managedItems.base"
-  if ($baseItems.Count -eq 0) {
-    throw "Payload manifest requires at least one managed base item: managedItems.base"
-  }
+  $projectBaseItems = ConvertTo-StringArray -Value $manifest.managedItems.projectBase -Name "managedItems.projectBase"
+  $globalCliItems = ConvertTo-StringArray -Value $manifest.managedItems.globalCli -Name "managedItems.globalCli"
+  if ($projectBaseItems.Count -eq 0) { throw "Payload manifest requires managedItems.projectBase." }
+  if ($globalCliItems.Count -eq 0) { throw "Payload manifest requires managedItems.globalCli." }
 
   return [pscustomobject]@{
     ManifestPath = $manifestPath
@@ -206,13 +207,12 @@ function Read-UEToolSuitePayloadManifest {
     DocsManagedFileIndexPath = [string]$manifest.docsManagedFileIndexPath
     WebsiteManagedFileIndexPath = [string]$manifest.websiteManagedFileIndexPath
     ManagedTextItems = ConvertTo-StringArray -Value $manifest.managedTextItems -Name "managedTextItems"
-    ManagedBaseItems = $baseItems
+    ManagedProjectBaseItems = $projectBaseItems
+    ManagedGlobalCliItems = $globalCliItems
     ManagedArtToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.artTools -Name "managedItems.artTools"
     ManagedAIToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.aiTools -Name "managedItems.aiTools"
-    ManagedTestsItems = ConvertTo-StringArray -Value $manifest.managedItems.tests -Name "managedItems.tests"
     ManagedDocsItems = ConvertTo-StringArray -Value $manifest.managedItems.docs -Name "managedItems.docs"
     ManagedCodingStandardsItems = ConvertTo-StringArray -Value $manifest.managedItems.codingStandards -Name "managedItems.codingStandards"
-    ManagedDocsToolsItems = ConvertTo-StringArray -Value $manifest.managedItems.docsTools -Name "managedItems.docsTools"
     ManagedWebsiteItems = ConvertTo-StringArray -Value $manifest.managedItems.website -Name "managedItems.website"
     LegacyCleanupPaths = ConvertTo-StringArray -Value $manifest.legacyCleanupPaths -Name "legacyCleanupPaths"
   }
@@ -744,12 +744,12 @@ function Invoke-InstalledDocsSectionMigration {
   param(
     [Parameter(Mandatory)][string]$TargetRoot,
     [Parameter(Mandatory)][string]$InstallStamp,
+    [Parameter(Mandatory)][string]$DocsModulePath,
     [switch]$SkipMigration
   )
 
   $docsRoot = Join-Path $TargetRoot "Docs"
-  $docsModulePath = Join-Path $TargetRoot "Scripts\UETools\UEToolSuite.Docs.psm1"
-  if (-not (Test-Path -LiteralPath $docsRoot -PathType Container) -or -not (Test-Path -LiteralPath $docsModulePath -PathType Leaf)) {
+  if (-not (Test-Path -LiteralPath $docsRoot -PathType Container) -or -not (Test-Path -LiteralPath $DocsModulePath -PathType Leaf)) {
     return [pscustomobject]@{
       Status     = "not-applicable"
       Changed    = $false
@@ -768,7 +768,7 @@ function Invoke-InstalledDocsSectionMigration {
     }
   }
 
-  $docsModule = Import-Module -Name $docsModulePath -Force -DisableNameChecking -PassThru
+  $docsModule = Import-Module -Name $DocsModulePath -Force -DisableNameChecking -PassThru
   try {
     $result = & $docsModule { param($repoRoot) Invoke-DocsSectionMigration -ResolvedRepoRoot $repoRoot } $TargetRoot
     $reportPaths = Write-DocsSectionMigrationReport -TargetRoot $TargetRoot -InstallStamp $InstallStamp -MigrationResult $result -Status "completed"
@@ -1574,6 +1574,21 @@ function Merge-WebsitePackageJson {
   }
   else {
     @{}
+  }
+
+  $retiredWebsiteTestCommand = "node --test ./scripts/test-authoring-runtime.cjs"
+  if (
+    $target.ContainsKey("scripts") -and
+    $target["scripts"] -is [hashtable] -and
+    $target["scripts"].ContainsKey("test:unit") -and
+    ([string]$target["scripts"]["test:unit"]).Equals($retiredWebsiteTestCommand, [System.StringComparison]::Ordinal) -and
+    (
+      -not $source.ContainsKey("scripts") -or
+      $source["scripts"] -isnot [hashtable] -or
+      -not $source["scripts"].ContainsKey("test:unit")
+    )
+  ) {
+    $target["scripts"].Remove("test:unit")
   }
 
   $merged = [ordered]@{}
@@ -2620,6 +2635,215 @@ function Remove-LegacyTargetPath {
   }
 }
 
+function Resolve-GlobalCliInstallRoot {
+  param([AllowEmptyString()][string]$RequestedRoot)
+
+  $candidate = $RequestedRoot
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+      throw "Could not resolve the current user's LocalApplicationData directory. Pass -GlobalCliRoot explicitly."
+    }
+    $candidate = Join-Path $localAppData "UEToolSuite"
+  }
+
+  $resolved = [System.IO.Path]::GetFullPath($candidate).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  if ([string]::IsNullOrWhiteSpace($resolved) -or [System.IO.Path]::GetPathRoot($resolved).Equals($resolved, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "GlobalCliRoot must be a dedicated directory, not a drive root: $resolved"
+  }
+  if ((Test-Path -LiteralPath $resolved) -and -not (Test-Path -LiteralPath $resolved -PathType Container)) {
+    throw "GlobalCliRoot exists but is not a directory: $resolved"
+  }
+  return $resolved
+}
+
+function Copy-GlobalCliRuntimeItem {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$StagingRoot,
+    [Parameter(Mandatory)][string]$RelativePath
+  )
+
+  $source = Join-Path $PayloadRoot $RelativePath
+  if (-not (Test-Path -LiteralPath $source)) {
+    throw "Global CLI runtime item is missing from the payload: $RelativePath"
+  }
+  $destination = Join-Path $StagingRoot $RelativePath
+  if (-not (Test-PathInsideRoot -Root $StagingRoot -Path $destination)) {
+    throw "Refusing to install a global CLI item outside its staging directory: $RelativePath"
+  }
+  $parent = Split-Path -Path $destination -Parent
+  New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+}
+
+function Install-GlobalCliRuntime {
+  param(
+    [Parameter(Mandatory)][string]$PayloadRoot,
+    [Parameter(Mandatory)][string]$GlobalRoot,
+    [Parameter(Mandatory)][string]$PayloadVersion,
+    [Parameter(Mandatory)][string[]]$RuntimeItems
+  )
+
+  if ([string]::IsNullOrWhiteSpace($PayloadVersion)) { throw "Payload manifest requires payloadVersion for a global CLI install." }
+  if ($RuntimeItems.Count -eq 0) { throw "Payload manifest requires managedItems.globalCli for a global CLI install." }
+
+  $versionsRoot = Join-Path $GlobalRoot "versions"
+  $versionRoot = Join-Path $versionsRoot $PayloadVersion
+  $operationId = [Guid]::NewGuid().ToString("N")
+  $stagingRoot = Join-Path $GlobalRoot (".staging-" + $PayloadVersion + "-" + $operationId)
+  $rollbackRoot = Join-Path $GlobalRoot (".rollback-" + $PayloadVersion + "-" + $operationId)
+  foreach ($path in @($versionsRoot, $versionRoot, $stagingRoot, $rollbackRoot)) {
+    if (-not (Test-PathInsideRoot -Root $GlobalRoot -Path $path)) { throw "Refusing global CLI operation outside GlobalCliRoot: $path" }
+  }
+
+  New-Item -ItemType Directory -Force -Path $GlobalRoot, $versionsRoot, $stagingRoot | Out-Null
+  try {
+    foreach ($item in $RuntimeItems) {
+      Copy-GlobalCliRuntimeItem -PayloadRoot $PayloadRoot -StagingRoot $stagingRoot -RelativePath $item
+    }
+    foreach ($required in @("Scripts\ue-tools.ps1", "Scripts\UETools\UEToolSuite.Core.psm1", "Scripts\UETools\DocsEditorApiHost.ps1")) {
+      if (-not (Test-Path -LiteralPath (Join-Path $stagingRoot $required) -PathType Leaf)) {
+        throw "Staged global CLI runtime is incomplete; missing $required"
+      }
+    }
+
+    if (Test-Path -LiteralPath $versionRoot) { Move-Item -LiteralPath $versionRoot -Destination $rollbackRoot }
+    try {
+      Move-Item -LiteralPath $stagingRoot -Destination $versionRoot
+    }
+    catch {
+      if (Test-Path -LiteralPath $rollbackRoot) { Move-Item -LiteralPath $rollbackRoot -Destination $versionRoot }
+      throw
+    }
+    if (Test-Path -LiteralPath $rollbackRoot) { Remove-Item -LiteralPath $rollbackRoot -Recurse -Force }
+
+    $binRoot = Join-Path $GlobalRoot "bin"
+    New-Item -ItemType Directory -Force -Path $binRoot | Out-Null
+    $launcherContent = @'
+[CmdletBinding(PositionalBinding = $false)]
+param(
+  [string]$RepoRoot,
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs
+)
+$ErrorActionPreference = "Stop"
+try {
+  $globalRoot = Split-Path -Path $PSScriptRoot -Parent
+  $descriptorPath = Join-Path $globalRoot "current.json"
+  if (-not (Test-Path -LiteralPath $descriptorPath -PathType Leaf)) {
+    throw "Global CLI descriptor is missing. Re-run the UE Tool Suite installer."
+  }
+  $descriptor = Get-Content -LiteralPath $descriptorPath -Raw | ConvertFrom-Json
+  $entrypoint = Join-Path ([string]$descriptor.installRoot) "Scripts\ue-tools.ps1"
+  if ([string]::IsNullOrWhiteSpace([string]$descriptor.installRoot) -or -not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
+    throw "The active global CLI runtime is missing or incomplete. Re-run the UE Tool Suite installer."
+  }
+  if ([string]::IsNullOrWhiteSpace($RepoRoot)) { & $entrypoint @CommandArgs }
+  else { & $entrypoint -RepoRoot $RepoRoot @CommandArgs }
+  if (-not $?) { exit 1 }
+}
+catch {
+  Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+  exit 1
+}
+'@
+    Write-Utf8NoBomFile -Path (Join-Path $binRoot "ue-tools.ps1") -Content $launcherContent
+    Write-Utf8NoBomFile -Path (Join-Path $binRoot "ue-tools.cmd") -Content "@echo off`r`npwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0ue-tools.ps1`" %*`r`nexit /b %ERRORLEVEL%`r`n"
+
+    $descriptor = [ordered]@{
+      schemaVersion = 1
+      version = $PayloadVersion
+      installRoot = $versionRoot
+      updatedAt = [DateTimeOffset]::UtcNow.ToString("o")
+    }
+    $descriptorTemp = Join-Path $GlobalRoot ("current.json.tmp-" + $operationId)
+    Write-Utf8NoBomFile -Path $descriptorTemp -Content (($descriptor | ConvertTo-Json -Depth 4) + "`n")
+    Move-Item -LiteralPath $descriptorTemp -Destination (Join-Path $GlobalRoot "current.json") -Force
+  }
+  finally {
+    if (Test-Path -LiteralPath $stagingRoot) { Remove-Item -LiteralPath $stagingRoot -Recurse -Force }
+  }
+
+  return [pscustomobject]@{
+    GlobalRoot = $GlobalRoot
+    InstallRoot = $versionRoot
+    LauncherPath = Join-Path $GlobalRoot "bin\ue-tools.ps1"
+  }
+}
+
+function Remove-ProjectLocalGlobalRuntimeItems {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string[]]$RuntimeItems,
+    [Parameter(Mandatory)][string]$BackupRoot
+  )
+
+  foreach ($relativePath in @($RuntimeItems | Where-Object { $_ -ne "Scripts/ue-tools.ps1" })) {
+    $target = Join-Path $TargetRoot $relativePath
+    if (-not (Test-Path -LiteralPath $target)) { continue }
+    if (-not (Test-PathInsideRoot -Root $TargetRoot -Path $target)) { throw "Refusing to remove project runtime outside target root: $target" }
+    Copy-ToBackup -TargetRoot $TargetRoot -RelativePath $relativePath -ExistingPath $target -BackupRoot $BackupRoot
+    Remove-Item -LiteralPath $target -Recurse -Force
+  }
+
+  foreach ($relativeDirectory in @("Scripts\Docs\VSCodeBridge", "Scripts\Docs", "Scripts\Unreal", "Scripts\UETools")) {
+    $directory = Join-Path $TargetRoot $relativeDirectory
+    if ((Test-Path -LiteralPath $directory -PathType Container) -and @(Get-ChildItem -LiteralPath $directory -Force).Count -eq 0) {
+      Remove-Item -LiteralPath $directory -Force
+    }
+  }
+}
+
+function Write-GlobalCliProjectShim {
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)]$GlobalInstall,
+    [Parameter(Mandatory)][string]$PayloadVersion,
+    [Parameter(Mandatory)][string]$BackupRoot
+  )
+
+  $shimPath = Join-Path $TargetRoot "Scripts\ue-tools.ps1"
+  if (Test-Path -LiteralPath $shimPath) {
+    Copy-ToBackup -TargetRoot $TargetRoot -RelativePath "Scripts\ue-tools.ps1" -ExistingPath $shimPath -BackupRoot $BackupRoot
+  }
+  $markerPath = Join-Path $TargetRoot ".ue-tools\global-cli.json"
+  $marker = [ordered]@{
+    schemaVersion = 1
+    mode = "global"
+    version = $PayloadVersion
+    globalRoot = $GlobalInstall.GlobalRoot
+    installRoot = $GlobalInstall.InstallRoot
+    launcherPath = $GlobalInstall.LauncherPath
+    updatedAt = [DateTimeOffset]::UtcNow.ToString("o")
+  }
+  Write-Utf8NoBomFile -Path $markerPath -Content (($marker | ConvertTo-Json -Depth 4) + "`n")
+  $shimContent = @'
+# UE Tool Suite global project shim
+[CmdletBinding(PositionalBinding = $false)]
+param(
+  [string]$RepoRoot,
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs
+)
+$ErrorActionPreference = "Stop"
+try {
+  $projectRoot = Split-Path -Path $PSScriptRoot -Parent
+  $markerPath = Join-Path $projectRoot ".ue-tools\global-cli.json"
+  if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw "Global CLI project marker is missing. Re-run the UE Tool Suite installer." }
+  $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+  $launcher = [string]$marker.launcherPath
+  if ([string]::IsNullOrWhiteSpace($launcher) -or -not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "Global CLI launcher is missing. Re-run the UE Tool Suite installer." }
+  $effectiveRepoRoot = if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $projectRoot } else { $RepoRoot }
+  & $launcher -RepoRoot $effectiveRepoRoot @CommandArgs
+  if (-not $?) { exit 1 }
+}
+catch {
+  Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+  exit 1
+}
+'@
+  Write-Utf8NoBomFile -Path $shimPath -Content $shimContent
+}
+
 $resolvedPayloadRoot = if ([string]::IsNullOrWhiteSpace($PayloadRoot)) {
   Resolve-ExistingDirectory -Path (Get-DefaultPayloadRoot) -Name "PayloadRoot"
 }
@@ -2641,6 +2865,19 @@ if (-not $NoBackup) { Info "Backup root for replaced paths: $backupRoot" }
  
 $payloadManifest = Read-UEToolSuitePayloadManifest -PayloadRoot $resolvedPayloadRoot
 Info "Payload manifest: $($payloadManifest.ManifestPath)"
+
+$resolvedGlobalCliRoot = Resolve-GlobalCliInstallRoot -RequestedRoot $GlobalCliRoot
+Info "Global CLI root: $resolvedGlobalCliRoot"
+$globalCliInstall = Install-GlobalCliRuntime `
+  -PayloadRoot $resolvedPayloadRoot `
+  -GlobalRoot $resolvedGlobalCliRoot `
+  -PayloadVersion $payloadManifest.PayloadVersion `
+  -RuntimeItems $payloadManifest.ManagedGlobalCliItems
+Remove-ProjectLocalGlobalRuntimeItems `
+  -TargetRoot $resolvedTargetRoot `
+  -RuntimeItems $payloadManifest.ManagedGlobalCliItems `
+  -BackupRoot $backupRoot
+Ok "Installed shared CLI runtime: $($globalCliInstall.InstallRoot)"
 
 $resolvedWebsiteInstallMode = $null
 $websiteRequestedModeWasExplicit = $PSBoundParameters.ContainsKey("WebsiteInstallMode")
@@ -2676,7 +2913,11 @@ if ((-not $SkipWebsite) -or (-not $SkipDocs)) {
 }
 
 $managedItems = New-Object System.Collections.Generic.List[string]
-foreach ($item in @($payloadManifest.ManagedBaseItems)) {
+$managedBaseItems = $payloadManifest.ManagedProjectBaseItems
+if (@($managedBaseItems).Count -eq 0) {
+  throw "Payload manifest requires managedItems.projectBase for a global CLI install."
+}
+foreach ($item in @($managedBaseItems)) {
   [void]$managedItems.Add($item)
 }
 
@@ -2690,18 +2931,6 @@ if (-not $SkipAITools) {
     [void]$managedItems.Add($item)
   }
 }
-if (-not $SkipTests) {
-  foreach ($item in @($payloadManifest.ManagedTestsItems)) {
-    [void]$managedItems.Add($item)
-  }
-}
-
-if ((-not $SkipWebsite) -or (-not $SkipDocs)) {
-  foreach ($item in @($payloadManifest.ManagedDocsToolsItems)) {
-    [void]$managedItems.Add($item)
-  }
-}
-
 if ($resolvedWebsiteInstallMode -in @("merge_existing", "replace_existing")) {
   $existingWebsitePath = Join-Path $resolvedTargetRoot "website"
   if (Test-Path -LiteralPath $existingWebsitePath) {
@@ -2733,6 +2962,14 @@ foreach ($item in @($managedItems.ToArray() | Sort-Object -Unique)) {
   }
 }
 
+Write-GlobalCliProjectShim `
+  -TargetRoot $resolvedTargetRoot `
+  -GlobalInstall $globalCliInstall `
+  -PayloadVersion $payloadManifest.PayloadVersion `
+  -BackupRoot $backupRoot
+[void]$installed.Add("Scripts/ue-tools.ps1")
+[void]$installed.Add(".ue-tools/global-cli.json")
+
 if (-not $SkipWebsite -and $resolvedWebsiteInstallMode -ne "preserve_existing") {
   $websiteUpdateResult = Invoke-ManagedWebsiteUpdate `
     -PayloadRoot $resolvedPayloadRoot `
@@ -2761,6 +2998,7 @@ if (-not $SkipDocs) {
   $docsSectionMigration = Invoke-InstalledDocsSectionMigration `
     -TargetRoot $resolvedTargetRoot `
     -InstallStamp $installStamp `
+    -DocsModulePath (Join-Path $globalCliInstall.InstallRoot "Scripts\UETools\UEToolSuite.Docs.psm1") `
     -SkipMigration:$SkipDocsSectionMigration
   if ($docsSectionMigration.ReportPath) {
     Info "Docs section migration report: $($docsSectionMigration.ReportPath)"
@@ -2823,6 +3061,16 @@ if (-not $NoLegacyCleanup) {
   }
 }
 
+if (-not $SkipArtSourceTools) {
+  foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
+    $artSourcePath = Join-Path $resolvedTargetRoot $relativePath
+    if (-not (Test-Path -LiteralPath $artSourcePath -PathType Container)) {
+      New-Item -ItemType Directory -Path $artSourcePath -Force | Out-Null
+    }
+  }
+  Info "ArtSource template layout ready: ArtSource\_Template"
+}
+
 Ok "Installed/updated UE tool suite paths: $($installed.Count)"
 
 if ($RunInit) {
@@ -2839,6 +3087,7 @@ if ($RunInit) {
   if ($SkipShellAliases) { $initArgs += "-SkipShellAliases" }
   if ($SkipLfsPull) { $initArgs += "-SkipLfsPull" }
   if ($SkipOptionalToolSetup) { $initArgs += "-SkipOptionalToolSetup" }
+  if ($SkipArtSourceTools) { $initArgs += "-SkipArtSourceTools" }
   if ($SkipDocsSetup) { $initArgs += "-SkipDocsSetup" }
   if ($SkipDocsSectionMigration) { $initArgs += "-SkipDocsSectionMigration" }
   if ($SkipDocsNpmInstall) { $initArgs += "-SkipDocsNpmInstall" }

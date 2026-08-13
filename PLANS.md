@@ -427,3 +427,110 @@ Keep runtime cleanup ownership-safe: only remove the runtime descriptor when it 
 
 - The live `cppCozyRPG` runtime still needs end-to-end validation after install to prove the served bundle matches the fixed source and the supported launcher path keeps the API alive.
 - If the user’s prior `localhost:3000` server was started outside the supported command path, the final live diagnosis must call that out explicitly instead of attributing the failure to the source checkout alone.
+
+---
+
+## Plan: Per-User Global CLI Cutover
+
+### Goal
+
+Store the reusable PowerShell runtime once per Windows user for every installation while keeping each Unreal project's Docs content, Docusaurus website, Git hooks, Git metadata, and project configuration local.
+
+### Non-goals
+
+- Do not globalize the Docusaurus website, its dependencies, themes, or project Docs content.
+- Do not retain a second project-local runtime installation mode.
+- Do not add simultaneous multi-project docs authoring or dynamic editor API ports. A second project must fail clearly when the fixed API port belongs to another project.
+- Keep payload cleanup bounded to excluding repository test suites and generated test output; do not expand into unrelated payload reclassification.
+- Do not add a machine-wide elevated installation in this change.
+
+### Current limitation
+
+- The public entrypoint and its modules are copied into every target project under `Scripts/`.
+- PowerShell aliases, Git aliases, hook helpers, and Init assume `Scripts/ue-tools.ps1` is a complete project-local runtime.
+- The reusable CLI implementation cannot currently be updated once and shared by multiple Unreal projects.
+
+### Invariants
+
+- Global installation is per-user and requires no elevation.
+- The global runtime is versioned under LocalAppData and selected through an atomically written current-version descriptor.
+- A project using the global runtime keeps a small forwarding shim at `Scripts/ue-tools.ps1`, so existing hooks and direct entrypoints remain compatible.
+- Repository resolution still comes from explicit `-RepoRoot` or the active Git working tree; global code location never becomes the project root.
+- Website and Docs mutations remain confined to the resolved project.
+- Existing project-local installs migrate safely to the global runtime layout.
+- Switching an existing project to global mode removes only known suite-owned runtime files and preserves project-owned files.
+
+### Files and boundaries
+
+| Boundary | Files expected to change | Why |
+|---|---|---|
+| Installer and manifest | `Install-UEToolSuite.ps1`, `payload/ue-tool-suite.manifest.json` | Install the versioned global runtime, write stable launchers, and separate reusable runtime from project payload ownership |
+| Project/global entrypoints | `payload/Scripts/ue-tools.ps1`, new global/project launcher templates or installer helpers | Preserve direct, hook, Git-alias, and shell-alias invocation while dispatching to the shared runtime |
+| Runtime integration | PowerShell modules under `payload/Scripts/UETools/` and hook helpers as narrowly required | Remove assumptions that reusable modules physically live in the active project |
+| GUI | `src/UEToolSuiteInstaller.Gui/Program.cs` | Use the global runtime model without exposing a redundant install-mode choice |
+| Tests | installer, upgrade, docs, and packaging suites under `Tests/` and `payload/Scripts/Tests/` | Prove global reuse, project isolation, migration, and compatibility |
+| Documentation | README, maintainer, architecture, release, and manual-test docs | Explain install modes, storage, version selection, and limitations |
+
+### Milestones
+
+- [x] Add failing global-install and shared-launcher regression cases.
+- [x] Implement atomic per-user version installation and stable launcher discovery.
+- [x] Install project-local content plus a forwarding shim in global mode.
+- [x] Preserve aliases, hooks, Init, Docs API launch, and explicit `-RepoRoot` behavior.
+- [x] Add the GUI option and update documentation.
+- [x] Run targeted and cross-boundary validation.
+- [x] Review the final diff for unrelated/generated changes.
+
+### Decisions
+
+| Decision | Reason | Alternatives rejected |
+|---|---|---|
+| Use `%LOCALAPPDATA%\UEToolSuite` by default | Per-user storage avoids elevation and works across multiple projects | A Program Files installation adds administrative and multi-user complexity |
+| Keep version directories plus a stable launcher | Updates can be selected atomically and running processes retain their versioned paths | Overwriting one mutable runtime makes rollback and in-use updates unsafe |
+| Keep a project-local forwarding shim | Existing Git hooks, Git aliases, and direct script paths continue to work | Requiring PATH-only invocation would break non-interactive hooks and existing project contracts |
+| Keep the website and Docs project-local | This matches Docusaurus's project model and preserves independent dependencies and customization | A global multi-project Docusaurus host would be a much larger architecture migration |
+| Keep one fixed editor API port | Concurrent docs editing is not required; a clear ownership error is sufficient | Dynamic ports add lifecycle and browser-discovery work without current product value |
+| Keep repository tests source-only | Tests validate the suite from this repository and do not belong in every Unreal project or public installer bundle | Project-local test payload duplicates maintainer infrastructure and bloats installations |
+| Create the ArtSource layout by default | New projects should be ready for `ue-tools art`; only the dedicated ArtSource skip option should disable this project-local setup | Treating a missing folder or the general optional docs setup switch as an implicit ArtSource opt-out |
+
+### Validation
+
+- A fresh install uses the global runtime and project shim by default.
+- First global install creates the versioned runtime, current descriptor, stable launcher, and project shim.
+- A second project reuses the same global version and independently resolves its own repository root.
+- Paths containing spaces work for direct, wrapped, hook, Git-alias, and PowerShell-alias invocation.
+- Updating an existing project-local install backs up/removes only known runtime files and preserves project-owned files.
+- Missing, corrupt, or stale global descriptors fail with repair instructions rather than falling back to another project.
+- Docs API health continues to report and enforce the active project's repository and Docs roots.
+- A second docs authoring start reports that the fixed API port belongs to another project and does not adopt or stop it.
+- Installer, upgrade compatibility, docs-tools, packaging contracts, website typecheck/build, and GUI publish checks pass.
+
+Validation completed for this focused change:
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| PowerShell parser checks for installer, Init, and hook scripts | Passed | No parser errors |
+| `dotnet build src/UEToolSuiteInstaller.Gui/UEToolSuiteInstaller.Gui.csproj --configuration Release` | Passed | 0 warnings, 0 errors |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=535 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=202 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name upgrade-compatibility -FailFast` | Passed | `PASS=70 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name shell-aliases -FailFast` | Passed | `PASS=43 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name init-repo-tool-readiness -FailFast` | Passed | `PASS=60 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name new-artsource-path -FailFast` | Passed | `PASS=26 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name docs-tools -FailFast` | Passed on clean rerun | `PASS=652 FAIL=0 WARN=0 SKIP=1` |
+| Direct global `-RunInit` smoke case with spaces in project/global paths | Passed | Hook self-test and repo initialization completed |
+| Clean install and retired-test upgrade cleanup | Passed | PowerShell and website tests absent; suite-owned legacy tests removed; project-owned `Scripts/Tests` file preserved |
+| Default and skipped ArtSource install/init cases | Passed | Canonical template created by default; `-SkipArtSourceTools` leaves it absent |
+| Rebuilt single-file installer extraction smoke | Passed | Installer remained running, manifest extracted, `payload/Scripts/Tests` absent, no .NET runtime errors |
+| `npm run build` in `payload/website` | Passed | Docusaurus client and server compiled successfully |
+| `npm run typecheck` in `payload/website` | Known configuration conflict | Pinned compiler rejects `ignoreDeprecations: "6.0"`; value intentionally preserved for the VS Code language service |
+
+### Rollback/recovery
+
+The installer stages a complete version directory before switching the current-version descriptor. Project migration uses the existing backup mechanism before replacing local runtime files with the forwarding shim.
+
+### Remaining risks
+
+- Global uninstall is not part of this first install-mode feature.
+- Dynamic docs API ports and simultaneous multi-project authoring remain intentionally out of scope; the existing fixed-port ownership error is the supported behavior.
+- The optional background docs lifecycle cases remain skipped unless `UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS=1`; fixed-port ownership behavior is unchanged by this cutover.

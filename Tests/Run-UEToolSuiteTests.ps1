@@ -103,6 +103,7 @@ function New-InstalledToolSuiteFixture {
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
     "-TargetRepoRoot", $fixtureRepo,
+    "-GlobalCliRoot", (Join-Path $scratchRoot "global cli root with spaces"),
     "-AdoptExistingWebsite",
     "-RunInit",
     "-InitNonInteractive",
@@ -117,6 +118,25 @@ function New-InstalledToolSuiteFixture {
   & pwsh @installArgs 2>&1 | ForEach-Object { Write-ChildOutputLine -Text "$_" }
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to prepare installed fixture for $($Entry.Name). Installer exit code: $LASTEXITCODE"
+  }
+
+  # Repository tests are intentionally excluded from real installs. Hydrate only
+  # source test files into this disposable fixture so installed-runtime suites
+  # can still exercise the public project layout.
+  $sourceTestsRoot = Join-Path $repoRoot "payload\Scripts\Tests"
+  $fixtureTestsRoot = Join-Path $fixtureRepo "Scripts\Tests"
+  New-Item -ItemType Directory -Path $fixtureTestsRoot -Force | Out-Null
+  foreach ($sourceFile in @(Get-ChildItem -LiteralPath $sourceTestsRoot -File -Recurse)) {
+    $relativeTestPath = [System.IO.Path]::GetRelativePath($sourceTestsRoot, $sourceFile.FullName)
+    $pathSegments = @($relativeTestPath -split '[\\/]')
+    if (@($pathSegments | Where-Object { $_ -like "*Results" }).Count -gt 0) {
+      continue
+    }
+
+    $fixtureTestPath = Join-Path $fixtureTestsRoot $relativeTestPath
+    $fixtureTestParent = Split-Path -Path $fixtureTestPath -Parent
+    New-Item -ItemType Directory -Path $fixtureTestParent -Force | Out-Null
+    Copy-Item -LiteralPath $sourceFile.FullName -Destination $fixtureTestPath -Force
   }
 
   & git -C $fixtureRepo add -A | Out-Null
