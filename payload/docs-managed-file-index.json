@@ -111,7 +111,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/Pipeline/README.md",
       "category": "docs",
-      "sha256": "9ddf2820c47ce494053e923365c70a9ee67074ef998fad51a3419b875e2f35c2"
+      "sha256": "9226a1747f4bb00841ad4a6d9af6988b141a6e50aa974a9c84c5f7073dd4c431"
     },
     {
       "relativePath": "Docs/WorkflowStandards/README.md",
@@ -121,7 +121,12 @@
     {
       "relativePath": "Docs/WorkflowStandards/Setup.md",
       "category": "docs",
-      "sha256": "7e57fe19d9d16ead1aad6bd34a85d2af9e1769b8e877442f893c87384f730e41"
+      "sha256": "a9ee21562448fad9fff89846c033b73ffcaee77719ae24b3bf8e5b30123bb9e0"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/Workspace-Settings-Sync.md",
+      "category": "docs",
+      "sha256": "a9fbe2fe7a3e1dbc4ba44d0de2e29e90df3eaddce0cf5a0e5194dbef23038679"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Testing.md",

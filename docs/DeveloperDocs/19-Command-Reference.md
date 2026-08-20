@@ -76,3 +76,6 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 | unmanaged theme apply | `Website is unmanaged.` guidance | `Test-DocsTools.ps1` Case `1e`, `UEToolSuite.Docs.psm1:704` |
 | API port conflict | `Docs editor API port ... is already in use` | `Start-DocsEditorApiBackground` |
 | bad docs command | `Unknown ue-tools docs command` | `Invoke-DocsToolsMain` |
+## Workspace settings
+
+`ue-tools settings sync`, `capture`, `adopt`, and `status` manage explicit `.code-workspace` ownership. Both `ue-tools` and `ue` launchers expose the domain. Use command-first help, for example `ue settings capture help`. See `payload/Docs/WorkflowStandards/Workspace-Settings-Sync.md` for schema, storage, conflict, and recovery details.

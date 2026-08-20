@@ -1,3 +1,8 @@
+$settingsModulePath = Join-Path $PSScriptRoot 'UEToolSuite.Settings.psm1'
+if (Test-Path -LiteralPath $settingsModulePath -PathType Leaf) {
+  Import-Module -Name $settingsModulePath -Global -DisableNameChecking
+}
+
 function Get-UEToolSuiteUnrealChangedFileRecords {
   [CmdletBinding()]
   param(
@@ -239,163 +244,6 @@ function Get-UEToolSuiteUnrealRegistryPropertyString {
   return $null
 }
 
-function Test-UEToolSuiteJsonObjectProperty {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$Object,
-    [Parameter(Mandatory)][string]$Name
-  )
-
-  return ($null -ne $Object.PSObject.Properties[$Name])
-}
-
-function Get-UEToolSuiteJsonObjectPropertyValue {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$Object,
-    [Parameter(Mandatory)][string]$Name
-  )
-
-  $property = $Object.PSObject.Properties[$Name]
-  if ($property) { return $property.Value }
-  return $null
-}
-
-function Set-UEToolSuiteJsonObjectPropertyValue {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$Object,
-    [Parameter(Mandatory)][string]$Name,
-    [AllowNull()]$Value
-  )
-
-  if (Test-UEToolSuiteJsonObjectProperty -Object $Object -Name $Name) {
-    $Object.$Name = $Value
-    return
-  }
-
-  $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
-}
-
-function Test-UEToolSuiteJsonObject {
-  [CmdletBinding()]
-  param([AllowNull()]$Value)
-
-  return ($null -ne $Value -and $Value -is [pscustomobject])
-}
-
-function Merge-UEToolSuiteMissingJsonObjectProperties {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$Target,
-    [Parameter(Mandatory)]$Source
-  )
-
-  foreach ($sourceProperty in @($Source.PSObject.Properties)) {
-    $targetValue = Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name
-    if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $sourceProperty.Name)) {
-      Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name -Value $sourceProperty.Value
-      continue
-    }
-
-    if ((Test-UEToolSuiteJsonObject -Value $targetValue) -and (Test-UEToolSuiteJsonObject -Value $sourceProperty.Value)) {
-      Merge-UEToolSuiteMissingJsonObjectProperties -Target $targetValue -Source $sourceProperty.Value
-    }
-  }
-}
-
-function Merge-UEToolSuiteStringArrayProperty {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$Target,
-    [Parameter(Mandatory)]$Source,
-    [Parameter(Mandatory)][string]$PropertyName
-  )
-
-  if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Source -Name $PropertyName)) { return }
-
-  $existing = @()
-  if (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $PropertyName) {
-    $existing = @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $PropertyName)
-  }
-
-  $merged = @($existing + @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Source -Name $PropertyName)) |
-    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-    Select-Object -Unique
-
-  Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $PropertyName -Value @($merged)
-}
-
-function Merge-UEToolSuiteNamedObjectArrayProperty {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$Target,
-    [Parameter(Mandatory)]$Source,
-    [Parameter(Mandatory)][string]$ArrayPropertyName,
-    [Parameter(Mandatory)][string]$KeyPropertyName
-  )
-
-  if (-not (Test-UEToolSuiteJsonObjectProperty -Object $Source -Name $ArrayPropertyName)) { return }
-
-  $targetItems = @()
-  if (Test-UEToolSuiteJsonObjectProperty -Object $Target -Name $ArrayPropertyName) {
-    $targetItems = @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName)
-  }
-
-  $targetKeys = @{}
-  foreach ($item in $targetItems) {
-    $key = [string](Get-UEToolSuiteJsonObjectPropertyValue -Object $item -Name $KeyPropertyName)
-    if (-not [string]::IsNullOrWhiteSpace($key)) {
-      $targetKeys[$key] = $true
-    }
-  }
-
-  $mergedItems = @($targetItems)
-  foreach ($sourceItem in @(Get-UEToolSuiteJsonObjectPropertyValue -Object $Source -Name $ArrayPropertyName)) {
-    $sourceKey = [string](Get-UEToolSuiteJsonObjectPropertyValue -Object $sourceItem -Name $KeyPropertyName)
-    if ([string]::IsNullOrWhiteSpace($sourceKey) -or $targetKeys.ContainsKey($sourceKey)) {
-      continue
-    }
-
-    $mergedItems += $sourceItem
-    $targetKeys[$sourceKey] = $true
-  }
-
-  Set-UEToolSuiteJsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName -Value @($mergedItems)
-}
-
-function Merge-UEToolSuiteVSCodeWorkspaceJson {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)]$GeneratedWorkspace,
-    [Parameter(Mandatory)]$PreviousWorkspace
-  )
-
-  Merge-UEToolSuiteMissingJsonObjectProperties -Target $GeneratedWorkspace -Source $PreviousWorkspace
-  Merge-UEToolSuiteNamedObjectArrayProperty -Target $GeneratedWorkspace -Source $PreviousWorkspace -ArrayPropertyName "folders" -KeyPropertyName "path"
-
-  $generatedExtensions = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "extensions"
-  $previousExtensions = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "extensions"
-  if ((Test-UEToolSuiteJsonObject -Value $generatedExtensions) -and (Test-UEToolSuiteJsonObject -Value $previousExtensions)) {
-    Merge-UEToolSuiteStringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "recommendations"
-    Merge-UEToolSuiteStringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "unwantedRecommendations"
-  }
-
-  $generatedTasks = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "tasks"
-  $previousTasks = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "tasks"
-  if ((Test-UEToolSuiteJsonObject -Value $generatedTasks) -and (Test-UEToolSuiteJsonObject -Value $previousTasks)) {
-    Merge-UEToolSuiteNamedObjectArrayProperty -Target $generatedTasks -Source $previousTasks -ArrayPropertyName "tasks" -KeyPropertyName "label"
-  }
-
-  $generatedLaunch = Get-UEToolSuiteJsonObjectPropertyValue -Object $GeneratedWorkspace -Name "launch"
-  $previousLaunch = Get-UEToolSuiteJsonObjectPropertyValue -Object $PreviousWorkspace -Name "launch"
-  if ((Test-UEToolSuiteJsonObject -Value $generatedLaunch) -and (Test-UEToolSuiteJsonObject -Value $previousLaunch)) {
-    Merge-UEToolSuiteNamedObjectArrayProperty -Target $generatedLaunch -Source $previousLaunch -ArrayPropertyName "configurations" -KeyPropertyName "name"
-  }
-
-  return $GeneratedWorkspace
-}
-
 function Test-UEToolSuiteUnrealGitTrackedPath {
   [CmdletBinding()]
   param([string]$RelativePath)
@@ -443,13 +291,11 @@ function New-UEToolSuiteUnrealProjectFileArtifactSnapshot {
 
   $workspaceSnapshots = @()
   foreach ($workspacePath in @(Get-UEToolSuiteUnrealWorkspaceProtectionPaths -ProjectContext $ProjectContext -WorkspacePathOverride $WorkspacePathOverride)) {
-    if (-not (Test-Path -LiteralPath $workspacePath -PathType Leaf)) {
-      continue
-    }
-
+    $exists = Test-Path -LiteralPath $workspacePath -PathType Leaf
     $workspaceSnapshots += [pscustomobject]@{
       Path = $workspacePath
-      Content = Get-Content -LiteralPath $workspacePath -Raw
+      Existed = $exists
+      Content = if ($exists) { Get-Content -LiteralPath $workspacePath -Raw } else { $null }
     }
   }
 
@@ -482,6 +328,7 @@ function ConvertTo-UEToolSuiteUnrealBuildParameters {
     "nobuild" = "NoBuild"
     "noninteractive" = "NonInteractive"
     "dryrun" = "DryRun"
+    "skipsettingssync" = "SkipSettingsSync"
   }
   $valueMap = @{
     "oldrev" = "OldRev"
@@ -572,14 +419,6 @@ Export-ModuleMember -Function `
   Test-UEToolSuiteUnrealEngineRoot, `
   Resolve-UEToolSuiteUnrealPathRelativeTo, `
   Get-UEToolSuiteUnrealRegistryPropertyString, `
-  Test-UEToolSuiteJsonObjectProperty, `
-  Get-UEToolSuiteJsonObjectPropertyValue, `
-  Set-UEToolSuiteJsonObjectPropertyValue, `
-  Test-UEToolSuiteJsonObject, `
-  Merge-UEToolSuiteMissingJsonObjectProperties, `
-  Merge-UEToolSuiteStringArrayProperty, `
-  Merge-UEToolSuiteNamedObjectArrayProperty, `
-  Merge-UEToolSuiteVSCodeWorkspaceJson, `
   Test-UEToolSuiteUnrealGitTrackedPath, `
   Get-UEToolSuiteUnrealWorkspaceProtectionPaths, `
   New-UEToolSuiteUnrealProjectFileArtifactSnapshot, `
@@ -608,6 +447,7 @@ param(
   [switch]$NoBuild,         # Skip building
   [switch]$NonInteractive,  # Tells the script to avoid prompting the user
   [switch]$DryRun,          # Validate detection/prompt flow without cleanup/build
+  [switch]$SkipSettingsSync,# Leave regenerated workspace settings untouched
 
   # Optional: explicitly point at a repo root when running from outside the UE project
   [string]$RepoRoot,
@@ -1596,233 +1436,61 @@ function New-ProjectFileArtifactSnapshot {
   }
 }
 
-function Test-JsonObjectProperty {
-  param(
-    [Parameter(Mandatory)]$Object,
-    [Parameter(Mandatory)][string]$Name
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Test-UEToolSuiteJsonObjectProperty" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Test-UEToolSuiteJsonObjectProperty -Object $Object -Name $Name)
-  }
-
-  return ($null -ne $Object.PSObject.Properties[$Name])
-}
-
-function Get-JsonObjectPropertyValue {
-  param(
-    [Parameter(Mandatory)]$Object,
-    [Parameter(Mandatory)][string]$Name
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Get-UEToolSuiteJsonObjectPropertyValue" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Get-UEToolSuiteJsonObjectPropertyValue -Object $Object -Name $Name)
-  }
-
-  $property = $Object.PSObject.Properties[$Name]
-  if ($property) { return $property.Value }
-  return $null
-}
-
-function Set-JsonObjectPropertyValue {
-  param(
-    [Parameter(Mandatory)]$Object,
-    [Parameter(Mandatory)][string]$Name,
-    [AllowNull()]$Value
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Set-UEToolSuiteJsonObjectPropertyValue" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    Set-UEToolSuiteJsonObjectPropertyValue -Object $Object -Name $Name -Value $Value
-    return
-  }
-
-  if (Test-JsonObjectProperty -Object $Object -Name $Name) {
-    $Object.$Name = $Value
-    return
-  }
-
-  $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
-}
-
-function Test-IsJsonObject {
-  param([AllowNull()]$Value)
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Test-UEToolSuiteJsonObject" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Test-UEToolSuiteJsonObject -Value $Value)
-  }
-  return ($null -ne $Value -and $Value -is [pscustomobject])
-}
-
-function Merge-MissingJsonObjectProperties {
-  param(
-    [Parameter(Mandatory)]$Target,
-    [Parameter(Mandatory)]$Source
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Merge-UEToolSuiteMissingJsonObjectProperties" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    Merge-UEToolSuiteMissingJsonObjectProperties -Target $Target -Source $Source
-    return
-  }
-
-  foreach ($sourceProperty in @($Source.PSObject.Properties)) {
-    $targetValue = Get-JsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name
-    if (-not (Test-JsonObjectProperty -Object $Target -Name $sourceProperty.Name)) {
-      Set-JsonObjectPropertyValue -Object $Target -Name $sourceProperty.Name -Value $sourceProperty.Value
-      continue
-    }
-
-    if ((Test-IsJsonObject -Value $targetValue) -and (Test-IsJsonObject -Value $sourceProperty.Value)) {
-      Merge-MissingJsonObjectProperties -Target $targetValue -Source $sourceProperty.Value
-    }
-  }
-}
-
-function Merge-StringArrayProperty {
-  param(
-    [Parameter(Mandatory)]$Target,
-    [Parameter(Mandatory)]$Source,
-    [Parameter(Mandatory)][string]$PropertyName
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Merge-UEToolSuiteStringArrayProperty" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    Merge-UEToolSuiteStringArrayProperty -Target $Target -Source $Source -PropertyName $PropertyName
-    return
-  }
-
-  if (-not (Test-JsonObjectProperty -Object $Source -Name $PropertyName)) { return }
-
-  $existing = @()
-  if (Test-JsonObjectProperty -Object $Target -Name $PropertyName) {
-    $existing = @(Get-JsonObjectPropertyValue -Object $Target -Name $PropertyName)
-  }
-
-  $merged = @($existing + @(Get-JsonObjectPropertyValue -Object $Source -Name $PropertyName)) |
-    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-    Select-Object -Unique
-
-  Set-JsonObjectPropertyValue -Object $Target -Name $PropertyName -Value @($merged)
-}
-
-function Merge-NamedObjectArrayProperty {
-  param(
-    [Parameter(Mandatory)]$Target,
-    [Parameter(Mandatory)]$Source,
-    [Parameter(Mandatory)][string]$ArrayPropertyName,
-    [Parameter(Mandatory)][string]$KeyPropertyName
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Merge-UEToolSuiteNamedObjectArrayProperty" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    Merge-UEToolSuiteNamedObjectArrayProperty -Target $Target -Source $Source -ArrayPropertyName $ArrayPropertyName -KeyPropertyName $KeyPropertyName
-    return
-  }
-
-  if (-not (Test-JsonObjectProperty -Object $Source -Name $ArrayPropertyName)) { return }
-
-  $targetItems = @()
-  if (Test-JsonObjectProperty -Object $Target -Name $ArrayPropertyName) {
-    $targetItems = @(Get-JsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName)
-  }
-
-  $targetKeys = @{}
-  foreach ($item in $targetItems) {
-    $key = [string](Get-JsonObjectPropertyValue -Object $item -Name $KeyPropertyName)
-    if (-not [string]::IsNullOrWhiteSpace($key)) {
-      $targetKeys[$key] = $true
-    }
-  }
-
-  $mergedItems = @($targetItems)
-  foreach ($sourceItem in @(Get-JsonObjectPropertyValue -Object $Source -Name $ArrayPropertyName)) {
-    $sourceKey = [string](Get-JsonObjectPropertyValue -Object $sourceItem -Name $KeyPropertyName)
-    if ([string]::IsNullOrWhiteSpace($sourceKey) -or $targetKeys.ContainsKey($sourceKey)) {
-      continue
-    }
-
-    $mergedItems += $sourceItem
-    $targetKeys[$sourceKey] = $true
-  }
-
-  Set-JsonObjectPropertyValue -Object $Target -Name $ArrayPropertyName -Value @($mergedItems)
-}
-
-function Merge-VSCodeWorkspaceJson {
-  param(
-    [Parameter(Mandatory)]$GeneratedWorkspace,
-    [Parameter(Mandatory)]$PreviousWorkspace
-  )
-
-  [void](Import-UEToolSuiteCoreModule)
-  $moduleFn = Get-Command -Name "Merge-UEToolSuiteVSCodeWorkspaceJson" -ErrorAction SilentlyContinue
-  if ($moduleFn) {
-    return (Merge-UEToolSuiteVSCodeWorkspaceJson -GeneratedWorkspace $GeneratedWorkspace -PreviousWorkspace $PreviousWorkspace)
-  }
-
-  Merge-MissingJsonObjectProperties -Target $GeneratedWorkspace -Source $PreviousWorkspace
-
-  Merge-NamedObjectArrayProperty -Target $GeneratedWorkspace -Source $PreviousWorkspace -ArrayPropertyName "folders" -KeyPropertyName "path"
-
-  $generatedExtensions = Get-JsonObjectPropertyValue -Object $GeneratedWorkspace -Name "extensions"
-  $previousExtensions = Get-JsonObjectPropertyValue -Object $PreviousWorkspace -Name "extensions"
-  if ((Test-IsJsonObject -Value $generatedExtensions) -and (Test-IsJsonObject -Value $previousExtensions)) {
-    Merge-StringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "recommendations"
-    Merge-StringArrayProperty -Target $generatedExtensions -Source $previousExtensions -PropertyName "unwantedRecommendations"
-  }
-
-  $generatedTasks = Get-JsonObjectPropertyValue -Object $GeneratedWorkspace -Name "tasks"
-  $previousTasks = Get-JsonObjectPropertyValue -Object $PreviousWorkspace -Name "tasks"
-  if ((Test-IsJsonObject -Value $generatedTasks) -and (Test-IsJsonObject -Value $previousTasks)) {
-    Merge-NamedObjectArrayProperty -Target $generatedTasks -Source $previousTasks -ArrayPropertyName "tasks" -KeyPropertyName "label"
-  }
-
-  $generatedLaunch = Get-JsonObjectPropertyValue -Object $GeneratedWorkspace -Name "launch"
-  $previousLaunch = Get-JsonObjectPropertyValue -Object $PreviousWorkspace -Name "launch"
-  if ((Test-IsJsonObject -Value $generatedLaunch) -and (Test-IsJsonObject -Value $previousLaunch)) {
-    Merge-NamedObjectArrayProperty -Target $generatedLaunch -Source $previousLaunch -ArrayPropertyName "configurations" -KeyPropertyName "name"
-  }
-
-  return $GeneratedWorkspace
-}
-
 function Restore-ProjectFileArtifactSnapshot {
-  param([Parameter(Mandatory)]$Snapshot)
+  param(
+    [Parameter(Mandatory)]$Snapshot,
+    [Parameter(Mandatory)]$ProjectContext,
+    [switch]$SkipSettingsSync
+  )
 
   foreach ($workspaceSnapshot in @($Snapshot.WorkspaceSnapshots)) {
+    if (-not $workspaceSnapshot.Existed) {
+      if (-not (Test-Path -LiteralPath $workspaceSnapshot.Path -PathType Leaf)) { continue }
+      if ($SkipSettingsSync) { Warn "Skipping VS Code workspace settings synchronization by explicit request."; continue }
+      try {
+        $generatedContent = Get-Content -LiteralPath $workspaceSnapshot.Path -Raw
+        $generatedWorkspace = ConvertFrom-UEToolSuiteJsoncText -Text $generatedContent -SourceName $workspaceSnapshot.Path
+        [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $ProjectContext.RepoRoot -WorkspacePath $workspaceSnapshot.Path -PristineOverride $generatedWorkspace -PreviousWorkspaceContent $generatedContent -NonInteractive)
+        Warn "Initialized provenance for newly generated VS Code workspace: $($workspaceSnapshot.Path)"
+      }
+      catch {
+        Remove-Item -LiteralPath $workspaceSnapshot.Path -Force -ErrorAction SilentlyContinue
+        throw
+      }
+      continue
+    }
     if (-not (Test-Path -LiteralPath $workspaceSnapshot.Path -PathType Leaf)) {
       Write-Utf8NoBomFile -Path $workspaceSnapshot.Path -Content $workspaceSnapshot.Content
       Warn "Restored VS Code workspace file after project-file regeneration: $($workspaceSnapshot.Path)"
+      throw "Unreal project-file regeneration removed the selected VS Code workspace instead of regenerating it."
+    }
+
+    if ($SkipSettingsSync) {
+      Warn "Skipping VS Code workspace settings synchronization by explicit request."
       continue
     }
 
     try {
       $currentWorkspaceContent = Get-Content -LiteralPath $workspaceSnapshot.Path -Raw
-      if ($currentWorkspaceContent -ceq $workspaceSnapshot.Content) {
-        continue
-      }
-
-      $previousWorkspace = $workspaceSnapshot.Content | ConvertFrom-Json
-      $generatedWorkspace = $currentWorkspaceContent | ConvertFrom-Json
-      $mergedWorkspace = Merge-VSCodeWorkspaceJson -GeneratedWorkspace $generatedWorkspace -PreviousWorkspace $previousWorkspace
-      $mergedContent = ($mergedWorkspace | ConvertTo-Json -Depth 100)
-      Write-Utf8NoBomFile -Path $workspaceSnapshot.Path -Content ($mergedContent + "`r`n")
-      Warn "Preserved user VS Code workspace settings after project-file regeneration: $($workspaceSnapshot.Path)"
+      $generatedWorkspace = ConvertFrom-UEToolSuiteJsoncText -Text $currentWorkspaceContent -SourceName $workspaceSnapshot.Path
+      [void](Invoke-UEToolSuiteWorkspaceSync `
+        -RepoRoot $ProjectContext.RepoRoot `
+        -WorkspacePath $workspaceSnapshot.Path `
+        -PristineOverride $generatedWorkspace `
+        -PreviousWorkspaceContent $workspaceSnapshot.Content `
+        -NonInteractive)
+      Warn "Reconciled owned VS Code workspace settings after project-file regeneration: $($workspaceSnapshot.Path)"
     }
     catch {
-      Warn "Could not merge VS Code workspace customization after project-file regeneration. Restoring the pre-regen workspace file."
-      Warn $_.Exception.Message
+      Warn "Could not reconcile VS Code workspace settings after project-file regeneration. Restoring the pre-regen workspace file and stopping before build."
       Write-Utf8NoBomFile -Path $workspaceSnapshot.Path -Content $workspaceSnapshot.Content
+      if ($Snapshot.IgnoreExists) {
+        Write-Utf8NoBomFile -Path $Snapshot.IgnorePath -Content $Snapshot.IgnoreContent
+      }
+      elseif ($Snapshot.IgnoreTracked -and (Test-Path -LiteralPath $Snapshot.IgnorePath -PathType Leaf)) {
+        Remove-Item -LiteralPath $Snapshot.IgnorePath -Force
+      }
+      throw
     }
   }
 
@@ -1898,6 +1566,10 @@ $projectName = $projectContext.ProjectName
 
 $shouldRunRegen = -not $NoRegen -and ($manual -or $actionPlan.ShouldRegen)
 $shouldRunBuild = -not $NoBuild -and ($manual -or $actionPlan.ShouldBuild)
+
+if (-not $SkipSettingsSync -and -not [string]::IsNullOrWhiteSpace([string]$projectContext.WorkspacePath)) {
+  [void](Test-UEToolSuiteWorkspaceConfiguration -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath)
+}
 
 if ($shouldRunBuild -and (Test-BlueprintOnlyProject -ProjectContext $projectContext)) {
   Warn "Blueprint-only project detected (no C++ modules/targets). Skipping build step."
@@ -1983,6 +1655,18 @@ else {
 }
 
 if ($DryRun) {
+  if (-not $SkipSettingsSync) {
+    $settingsContext = if(-not [string]::IsNullOrWhiteSpace([string]$projectContext.WorkspacePath)){Resolve-UEToolSuiteWorkspaceSettingsContext -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath}else{$null}
+    if ($settingsContext -and (Test-Path -LiteralPath $settingsContext.Paths.State -PathType Leaf)) {
+      [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath -DryRun -NonInteractive)
+    }
+    else {
+      Info "Workspace settings ledger is missing. Regeneration would initialize it only if the pre/post workspaces are semantically identical; otherwise the workspace would be restored and settings adopt required."
+    }
+  }
+  else {
+    Info "Workspace settings synchronization would be skipped by explicit request."
+  }
   Info "DryRun enabled. Skipping cleanup/regeneration/build."
 return
 }
@@ -2011,17 +1695,16 @@ if ($shouldRunBuild) {
 $artifactSnapshot = $null
 if ($shouldRunRegen) {
   $artifactSnapshot = New-ProjectFileArtifactSnapshot -ProjectContext $projectContext -WorkspacePathOverride $WorkspacePath
-  try {
-    Invoke-Regenerate-ProjectFiles $uprojectPath $engineRoot $WorkspacePath
-  }
-  finally {
-    if ($artifactSnapshot) {
-      Restore-ProjectFileArtifactSnapshot -Snapshot $artifactSnapshot
-    }
+  Invoke-Regenerate-ProjectFiles $uprojectPath $engineRoot $WorkspacePath
+  if ($artifactSnapshot) {
+    Restore-ProjectFileArtifactSnapshot -Snapshot $artifactSnapshot -ProjectContext $projectContext -SkipSettingsSync:$SkipSettingsSync
   }
 }
 else {
   Warn "Skipping project file regeneration..."
+  if (-not $SkipSettingsSync -and -not [string]::IsNullOrWhiteSpace([string]$projectContext.WorkspacePath)) {
+    [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath -NonInteractive:$isNonInteractive)
+  }
 }
 
 if ($shouldRunBuild) {

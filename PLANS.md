@@ -13,6 +13,90 @@ Use a plan for work crossing three or more boundaries:
 
 ---
 
+## Plan: Provenance-Aware VS Code Workspace Settings Synchronization
+
+### Goal
+
+Preserve explicitly owned VS Code `.code-workspace` additions, modifications, and removals across Unreal project-file regeneration while retaining new Unreal-generated content, allowing obsolete unowned content to disappear, and stopping safely on ownership conflicts.
+
+### Non-goals
+
+- Do not manage VS Code user profiles, extensions, Settings Sync, or UI state.
+- Do not infer ownership for unknown workspace differences during ordinary sync or build.
+- Do not retain the previous copy-missing-properties merge as a competing fallback.
+- Do not mutate a real Unreal project in automated tests.
+
+### Current failure
+
+- `Merge-UEToolSuiteVSCodeWorkspaceJson` copies properties and selected array entries that are missing after regeneration.
+- The merge has no generated baseline, effective-state ledger, ownership metadata, or removal tombstones.
+- A user-removed Unreal Engine folder is regenerated and cannot be distinguished from an obsolete generated field, while old generated values can be resurrected as though they were custom.
+
+### Invariants
+
+- Team configuration is portable and tracked; user/project overlays and runtime state are private and ignored.
+- Only explicit fine-grained operations own workspace content.
+- New and changed unowned Unreal content survives; obsolete unowned content is not restored.
+- Owned non-removal values use strict three-way conflict detection before any write.
+- Removal tombstones reapply without conflict and semantic selectors fail on ambiguity.
+- Dry run and apply use the same planner; writes are atomic or rollback-safe.
+- Existing project-owned installer files and overlays survive upgrades.
+
+### Files and boundaries
+
+| Boundary | Files expected to change | Why |
+|---|---|---|
+| command/settings domain | `payload/Scripts/UETools/UEToolSuite.Settings.psm1` | Own schemas, JSON pointers, layers, ledger, planner, sync, capture, adopt, status, and atomic writes |
+| command routing/runtime facade | `payload/Scripts/UETools/UEToolSuite.Dispatcher.psm1`, `payload/Scripts/ue-tools.ps1`, `payload/Scripts/UETools/UETools.psd1` | Expose command-first `settings` commands through both launchers |
+| Unreal build/regeneration | `payload/Scripts/UETools/UEToolSuite.Unreal.psm1` | Replace heuristic workspace restoration with the shared provenance planner and add `-SkipSettingsSync` |
+| project/engine context | `payload/Scripts/Unreal/ProjectContext.ps1` | Reuse authoritative workspace and Engine-root resolution for portable selectors |
+| installer/managed payload | `payload/ue-tool-suite.manifest.json`, `payload/.gitignore`, installer tests | Install the domain and enforce tracked/private storage boundaries |
+| tests | focused settings tests, Unreal regeneration tests, installer and packaging contracts | Protect operations, conflicts, transactions, integration, and deployment |
+| user/developer docs | script/workflow/command/configuration documentation | Explain storage, ownership, capture/adoption, conflicts, and recovery |
+
+### Milestones
+
+- [x] Reproduce current heuristic limitations with focused failing tests.
+- [x] Implement and validate schemas, operations, selectors, and three-way planner.
+- [x] Add sync, capture, adopt, status, and command-first help.
+- [x] Integrate the planner into regeneration, `-NoRegen`, hooks, and dry run.
+- [x] Update installer privacy/managed-file contracts and upgrade preservation.
+- [x] Run targeted settings and regeneration suites, then installer and packaging contracts.
+- [x] Review the final diff for generated or unrelated changes.
+
+### Decisions
+
+| Decision | Reason | Alternatives rejected |
+|---|---|---|
+| Add a focused settings domain module | Keeps provenance and structured JSON operations reusable by CLI and Unreal build without expanding the dispatcher or docs modules | Keeping the logic embedded in Unreal would make capture/adopt/status and unit testing harder |
+| Store explicit ordered operations per layer | Supports fine-grained ownership, durable removals, precedence, and future operation kinds | A materialized merged settings object cannot distinguish absence from removal intent |
+| Store pristine and effective snapshots in a versioned ignored ledger | Enables three-way conflict checks and capture of live removals | Comparing only pre/post regeneration repeats the unsafe heuristic |
+| Represent Engine-folder removal with a semantic selector | Keeps team intent portable across machine-specific Engine paths | Storing an absolute Engine path leaks machine state and fails for teammates |
+
+### Validation evidence
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| Source inspection of current workspace merge | Confirmed failure mechanism | Missing-only merge has no ownership, removals, or baseline ledger |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name workspace-settings -FailFast` | Passed | `PASS=22 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name ue-sync-regeneration -FailFast` | Passed | `PASS=56 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=537 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=209 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name upgrade-compatibility -FailFast` | Passed | `PASS=70 FAIL=0` |
+| Scratch `git check-ignore` validation | Passed | Team overlay trackable; project overlay and state ignored |
+
+### Rollback/recovery
+
+The planner validates all inputs and conflicts before writing. Apply stages sibling temporary files, preserves original bytes, and rolls back already-replaced files if a later replacement fails. Unreal regeneration restores the pre-regeneration workspace and `.ignore` on any settings failure and does not proceed to build.
+
+### Remaining risks
+
+- Interactive Unreal Editor regeneration and live VS Code reload behavior require final user verification.
+- JSONC comments are accepted on read but may be normalized when a semantic write is required because PowerShell provides no native comment-preserving JSON syntax tree.
+- The exclusive hook suite was not rerun in the dirty feature checkout; hook-driven regeneration uses the same tested Unreal runtime path, while the non-exclusive regeneration suite and upgrade alias suite passed.
+
+---
+
 ## Plan: <task name>
 
 ### Goal

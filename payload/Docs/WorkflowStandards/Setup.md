@@ -99,7 +99,7 @@ The git-hook `ue-sync` workflow decides between build and project-file regenerat
 - Modified existing C++ files build the editor without regenerating project files.
 - `.uproject`, `.uplugin`, `*.Build.cs`, `*.Target.cs`, and added/deleted/renamed C++ files regenerate project files and then build.
 - Build-only hook runs skip `Binaries/` and `Intermediate/` cleanup by default; use `ue-tools build -CleanGenerated -NoRegen -NoBuild` for a manual cleanup-only pass.
-- Project-file regeneration preserves user VS Code workspace customization and restores pre-regen `.ignore` content so Unreal-generated churn does not keep dirtying tracked files.
+- Project-file regeneration applies provenance-aware VS Code workspace overlays and restores pre-regen `.ignore` content. Run `ue settings adopt` once for a pre-existing customized workspace, then use `ue settings capture` for explicit ownership. See [VS Code Workspace Settings Sync](./Workspace-Settings-Sync.md).
 
 ## Tool Suite Updates
 

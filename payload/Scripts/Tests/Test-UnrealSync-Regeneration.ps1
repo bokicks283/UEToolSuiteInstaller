@@ -569,7 +569,7 @@ try {
   Assert-OutputContains "case 6 fallback still invoked" $res.Output "Regenerating project files (fallback via Build.bat)..."
   Assert-Condition "case 6 fallback capture exists" (Test-Path -LiteralPath $fallbackCapture6) "fallback capture created" "fallback capture missing"
 
-  Step "Case 7: Project-file regeneration preserves VS Code workspace customization and .ignore"
+  Step "Case 7: First regeneration with unknown customization restores workspace and requires adoption"
   $case7 = New-CaseDir "case 7 preserve workspace artifacts"
   [void](New-UProjectFile $case7 $script:TestEngineAssociation)
   $workspace7 = Join-Path $case7 "Space Project.code-workspace"
@@ -634,37 +634,12 @@ try {
     UE_ENGINE_DISABLE_COMMON_INSTALL_SCAN = $null
   }
 
-  Assert-Code "case 7 exit code" $res.Code 0
-  Assert-OutputContains "case 7 workspace preservation logged" $res.Output "Preserved user VS Code workspace settings after project-file regeneration"
-  Assert-OutputContains "case 7 ignore restoration logged" $res.Output "Restored .ignore after project-file regeneration"
-  $workspace7Json = Get-Content -LiteralPath $workspace7 -Raw | ConvertFrom-Json
+  Assert-Condition "case 7 exit is non-zero" ($res.Code -ne 0) "exit=$($res.Code)" "expected non-zero exit"
+  Assert-OutputContains "case 7 adoption requirement logged" $res.Output "Run 'ue settings adopt'"
+  Assert-OutputContains "case 7 workspace rollback logged" $res.Output "Restoring the pre-regen workspace file and stopping before build"
+  $workspace7Text = Get-Content -LiteralPath $workspace7 -Raw
   $ignore7Text = Get-Content -LiteralPath $ignore7 -Raw
-  Assert-Condition "case 7 generated workspace folder retained" (
-    @($workspace7Json.folders | Where-Object { $_.name -eq "Generated Project" }).Count -eq 1
-  ) "generated folder retained" "generated folder missing"
-  Assert-Condition "case 7 user extra workspace folder retained" (
-    @($workspace7Json.folders | Where-Object { $_.name -eq "User Extra Folder" -and $_.path -eq "../UserExtra" }).Count -eq 1
-  ) "user extra folder retained" "user extra folder missing"
-  Assert-Condition "case 7 user setting retained" ([bool]$workspace7Json.settings.'editor.formatOnSave') "editor.formatOnSave retained" "editor.formatOnSave missing"
-  Assert-Condition "case 7 user terminal env retained" (
-    [string]$workspace7Json.settings.'terminal.integrated.env.windows'.USER_ONLY -eq "1"
-  ) "USER_ONLY env retained" "USER_ONLY env missing"
-  Assert-Condition "case 7 extension recommendations merged" (
-    @($workspace7Json.extensions.recommendations) -contains "generated.extension" -and
-    @($workspace7Json.extensions.recommendations) -contains "user.extension"
-  ) "extension recommendations merged" "extension recommendations were not merged"
-  Assert-Condition "case 7 user task retained" (
-    @($workspace7Json.tasks.tasks | Where-Object { $_.label -eq "User Task" }).Count -eq 1
-  ) "user task retained" "user task missing"
-  Assert-Condition "case 7 generated task retained" (
-    @($workspace7Json.tasks.tasks | Where-Object { $_.label -eq "Generated Task" }).Count -eq 1
-  ) "generated task retained" "generated task missing"
-  Assert-Condition "case 7 user launch retained" (
-    @($workspace7Json.launch.configurations | Where-Object { $_.name -eq "User Launch" }).Count -eq 1
-  ) "user launch retained" "user launch missing"
-  Assert-Condition "case 7 generated launch retained" (
-    @($workspace7Json.launch.configurations | Where-Object { $_.name -eq "Generated Launch" }).Count -eq 1
-  ) "generated launch retained" "generated launch missing"
+  Assert-Condition "case 7 original workspace restored byte-for-byte" ($workspace7Text -eq $initialWorkspace7) "original workspace restored" "workspace content changed"
   Assert-Condition "case 7 ignore restored" ($ignore7Text -eq "original ignore`n") "ignore restored" "ignore content=$ignore7Text"
 
   Step "Case 8: Modified C++ source triggers build only"
