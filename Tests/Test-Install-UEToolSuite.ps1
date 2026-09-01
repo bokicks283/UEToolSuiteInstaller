@@ -299,6 +299,7 @@ try {
   Assert-PathMissing "case1 repository test suite is not installed in project" (Join-Path $targetRepo "Scripts\Tests")
   Assert-PathMissing "case1 repository website test is not installed in project" (Join-Path $targetRepo "website\scripts\test-authoring-runtime.cjs")
   Assert-PathExists "case1 global core module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Core.psm1")
+  Assert-PathExists "case1 global workspace settings module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Settings.psm1")
   Assert-PathExists "case1 global docs module installed" (Join-Path $testGlobalVersionRoot "Scripts\UETools\UEToolSuite.Docs.psm1")
   foreach ($relativePath in @("ArtSource\_Template\Source", "ArtSource\_Template\Textures", "ArtSource\_Template\Exports")) {
     Assert-PathExists "case1 created $relativePath" (Join-Path $targetRepo $relativePath)
@@ -306,6 +307,9 @@ try {
   Assert-PathMissing "case1 excludes generated website build output" (Join-Path $targetRepo "website\build")
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
+  Assert-FileContains "case1 ignores private workspace settings" (Join-Path $targetRepo ".gitignore") ".ue-tools/local/"
+  Assert-FileContains "case1 ignores workspace provenance state" (Join-Path $targetRepo ".gitignore") ".ue-tools/state/"
+  Assert-FileContains "case1 allows tracked team workspace overlay" (Join-Path $targetRepo ".gitignore") "!.ue-tools/workspace-settings/team.jsonc"
   Assert-FileContains "case1 installed binary guard uasset rule" (Join-Path $targetRepo ".gitattributes") "*.uasset filter=lfs diff=lfs merge=binary -text"
   Assert-FileContains "case1 default website custom css imports active theme" (Join-Path $targetRepo "website\src\css\custom.css") "@import '../../theme-presets/active-theme.css';"
   Assert-FileContains "case1 default website theme is neutral" (Join-Path $targetRepo "website\theme-presets\active-theme.css") "--ifm-color-primary: #3a6ea5;"
@@ -369,6 +373,15 @@ try {
     [pscustomobject]@{ RelativePath = "Docs\WorkflowStandards\DocsSite\Local-DocsSite-Notes.md"; Content = "project-specific docs site notes should survive`n" },
     [pscustomobject]@{ RelativePath = "website\src\pages\local-project-page.tsx"; Content = "project-specific docs page should survive`n" }
   )
+  $teamWorkspaceOverlayPath = Join-Path $targetRepo ".ue-tools\workspace-settings\team.jsonc"
+  $projectWorkspaceOverlayPath = Join-Path $targetRepo ".ue-tools\local\workspace-settings.jsonc"
+  $workspaceStatePath = Join-Path $targetRepo ".ue-tools\state\workspace-sync\fixture.json"
+  foreach ($workspaceSettingsPath in @($teamWorkspaceOverlayPath, $projectWorkspaceOverlayPath, $workspaceStatePath)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $workspaceSettingsPath) | Out-Null
+  }
+  Write-Utf8NoBomFile -Path $teamWorkspaceOverlayPath -Content '{"schemaVersion":1,"scope":"Team","operations":[]}'
+  Write-Utf8NoBomFile -Path $projectWorkspaceOverlayPath -Content '{"schemaVersion":1,"scope":"Project","operations":[]}'
+  Write-Utf8NoBomFile -Path $workspaceStatePath -Content '{"schemaVersion":1,"fixture":true}'
   foreach ($projectSpecificFile in $projectSpecificFiles) {
     Write-Utf8NoBomFile -Path (Join-Path $targetRepo $projectSpecificFile.RelativePath) -Content $projectSpecificFile.Content
   }
@@ -378,6 +391,9 @@ try {
   $backupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "UEToolSuite.Unreal.psm1" })
   Assert-Condition "case2 backup created for replaced tool" ($backupMatches.Count -gt 0) "backup count=$($backupMatches.Count)" "backup missing"
   Assert-FileContains "case2 git ignore preserves local lines" $gitIgnorePath "local-custom-ignore/"
+  Assert-FileContains "case2 preserves team workspace overlay" $teamWorkspaceOverlayPath '"scope":"Team"'
+  Assert-FileContains "case2 preserves project workspace overlay" $projectWorkspaceOverlayPath '"scope":"Project"'
+  Assert-FileContains "case2 preserves workspace state" $workspaceStatePath '"fixture":true'
   $gitIgnoreBackupMatches = @(Get-ChildItem -LiteralPath (Join-Path $targetRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq ".gitignore" })
   Assert-Condition "case2 backup created for managed git ignore" ($gitIgnoreBackupMatches.Count -gt 0) "backup count=$($gitIgnoreBackupMatches.Count)" "backup missing"
   foreach ($projectSpecificFile in $projectSpecificFiles) {

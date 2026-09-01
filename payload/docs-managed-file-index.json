@@ -44,6 +44,56 @@
       "sha256": "642cf82169356e1589bb2916ffa5cd083d881ef91175f047dc9da7c714298931"
     },
     {
+      "relativePath": "Docs/WorkflowStandards/CLI/_category_.json",
+      "category": "docs",
+      "sha256": "6b77e096b8958e9bdf23356f8dfd1063f31bb4f5f0a3e4567a9aeebf1e315813"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/AI.md",
+      "category": "docs",
+      "sha256": "8443a1625e124670ed44a22d12d8467e6289829c70200c7898570a598099f254"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Art.md",
+      "category": "docs",
+      "sha256": "076ce4db92c36ffdac277b1ff4b2c3b95ec71f9e389d3319db2ab056c43cc4a9"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Build.md",
+      "category": "docs",
+      "sha256": "a9338fde449ced22819857bceb5933f078eb86f6cf8b981bac324edb6bfc63d5"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Docs.md",
+      "category": "docs",
+      "sha256": "bfc1692e9e3b9cffd80760341cf3ad6d585598a0718ee16b7ca5b0d7c6d3ce8c"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Git.md",
+      "category": "docs",
+      "sha256": "b1e269219458c6e7375049f82c7161d0d18a20277b13a0aafa00cf0be15acb94"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Help.md",
+      "category": "docs",
+      "sha256": "8fb8cbcc2363bc8c98e87d270fec605fde8f12f5367f9b590a6378b545c33d21"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Init.md",
+      "category": "docs",
+      "sha256": "0c8392e16ca4a99236d5380132cf97de85a987d2068ca6427563e1fbf1ef8c4f"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/README.md",
+      "category": "docs",
+      "sha256": "afd563b173e5f2640d13a9084fdd5fdd22de216c4962c18aef32447355fe7e5f"
+    },
+    {
+      "relativePath": "Docs/WorkflowStandards/CLI/Settings.md",
+      "category": "docs",
+      "sha256": "3a547235181e92295a18ad42b25115d2bdfaab847df33b636adf80f845b14082"
+    },
+    {
       "relativePath": "Docs/WorkflowStandards/CodingStandards/_category_.json",
       "category": "codingStandards",
       "sha256": "1dc7c228bcb9be569311831a3049d827cbc187955b9679b0b5582683e2e19238"
@@ -111,17 +161,17 @@
     {
       "relativePath": "Docs/WorkflowStandards/Pipeline/README.md",
       "category": "docs",
-      "sha256": "9ddf2820c47ce494053e923365c70a9ee67074ef998fad51a3419b875e2f35c2"
+      "sha256": "9226a1747f4bb00841ad4a6d9af6988b141a6e50aa974a9c84c5f7073dd4c431"
     },
     {
       "relativePath": "Docs/WorkflowStandards/README.md",
       "category": "docsShell",
-      "sha256": "d07af032bd6efe69e4df0eb60ea6292cadc101cba437843b78add201f6191818"
+      "sha256": "4084801fb8cde0b8aee5d6eddb6f0a05181f0ae21d41b716b171f6467fe7f039"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Setup.md",
       "category": "docs",
-      "sha256": "7e57fe19d9d16ead1aad6bd34a85d2af9e1769b8e877442f893c87384f730e41"
+      "sha256": "47f449785d21286b56acb84d24cc6ea28da68ee62f7cf67f13a3b677cae68bd2"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Testing.md",

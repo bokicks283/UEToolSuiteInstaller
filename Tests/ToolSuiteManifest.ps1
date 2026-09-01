@@ -123,6 +123,16 @@ function Get-UEToolSuiteTestManifest {
       -ResultDirectory "Scripts/Tests/Test-AIStartupPromptResults")
 
     (New-UEToolSuiteTestEntry `
+      -Id "workspace-settings" `
+      -Name "Workspace Settings Synchronization" `
+      -Path "Tests/Test-WorkspaceSettings.ps1" `
+      -Category "unreal" `
+      -Description "Validates provenance-aware VS Code workspace overlays, ledgers, capture, selectors, and conflicts." `
+      -SupportsNoCleanup $true `
+      -SupportsFailFast $true `
+      -ResultDirectory "Tests/Test-WorkspaceSettingsResults")
+
+    (New-UEToolSuiteTestEntry `
       -Id "ue-sync-regeneration" `
       -Name "UE Sync Regeneration" `
       -Path "Scripts/Tests/Test-UnrealSync-Regeneration.ps1" `

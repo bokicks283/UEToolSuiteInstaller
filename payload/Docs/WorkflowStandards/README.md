@@ -15,5 +15,6 @@ This domain holds the shared rules for how the repo is set up, how code moves th
 - daily branch and PR workflow
 - testing expectations
 - Unreal and C++ standards
+- complete UETools CLI command reference
 - docs authoring and site operations
 - shared AI operating context

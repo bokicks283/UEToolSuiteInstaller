@@ -40,6 +40,12 @@ FileOpenOrder/
 *.iml
 .ai-local/
 .ue-tools-installer-backups/
+.ue-tools/local/
+.ue-tools/state/
+# Team workspace settings are intentionally tracked.
+!.ue-tools/
+!.ue-tools/workspace-settings/
+!.ue-tools/workspace-settings/team.jsonc
 website/node_modules/
 website/build/
 website/.docusaurus/

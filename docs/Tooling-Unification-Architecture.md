@@ -26,6 +26,7 @@ Command grammar:
   - `ue-tools art ...`
   - `ue-tools init ...`
   - `ue-tools git ...`
+  - `ue-tools settings ...`
 
 Git convenience aliases remain supported:
 
@@ -52,6 +53,7 @@ payload/
       UEToolSuite.Art.psm1               art domain implementation
       UEToolSuite.AI.psm1                AI prompt domain implementation
       UEToolSuite.Init.psm1              init domain adapter + helpers
+      UEToolSuite.Settings.psm1          workspace overlay/provenance planner + commands
       UEToolSuite.Git.psm1               git conflict domain adapter + helpers
     Unreal/
       UnrealSync.Module.psm1             Unreal module implementation

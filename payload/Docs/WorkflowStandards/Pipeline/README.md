@@ -48,7 +48,7 @@ ue-tools build -NoBuild -NoRegen -DryRun
 
 `-CleanGenerated` explicitly deletes `Binaries/` and `Intermediate/`. Use it for a manual cleanup-only pass or when you want a build-only run to start from clean generated folders. Hook-triggered build-only runs skip that cleanup by default.
 
-Project-file regeneration is allowed to rewrite VS Code workspace artifacts. After regeneration, `ue-sync` preserves user-owned VS Code workspace customization by merging previous extra folders, `settings`, extension recommendations, custom tasks, and custom launch configurations back into the generated `.code-workspace`. It also restores the pre-regen `.ignore` content when that file existed before regeneration, which prevents Unreal-generated `.ignore` churn from appearing as a tracked git change.
+Project-file regeneration is allowed to rewrite VS Code workspace artifacts. After regeneration, `ue-sync` treats the result as a pristine Unreal baseline and runs the same provenance-aware planner as `ue settings sync`. Only explicitly owned additions, modifications, and removal tombstones are reapplied. Unknown differences require `ue settings adopt`; conflicts restore the pre-operation workspace and stop before build. The workflow also restores pre-regen `.ignore` content to prevent tracked churn.
 
 ## Do Not
 
@@ -65,4 +65,3 @@ Goal: move Unreal assets under a new content folder and document the policy chan
 4. Update the project structure docs if the canonical layout changed.
 5. Run the relevant smoke test in editor.
 6. Commit only the moved assets and docs updates.
-

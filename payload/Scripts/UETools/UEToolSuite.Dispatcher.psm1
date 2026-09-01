@@ -21,6 +21,7 @@ function Get-UEToolSuiteDispatcherDomainStatus {
     art  = (Test-Path -LiteralPath (Join-Path $moduleRoot "UEToolSuite.Art.psm1") -PathType Leaf)
     init = (Test-Path -LiteralPath (Join-Path $moduleRoot "UEToolSuite.Init.psm1") -PathType Leaf)
     git  = (Test-Path -LiteralPath (Join-Path $moduleRoot "UEToolSuite.Git.psm1") -PathType Leaf)
+    settings = (Test-Path -LiteralPath (Join-Path $moduleRoot "UEToolSuite.Settings.psm1") -PathType Leaf)
   }
 }
 
@@ -35,6 +36,7 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     "  art      {0}" -f $(if ($status.art) { "[installed]" } else { "[not installed]" })
     "  init     {0}" -f $(if ($status.init) { "[installed]" } else { "[not installed]" })
     "  git      {0}" -f $(if ($status.git) { "[installed]" } else { "[not installed]" })
+    "  settings {0}" -f $(if ($status.settings) { "[installed]" } else { "[not installed]" })
   )
 
   return @(
@@ -46,6 +48,7 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     "Root commands:"
     "  help                    Show this help text."
     "  build [sync options]    Run Unreal build/sync flow."
+    "  settings <command>      Synchronize owned VS Code workspace settings."
     ""
     "Domain commands:"
     "  docs <args...>          Route to docs tooling."
@@ -60,6 +63,7 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     "Examples:"
     "  ue-tools help"
     "  ue-tools build -DryRun"
+    "  ue-tools settings sync -DryRun"
     "  ue-tools docs help"
     "  ue-tools ai prompt -Task `"Investigate UnrealSync failures`" -IncludePrivate"
     "  ue-tools git status"
@@ -72,7 +76,10 @@ function Get-UEToolSuiteDispatcherRootHelpText {
 
 function Get-UEToolSuiteDispatcherDomainHelpText {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$DomainName)
+  param(
+    [Parameter(Mandatory)][string]$DomainName,
+    [AllowNull()][string[]]$TopicArguments = @()
+  )
 
   switch ($DomainName.ToLowerInvariant()) {
     "build" {
@@ -85,6 +92,10 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
         "Notes:"
         "  - Dispatcher always passes -Force to Unreal sync."
       )
+    }
+    "settings" {
+      $settingsTopic = if ($null -ne $TopicArguments -and $TopicArguments.Count -gt 0) { [string]$TopicArguments[0] } else { "" }
+      return @(Get-UEToolSuiteSettingsHelpText -Subcommand $settingsTopic)
     }
     "docs" {
       return @(
@@ -131,6 +142,7 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
         "  -SkipDocsBridgeInstall       Skip VS Code docs bridge install."
         "  -NoBuild                     Skip build phase when ue-tools build runs."
         "  -NoRegen                     Skip project-file regen phase when ue-tools build runs."
+        "  -SkipSettingsSync            Explicitly skip workspace settings synchronization."
         "  -NonInteractive              Do not prompt; use safe defaults."
         "  -SkipIgnoredUntrack          Do not remove tracked files now ignored by .gitignore."
         "Examples:"
@@ -235,7 +247,13 @@ function Invoke-UEToolSuiteDispatcher {
 
   if (Test-UEToolSuiteDispatcherHelpToken -Token $command) {
     if ($remaining.Count -gt 0) {
-      @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0])) | Write-Output
+      $helpTopics = if ($remaining.Count -gt 1) {
+        [string[]](Get-UEToolSuiteDispatcherTailArguments -Values $remaining -Skip 1)
+      }
+      else {
+        @()
+      }
+      @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0]) -TopicArguments $helpTopics) | Write-Output
       return
     }
 
@@ -251,7 +269,13 @@ function Invoke-UEToolSuiteDispatcher {
   switch ($command.Trim().ToLowerInvariant()) {
     "help" {
       if ($remaining.Count -gt 0) {
-        @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0])) | Write-Output
+        $helpTopics = if ($remaining.Count -gt 1) {
+          [string[]](Get-UEToolSuiteDispatcherTailArguments -Values $remaining -Skip 1)
+        }
+        else {
+          @()
+        }
+        @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0]) -TopicArguments $helpTopics) | Write-Output
       }
       else {
         @(Get-UEToolSuiteDispatcherRootHelpText -RepoRoot $RepoRoot) | Write-Output
@@ -267,6 +291,10 @@ function Invoke-UEToolSuiteDispatcher {
       }
 
       Invoke-UEToolSuiteUnrealBuild -RepoRoot $RepoRoot -CommandArguments $remaining
+      return
+    }
+    "settings" {
+      Invoke-UEToolSuiteSettingsCommand -RepoRoot $RepoRoot -CommandArguments $remaining
       return
     }
     "docs" {

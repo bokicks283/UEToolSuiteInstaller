@@ -13,6 +13,136 @@ Use a plan for work crossing three or more boundaries:
 
 ---
 
+## Plan: Provenance-Aware VS Code Workspace Settings Synchronization
+
+### Goal
+
+Preserve explicitly owned VS Code `.code-workspace` additions, modifications, and removals across Unreal project-file regeneration while retaining new Unreal-generated content, allowing obsolete unowned content to disappear, and stopping safely on ownership conflicts.
+
+### Non-goals
+
+- Do not manage VS Code user profiles, extensions, Settings Sync, or UI state.
+- Do not infer ownership for unknown workspace differences during ordinary sync or build.
+- Do not retain the previous copy-missing-properties merge as a competing fallback.
+- Do not mutate a real Unreal project in automated tests.
+
+### Current failure
+
+- `Merge-UEToolSuiteVSCodeWorkspaceJson` copies properties and selected array entries that are missing after regeneration.
+- The merge has no generated baseline, effective-state ledger, ownership metadata, or removal tombstones.
+- A user-removed Unreal Engine folder is regenerated and cannot be distinguished from an obsolete generated field, while old generated values can be resurrected as though they were custom.
+
+### Invariants
+
+- Team configuration is portable and tracked; user/project overlays and runtime state are private and ignored.
+- Only explicit fine-grained operations own workspace content.
+- New and changed unowned Unreal content survives; obsolete unowned content is not restored.
+- Owned non-removal values use strict three-way conflict detection before any write.
+- Removal tombstones reapply without conflict and semantic selectors fail on ambiguity.
+- Dry run and apply use the same planner; writes are atomic or rollback-safe.
+- Existing project-owned installer files and overlays survive upgrades.
+
+### Files and boundaries
+
+| Boundary | Files expected to change | Why |
+|---|---|---|
+| command/settings domain | `payload/Scripts/UETools/UEToolSuite.Settings.psm1` | Own schemas, JSON pointers, layers, ledger, planner, sync, capture, adopt, status, and atomic writes |
+| command routing/runtime facade | `payload/Scripts/UETools/UEToolSuite.Dispatcher.psm1`, `payload/Scripts/ue-tools.ps1`, `payload/Scripts/UETools/UETools.psd1` | Expose command-first `settings` commands through both launchers |
+| Unreal build/regeneration | `payload/Scripts/UETools/UEToolSuite.Unreal.psm1` | Replace heuristic workspace restoration with the shared provenance planner and add `-SkipSettingsSync` |
+| project/engine context | `payload/Scripts/Unreal/ProjectContext.ps1` | Reuse authoritative workspace and Engine-root resolution for portable selectors |
+| installer/managed payload | `payload/ue-tool-suite.manifest.json`, `payload/.gitignore`, installer tests | Install the domain and enforce tracked/private storage boundaries |
+| tests | focused settings tests, Unreal regeneration tests, installer and packaging contracts | Protect operations, conflicts, transactions, integration, and deployment |
+| user/developer docs | script/workflow/command/configuration documentation | Explain storage, ownership, capture/adoption, conflicts, and recovery |
+
+### Milestones
+
+- [x] Reproduce current heuristic limitations with focused failing tests.
+- [x] Implement and validate schemas, operations, selectors, and three-way planner.
+- [x] Add sync, capture, adopt, status, and command-first help.
+- [x] Integrate the planner into regeneration, `-NoRegen`, hooks, and dry run.
+- [x] Update installer privacy/managed-file contracts and upgrade preservation.
+- [x] Run targeted settings and regeneration suites, then installer and packaging contracts.
+- [x] Review the final diff for generated or unrelated changes.
+
+### Decisions
+
+| Decision | Reason | Alternatives rejected |
+|---|---|---|
+| Add a focused settings domain module | Keeps provenance and structured JSON operations reusable by CLI and Unreal build without expanding the dispatcher or docs modules | Keeping the logic embedded in Unreal would make capture/adopt/status and unit testing harder |
+| Store explicit ordered operations per layer | Supports fine-grained ownership, durable removals, precedence, and future operation kinds | A materialized merged settings object cannot distinguish absence from removal intent |
+| Store pristine and effective snapshots in a versioned ignored ledger | Enables three-way conflict checks and capture of live removals | Comparing only pre/post regeneration repeats the unsafe heuristic |
+| Represent Engine-folder removal with a semantic selector | Keeps team intent portable across machine-specific Engine paths | Storing an absolute Engine path leaks machine state and fails for teammates |
+
+### Validation evidence
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| Source inspection of current workspace merge | Confirmed failure mechanism | Missing-only merge has no ownership, removals, or baseline ledger |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name workspace-settings -FailFast` | Passed | Initial `PASS=22 FAIL=0`; CLI, capture, hook-trigger, and nested-help follow-up `PASS=38 FAIL=0` |
+| `payload/Scripts/Tests/Test-UnrealSync-Regeneration.ps1 -FailFast` | Passed | `PASS=73 FAIL=0`, including settings-only apply, Team-overlay deletion, and conflict/no-write recovery guidance |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name hooks -FailFast` | Passed | Installed-fixture hook plumbing checks passed |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | Latest follow-up run: `PASS=565 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=209 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name upgrade-compatibility -FailFast` | Passed | `PASS=70 FAIL=0` |
+| `payload/website: npm run build` after CLI help and nested guide expansion | Passed | Docusaurus client/server compiled and static files generated |
+| `payload/website: npm run typecheck` | Known existing configuration conflict | Pinned compiler reports `TS5103` for required `ignoreDeprecations: "6.0"`; no settings change made |
+| Scratch `git check-ignore` validation | Passed | Team overlay trackable; project overlay and state ignored |
+
+### Rollback/recovery
+
+The planner validates all inputs and conflicts before writing. Apply stages sibling temporary files, preserves original bytes, and rolls back already-replaced files if a later replacement fails. Unreal regeneration restores the pre-regeneration workspace and `.ignore` on any settings failure and does not proceed to build.
+
+### Remaining risks
+
+- Interactive Unreal Editor regeneration and live VS Code reload behavior require final user verification.
+- JSONC comments are accepted on read but may be normalized when a semantic write is required because PowerShell provides no native comment-preserving JSON syntax tree.
+- The installed-fixture hook plumbing and revision-driven runtime integration pass, but a real teammate pull/checkout and live VS Code reload still require final user verification after installing this branch.
+
+### Follow-up: settings CLI binding and operator guide (2026-08-20)
+
+- Reproduced `ue settings sync -WorkspacePath ...` failing because the shared parser always splatted a capture-only empty `Path` parameter into `sync`.
+- Made option parsing subcommand-specific, retained repeated `-Path` values as a real string array, and added command-specific invalid-option messages.
+- Allowed the empty JSON Pointer used by interactive capture/adoption while rejecting invalid `~` escapes.
+- Fixed omitted-`-Path` detection for typed null arrays, stable handling of empty workspace arrays during whole-workspace comparison, and single-operation interactive selection.
+- Added actionable validation for malformed or stale pristine/effective ledgers.
+- Expanded the managed workspace-settings guide with first-run choices, complete command/option behavior, JSON Pointer rules, storage/privacy, workflows, troubleshooting, and a manual verification checklist.
+- Added public-launcher regression coverage for relative `WorkspacePath`, sync, status, repeated capture paths, interactive whole-workspace folder deletion, adoption dry run, and invalid option routing.
+
+### Follow-up: automatic Team-overlay hook synchronization (2026-08-20)
+
+- Treat `.ue-tools/workspace-settings/team.jsonc` creation, modification, deletion, and rename as a dedicated settings-only action-plan trigger.
+- Reuse the existing post-merge/post-checkout revision flow and provenance planner instead of adding a second shell-level synchronization path.
+- Run settings-only hook changes without a prompt, generated-folder cleanup, Unreal project-file regeneration, or Editor build.
+- Preserve fail-closed behavior: conflicts change neither workspace nor ledger and emit an actionable `ue settings status` command while Git remains completed.
+- Add focused trigger coverage plus installed-runtime integration cases for automatic apply, overlay deletion, and conflict/no-write behavior.
+
+### Follow-up: complete nested settings CLI help and Docusaurus guide (2026-09-01)
+
+- Route `ue help settings <command>` through the same canonical help source as `ue settings help <command>` and `ue settings <command> help`.
+- Give `sync`, `capture`, `adopt`, and `status` complete pages covering behavior, valid options, examples, prerequisites, and safety boundaries.
+- Keep the settings overview current with every subcommand, first-run guidance, and supported help spelling.
+- Organize the managed workspace-settings guide with a Docusaurus-compatible level-two/level-three table of contents, CLI guide map, command reference, workflows, recovery, and manual verification.
+- Protect all four help pages and both nested/command-first routes with public-launcher regression coverage.
+
+### Follow-up: complete Workflow Standards CLI command reference (2026-09-01)
+
+- Add a managed `WorkflowStandards/CLI` Docusaurus category with a landing page that inventories the complete root dispatcher surface.
+- Provide one page for every main command: `help`, `build`, `settings`, `docs`, `ai`, `art`, `init`, and `git`.
+- Move the existing detailed workspace-settings guide into the `settings` command page instead of maintaining a duplicate root-level document.
+- Derive command/subcommand/option inventories from the dispatcher and domain modules, including docs site/theme/runtime commands and Git binary-conflict helpers.
+- Protect the complete category/page inventory in packaging contracts and verify the generated sidebar and routes through a production Docusaurus build.
+
+Validation completed for this follow-up:
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=565 FAIL=0`, including the complete managed CLI-doc inventory and hashes |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name docs-tools -FailFast` | Passed | `PASS=652 FAIL=0 WARN=0 SKIP=1`; optional background lifecycle cases remained disabled |
+| `npm run build` in `payload/website` | Passed | Docusaurus client/server compiled and all nine `/docs/cli` landing/command routes were generated |
+| `npm run typecheck` in `payload/website` | Known existing configuration conflict | Pinned compiler reports `TS5103` for the intentionally retained `ignoreDeprecations: "6.0"` value |
+
+---
+
 ## Plan: <task name>
 
 ### Goal

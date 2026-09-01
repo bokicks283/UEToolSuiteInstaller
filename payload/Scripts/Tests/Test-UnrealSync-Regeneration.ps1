@@ -21,6 +21,7 @@ if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
 }
 . $testHarnessPath
 $syncScript = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Unreal.psm1"
+$settingsScript = Resolve-UEToolSuiteRuntimeFile -RepoRoot $repoRoot -RelativePath "Scripts\UETools\UEToolSuite.Settings.psm1"
 
 $script:PassCount = 0
 $script:FailCount = 0
@@ -219,6 +220,35 @@ public class ActionPlan : ModuleRules
   return [pscustomobject]@{
     RepoDir = $repoDir
     Base = $base
+  }
+}
+
+function Initialize-ActionPlanWorkspaceSettings {
+  param(
+    [Parameter(Mandatory)][string]$RepoDir,
+    [Parameter(Mandatory)][string]$WorkspacePath,
+    [Parameter(Mandatory)][string]$LocalAppData
+  )
+
+  $previousLocalAppData = $env:LOCALAPPDATA
+  try {
+    $env:LOCALAPPDATA = $LocalAppData
+    Import-Module -Name $settingsScript -Force -DisableNameChecking
+    $previousWorkspaceContent = Get-Content -LiteralPath $WorkspacePath -Raw
+    [void](Invoke-UEToolSuiteWorkspaceSync `
+      -RepoRoot $RepoDir `
+      -WorkspacePath $WorkspacePath `
+      -PreviousWorkspaceContent $previousWorkspaceContent `
+      -NonInteractive)
+    return (Resolve-UEToolSuiteWorkspaceSettingsContext -RepoRoot $RepoDir -WorkspacePath $WorkspacePath)
+  }
+  finally {
+    if ([string]::IsNullOrEmpty($previousLocalAppData)) {
+      Remove-Item Env:LOCALAPPDATA -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:LOCALAPPDATA = $previousLocalAppData
+    }
   }
 }
 
@@ -569,7 +599,7 @@ try {
   Assert-OutputContains "case 6 fallback still invoked" $res.Output "Regenerating project files (fallback via Build.bat)..."
   Assert-Condition "case 6 fallback capture exists" (Test-Path -LiteralPath $fallbackCapture6) "fallback capture created" "fallback capture missing"
 
-  Step "Case 7: Project-file regeneration preserves VS Code workspace customization and .ignore"
+  Step "Case 7: First regeneration with unknown customization restores workspace and requires adoption"
   $case7 = New-CaseDir "case 7 preserve workspace artifacts"
   [void](New-UProjectFile $case7 $script:TestEngineAssociation)
   $workspace7 = Join-Path $case7 "Space Project.code-workspace"
@@ -634,37 +664,12 @@ try {
     UE_ENGINE_DISABLE_COMMON_INSTALL_SCAN = $null
   }
 
-  Assert-Code "case 7 exit code" $res.Code 0
-  Assert-OutputContains "case 7 workspace preservation logged" $res.Output "Preserved user VS Code workspace settings after project-file regeneration"
-  Assert-OutputContains "case 7 ignore restoration logged" $res.Output "Restored .ignore after project-file regeneration"
-  $workspace7Json = Get-Content -LiteralPath $workspace7 -Raw | ConvertFrom-Json
+  Assert-Condition "case 7 exit is non-zero" ($res.Code -ne 0) "exit=$($res.Code)" "expected non-zero exit"
+  Assert-OutputContains "case 7 adoption requirement logged" $res.Output "Run 'ue settings adopt'"
+  Assert-OutputContains "case 7 workspace rollback logged" $res.Output "Restoring the pre-regen workspace file and stopping before build"
+  $workspace7Text = Get-Content -LiteralPath $workspace7 -Raw
   $ignore7Text = Get-Content -LiteralPath $ignore7 -Raw
-  Assert-Condition "case 7 generated workspace folder retained" (
-    @($workspace7Json.folders | Where-Object { $_.name -eq "Generated Project" }).Count -eq 1
-  ) "generated folder retained" "generated folder missing"
-  Assert-Condition "case 7 user extra workspace folder retained" (
-    @($workspace7Json.folders | Where-Object { $_.name -eq "User Extra Folder" -and $_.path -eq "../UserExtra" }).Count -eq 1
-  ) "user extra folder retained" "user extra folder missing"
-  Assert-Condition "case 7 user setting retained" ([bool]$workspace7Json.settings.'editor.formatOnSave') "editor.formatOnSave retained" "editor.formatOnSave missing"
-  Assert-Condition "case 7 user terminal env retained" (
-    [string]$workspace7Json.settings.'terminal.integrated.env.windows'.USER_ONLY -eq "1"
-  ) "USER_ONLY env retained" "USER_ONLY env missing"
-  Assert-Condition "case 7 extension recommendations merged" (
-    @($workspace7Json.extensions.recommendations) -contains "generated.extension" -and
-    @($workspace7Json.extensions.recommendations) -contains "user.extension"
-  ) "extension recommendations merged" "extension recommendations were not merged"
-  Assert-Condition "case 7 user task retained" (
-    @($workspace7Json.tasks.tasks | Where-Object { $_.label -eq "User Task" }).Count -eq 1
-  ) "user task retained" "user task missing"
-  Assert-Condition "case 7 generated task retained" (
-    @($workspace7Json.tasks.tasks | Where-Object { $_.label -eq "Generated Task" }).Count -eq 1
-  ) "generated task retained" "generated task missing"
-  Assert-Condition "case 7 user launch retained" (
-    @($workspace7Json.launch.configurations | Where-Object { $_.name -eq "User Launch" }).Count -eq 1
-  ) "user launch retained" "user launch missing"
-  Assert-Condition "case 7 generated launch retained" (
-    @($workspace7Json.launch.configurations | Where-Object { $_.name -eq "Generated Launch" }).Count -eq 1
-  ) "generated launch retained" "generated launch missing"
+  Assert-Condition "case 7 original workspace restored byte-for-byte" ($workspace7Text -eq $initialWorkspace7) "original workspace restored" "workspace content changed"
   Assert-Condition "case 7 ignore restored" ($ignore7Text -eq "original ignore`n") "ignore restored" "ignore content=$ignore7Text"
 
   Step "Case 8: Modified C++ source triggers build only"
@@ -753,6 +758,148 @@ try {
   Assert-OutputContains "case 11 blueprint warning" $res.Output "Blueprint-only project detected"
   Assert-OutputContains "case 11 build skipped" $res.Output "Skipping build..."
   Assert-Condition "case 11 build tool not invoked" (-not (Test-Path -LiteralPath $buildCapture11)) "Build.bat not called" "Build.bat should not run for blueprint-only project"
+
+  Step "Case 12: Team overlay-only hook change synchronizes settings without regeneration or build"
+  $case12Repo = New-ActionPlanRepo -Name "case 12 team overlay settings only"
+  $workspace12 = Join-Path $case12Repo.RepoDir "ActionPlan.code-workspace"
+  Write-TextFileLf -Path $workspace12 -Content @'
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "generated.value": "baseline"
+  }
+}
+'@
+  $localAppData12 = Join-Path $case12Repo.RepoDir ".test-localappdata"
+  [void](Initialize-ActionPlanWorkspaceSettings -RepoDir $case12Repo.RepoDir -WorkspacePath $workspace12 -LocalAppData $localAppData12)
+  $teamOverlay12 = Join-Path $case12Repo.RepoDir ".ue-tools\workspace-settings\team.jsonc"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $teamOverlay12) | Out-Null
+  Write-TextFileLf -Path $teamOverlay12 -Content @'
+{
+  "schemaVersion": 1,
+  "scope": "Team",
+  "operations": [
+    {
+      "op": "set",
+      "path": "/settings/team.autoApplied",
+      "value": true
+    }
+  ]
+}
+'@
+  & git -C $case12Repo.RepoDir add -- ".ue-tools/workspace-settings/team.jsonc" | Out-Null
+  & git -C $case12Repo.RepoDir commit -m "test: add team workspace overlay" | Out-Null
+  $head12 = ((git -C $case12Repo.RepoDir rev-parse HEAD 2>$null) | Select-Object -First 1).Trim()
+  $res = Invoke-UnrealSyncAt -WorkingDir $case12Repo.RepoDir -Args @(
+    "-RepoRoot", $case12Repo.RepoDir,
+    "-OldRev", $case12Repo.Base,
+    "-NewRev", $head12,
+    "-Flag", "1",
+    "-NonInteractive"
+  ) -Environment @{ LOCALAPPDATA = $localAppData12 }
+  $workspaceAfter12 = Get-Content -LiteralPath $workspace12 -Raw | ConvertFrom-Json -AsHashtable
+
+  Assert-Code "case 12 exit code" $res.Code 0
+  Assert-OutputContains "case 12 settings-only action plan" $res.Output "UE Sync action plan: synchronize VS Code workspace settings."
+  Assert-OutputContains "case 12 Team overlay trigger listed" $res.Output "Workspace-settings triggers:"
+  Assert-OutputNotContains "case 12 no regeneration trigger heading" $res.Output "Project-file regeneration triggers:"
+  Assert-OutputNotContains "case 12 no build trigger heading" $res.Output "Build triggers:"
+  Assert-OutputContains "case 12 generated cleanup skipped" $res.Output "Settings-only sync does not clean generated folders."
+  Assert-OutputContains "case 12 regeneration skipped" $res.Output "Skipping project file regeneration..."
+  Assert-OutputContains "case 12 build skipped" $res.Output "Skipping build..."
+  Assert-Condition "case 12 Team operation applied" ($workspaceAfter12.settings.'team.autoApplied' -eq $true) "Team setting applied" "Team setting missing from workspace"
+
+  & git -C $case12Repo.RepoDir rm -- ".ue-tools/workspace-settings/team.jsonc" | Out-Null
+  & git -C $case12Repo.RepoDir commit -m "test: remove team workspace overlay" | Out-Null
+  $deleteHead12 = ((git -C $case12Repo.RepoDir rev-parse HEAD 2>$null) | Select-Object -First 1).Trim()
+  $deleteRes12 = Invoke-UnrealSyncAt -WorkingDir $case12Repo.RepoDir -Args @(
+    "-RepoRoot", $case12Repo.RepoDir,
+    "-OldRev", $head12,
+    "-NewRev", $deleteHead12,
+    "-Flag", "1",
+    "-NonInteractive"
+  ) -Environment @{ LOCALAPPDATA = $localAppData12 }
+  $workspaceAfterDelete12 = Get-Content -LiteralPath $workspace12 -Raw | ConvertFrom-Json -AsHashtable
+
+  Assert-Code "case 12 overlay deletion exit code" $deleteRes12.Code 0
+  Assert-OutputContains "case 12 overlay deletion triggers settings sync" $deleteRes12.Output "UE Sync action plan: synchronize VS Code workspace settings."
+  Assert-Condition "case 12 overlay deletion removes former Team value" (-not $workspaceAfterDelete12.settings.Contains('team.autoApplied')) "Team setting removed" "Former Team setting remains in workspace"
+
+  Step "Case 13: Team overlay-only hook conflict leaves workspace and ledger unchanged"
+  $case13Repo = New-ActionPlanRepo -Name "case 13 team overlay conflict"
+  $workspace13 = Join-Path $case13Repo.RepoDir "ActionPlan.code-workspace"
+  Write-TextFileLf -Path $workspace13 -Content @'
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "shared.value": "ue-old"
+  }
+}
+'@
+  $teamOverlay13 = Join-Path $case13Repo.RepoDir ".ue-tools\workspace-settings\team.jsonc"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $teamOverlay13) | Out-Null
+  Write-TextFileLf -Path $teamOverlay13 -Content @'
+{
+  "schemaVersion": 1,
+  "scope": "Team",
+  "operations": [
+    {
+      "op": "set",
+      "path": "/settings/shared.value",
+      "value": "team-old"
+    }
+  ]
+}
+'@
+  & git -C $case13Repo.RepoDir add -- ".ue-tools/workspace-settings/team.jsonc" | Out-Null
+  & git -C $case13Repo.RepoDir commit -m "test: add initial team workspace overlay" | Out-Null
+  $oldHead13 = ((git -C $case13Repo.RepoDir rev-parse HEAD 2>$null) | Select-Object -First 1).Trim()
+  $localAppData13 = Join-Path $case13Repo.RepoDir ".test-localappdata"
+  $settingsContext13 = Initialize-ActionPlanWorkspaceSettings -RepoDir $case13Repo.RepoDir -WorkspacePath $workspace13 -LocalAppData $localAppData13
+  $live13 = Get-Content -LiteralPath $workspace13 -Raw | ConvertFrom-Json -AsHashtable
+  $live13.settings.'shared.value' = 'ue-new'
+  Write-TextFileLf -Path $workspace13 -Content (($live13 | ConvertTo-Json -Depth 100) + "`n")
+  Write-TextFileLf -Path $teamOverlay13 -Content @'
+{
+  "schemaVersion": 1,
+  "scope": "Team",
+  "operations": [
+    {
+      "op": "set",
+      "path": "/settings/shared.value",
+      "value": "team-new"
+    }
+  ]
+}
+'@
+  & git -C $case13Repo.RepoDir add -- ".ue-tools/workspace-settings/team.jsonc" | Out-Null
+  & git -C $case13Repo.RepoDir commit -m "test: change owned team workspace value" | Out-Null
+  $newHead13 = ((git -C $case13Repo.RepoDir rev-parse HEAD 2>$null) | Select-Object -First 1).Trim()
+  $workspaceBefore13 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($workspace13))
+  $stateBefore13 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($settingsContext13.Paths.State))
+  $res = Invoke-UnrealSyncAt -WorkingDir $case13Repo.RepoDir -Args @(
+    "-RepoRoot", $case13Repo.RepoDir,
+    "-OldRev", $oldHead13,
+    "-NewRev", $newHead13,
+    "-Flag", "1",
+    "-NonInteractive"
+  ) -Environment @{ LOCALAPPDATA = $localAppData13 }
+  $workspaceAfter13 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($workspace13))
+  $stateAfter13 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($settingsContext13.Paths.State))
+
+  Assert-Condition "case 13 conflict exits non-zero" ($res.Code -ne 0) "exit=$($res.Code)" "expected non-zero exit"
+  Assert-OutputContains "case 13 conflict reported" $res.Output "Workspace settings synchronization has 1 conflict(s); nothing was written."
+  Assert-OutputContains "case 13 status recovery command reported" $res.Output "Run: ue settings status -WorkspacePath"
+  Assert-Condition "case 13 workspace unchanged" ($workspaceBefore13 -eq $workspaceAfter13) "workspace bytes unchanged" "workspace was modified"
+  Assert-Condition "case 13 ledger unchanged" ($stateBefore13 -eq $stateAfter13) "ledger bytes unchanged" "ledger was modified"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

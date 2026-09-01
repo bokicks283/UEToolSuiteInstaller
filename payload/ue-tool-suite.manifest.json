@@ -25,6 +25,7 @@
       "Scripts/UETools/UEToolSuite.Docs.psm1",
       "Scripts/UETools/UEToolSuite.Git.psm1",
       "Scripts/UETools/UEToolSuite.Init.psm1",
+      "Scripts/UETools/UEToolSuite.Settings.psm1",
       "Scripts/UETools/UEToolSuite.Unreal.psm1",
       "Scripts/Unreal/ProjectContext.ps1",
       "Scripts/Docs/VSCodeBridge/extension.js",

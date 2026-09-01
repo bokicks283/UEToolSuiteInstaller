@@ -91,7 +91,7 @@ Use `-SkipDocsSectionMigration` only when you intentionally need installer or in
 
 Build-only hook runs skip `Binaries/` and `Intermediate/` cleanup by default. Use `ue-tools build -CleanGenerated -NoRegen -NoBuild` when you want a manual cleanup-only pass.
 
-When regeneration runs, the script snapshots VS Code workspace artifacts and `.ignore` first. After Unreal regenerates project files, it merges user workspace customization, including extra folders, settings, extension recommendations, custom tasks, and custom launch configurations, back into the generated `.code-workspace` and restores `.ignore` content that existed before the regen.
+When regeneration runs, UETools validates provenance-aware workspace overlays/state before cleanup, snapshots the effective `.code-workspace` and `.ignore`, treats Unreal's result as the new pristine baseline, and applies only explicitly owned additions, modifications, and removal tombstones. New unowned Unreal fields survive and obsolete unowned fields are not restored. A conflict restores the pre-regeneration workspace and stops before build. `-NoRegen` still runs settings sync; use `-SkipSettingsSync` only for an explicit opt-out. See `Docs/WorkflowStandards/CLI/Settings.md`.
 
 ## Validation Ownership
 

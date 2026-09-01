@@ -3,6 +3,7 @@
   NestedModules = @(
     "UEToolSuite.Aliases.psm1",
     "UEToolSuite.Dispatcher.psm1",
+    "UEToolSuite.Settings.psm1",
     "UEToolSuite.Unreal.psm1",
     "UEToolSuite.Docs.psm1",
     "UEToolSuite.Art.psm1",
