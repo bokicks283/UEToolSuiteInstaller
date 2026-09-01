@@ -86,15 +86,18 @@ function Test-UEToolSuiteWorkspaceValueEqual {
 
 function ConvertFrom-UEToolSuiteJsonPointer {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$Path)
+  param([Parameter(Mandatory)][AllowEmptyString()][string]$Path)
   if ($Path -eq '') { return @() }
   if (-not $Path.StartsWith('/')) { throw "Invalid JSON Pointer '$Path'. Paths must be empty or start with '/'." }
-  return @($Path.Substring(1).Split('/') | ForEach-Object { ($_ -replace '~1', '/') -replace '~0', '~' })
+  return @($Path.Substring(1).Split('/') | ForEach-Object {
+    if ($_ -match '~(?![01])') { throw "Invalid JSON Pointer '$Path'. A '~' escape must be '~0' or '~1'." }
+    ($_ -replace '~1', '/') -replace '~0', '~'
+  })
 }
 
 function Get-UEToolSuiteWorkspacePointerResult {
   [CmdletBinding()]
-  param([AllowNull()]$Root, [Parameter(Mandatory)][string]$Path)
+  param([AllowNull()]$Root, [Parameter(Mandatory)][AllowEmptyString()][string]$Path)
   $current = $Root
   foreach ($segment in @(ConvertFrom-UEToolSuiteJsonPointer $Path)) {
     if ($current -is [System.Collections.IDictionary]) {
@@ -117,7 +120,7 @@ function Get-UEToolSuiteWorkspacePointerResult {
 
 function Set-UEToolSuiteWorkspacePointerValue {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][System.Collections.IDictionary]$Root, [Parameter(Mandatory)][string]$Path, [AllowNull()]$Value)
+  param([Parameter(Mandatory)][System.Collections.IDictionary]$Root, [Parameter(Mandatory)][AllowEmptyString()][string]$Path, [AllowNull()]$Value)
   $segments = @(ConvertFrom-UEToolSuiteJsonPointer $Path)
   if ($segments.Count -eq 0) { throw 'An operation cannot replace the workspace root.' }
   $current = $Root
@@ -133,7 +136,7 @@ function Set-UEToolSuiteWorkspacePointerValue {
 
 function Remove-UEToolSuiteWorkspacePointerValue {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][System.Collections.IDictionary]$Root, [Parameter(Mandatory)][string]$Path)
+  param([Parameter(Mandatory)][System.Collections.IDictionary]$Root, [Parameter(Mandatory)][AllowEmptyString()][string]$Path)
   $segments = @(ConvertFrom-UEToolSuiteJsonPointer $Path)
   if ($segments.Count -eq 0) { throw 'An operation cannot remove the workspace root.' }
   $current = $Root
@@ -420,7 +423,30 @@ function Invoke-UEToolSuiteAtomicTextTransaction {
   }finally{for($i=1;$i -lt $staged.Count;$i+=2){if(Test-Path -LiteralPath $staged[$i]){Remove-Item -LiteralPath $staged[$i] -Force}}}
 }
 
-function Get-UEToolSuiteWorkspaceState { param([Parameter(Mandatory)]$Context) if(Test-Path -LiteralPath $Context.Paths.State -PathType Leaf){$s=Read-UEToolSuiteWorkspaceJsonFile $Context.Paths.State;if([int]$s.schemaVersion -ne 1){throw "Unsupported workspace state schema in '$($Context.Paths.State)': $($s.schemaVersion)."};return $s};return $null }
+function Get-UEToolSuiteWorkspaceState {
+  param([Parameter(Mandatory)]$Context)
+  if (-not (Test-Path -LiteralPath $Context.Paths.State -PathType Leaf)) { return $null }
+  $state = Read-UEToolSuiteWorkspaceJsonFile $Context.Paths.State
+  if (-not ($state -is [System.Collections.IDictionary])) {
+    throw "Malformed workspace provenance ledger '$($Context.Paths.State)': the root must be an object."
+  }
+  if ([int]$state.schemaVersion -ne 1) {
+    throw "Unsupported workspace state schema in '$($Context.Paths.State)': $($state.schemaVersion)."
+  }
+  if ([string]$state.workspaceId -ne $Context.Paths.WorkspaceId) {
+    throw "Stale workspace provenance ledger '$($Context.Paths.State)': workspaceId does not match '$($Context.WorkspacePath)'. Move the stale file aside, then run 'ue settings adopt'."
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$state.workspacePath) -or
+      -not [string]::Equals([string]$state.workspacePath, [string]$Context.WorkspacePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Stale workspace provenance ledger '$($Context.Paths.State)': workspacePath does not match '$($Context.WorkspacePath)'. Move the stale file aside, then run 'ue settings adopt'."
+  }
+  foreach ($field in @('pristine','effective')) {
+    if (-not $state.Contains($field) -or -not ($state[$field] -is [System.Collections.IDictionary])) {
+      throw "Malformed workspace provenance ledger '$($Context.Paths.State)': '$field' must be a workspace object. Restore a valid ledger or move it aside and run 'ue settings adopt'."
+    }
+  }
+  return $state
+}
 function New-UEToolSuiteWorkspaceState { param($Context,$Pristine,$Effective) return [ordered]@{schemaVersion=1;workspaceId=$Context.Paths.WorkspaceId;workspacePath=$Context.WorkspacePath;profileId=$Context.Paths.ProfileId;updatedUtc=[DateTime]::UtcNow.ToString('o');pristine=Copy-UEToolSuiteWorkspaceValue $Pristine;effective=Copy-UEToolSuiteWorkspaceValue $Effective} }
 
 function Write-UEToolSuiteWorkspacePlanSummary {
@@ -456,9 +482,12 @@ function Invoke-UEToolSuiteWorkspaceSync {
 
 function Get-UEToolSuiteWorkspaceArrayChanges {
   param($Before,$After,[string]$Path,$Context)
-  $allItems=@(@($Before)+@($After));if(@($allItems|Where-Object{$_ -isnot [string]}).Count-eq0){$ops=@();foreach($item in @($Before)){if(@($After|Where-Object{[string]$_ -ceq [string]$item}).Count-eq0){$ops += [ordered]@{op='removeStringItem';path=$Path;value=[string]$item}}};foreach($item in @($After)){if(@($Before|Where-Object{[string]$_ -ceq [string]$item}).Count-eq0){$ops += [ordered]@{op='addStringItem';path=$Path;value=[string]$item}}};return @($ops)}
+  $beforeItems=[System.Collections.Generic.List[object]]::new();if($null-ne$Before){foreach($item in $Before){[void]$beforeItems.Add($item)}}
+  $afterItems=[System.Collections.Generic.List[object]]::new();if($null-ne$After){foreach($item in $After){[void]$afterItems.Add($item)}}
+  $allItems=[System.Collections.Generic.List[object]]::new();foreach($item in $beforeItems){[void]$allItems.Add($item)};foreach($item in $afterItems){[void]$allItems.Add($item)}
+  if(@($allItems|Where-Object{$_ -isnot [string]}).Count-eq0){$ops=@();foreach($item in $beforeItems){if(@($afterItems|Where-Object{[string]$_ -ceq [string]$item}).Count-eq0){$ops += [ordered]@{op='removeStringItem';path=$Path;value=[string]$item}}};foreach($item in $afterItems){if(@($beforeItems|Where-Object{[string]$_ -ceq [string]$item}).Count-eq0){$ops += [ordered]@{op='addStringItem';path=$Path;value=[string]$item}}};return @($ops)}
   if(-not $script:UEToolSuiteWorkspaceArrayIdentities.ContainsKey($Path)){throw "Array change at '$Path' has no known identity strategy. Specify a supported keyed array or edit the overlay with an explicit identityKey."}
-  $key=$script:UEToolSuiteWorkspaceArrayIdentities[$Path];$ops=@();$beforeItems=@($Before);$afterItems=@($After)
+  $key=$script:UEToolSuiteWorkspaceArrayIdentities[$Path];$ops=@()
   foreach($item in $beforeItems){$id=[string]$item[$key];$idx=Get-UEToolSuiteArrayIndexByIdentity $afterItems $key $id $Path $Context;if($idx -lt 0){
     if($Path -eq '/folders'){$semantic=[ordered]@{op='removeSemantic';path='/folders';selector='activeUnrealEngineRoot'};try{$probe=Copy-UEToolSuiteWorkspaceValue ([ordered]@{folders=@($item)});if((Get-UEToolSuiteSemanticMatches $probe $Context $semantic).Indices.Count -eq 1){$ops+=$semantic;continue}}catch{}}
     $ops += [ordered]@{op='removeKeyedItem';path=$Path;identityKey=$key;identityValue=$id}
@@ -471,14 +500,17 @@ function Get-UEToolSuiteWorkspaceDiffAtPath {
   param($Before,$After,[string]$Path,$Context)
   $a=Get-UEToolSuiteWorkspacePointerResult $Before $Path;$b=Get-UEToolSuiteWorkspacePointerResult $After $Path
   if(-not$a.Exists -and -not$b.Exists){return @()};if($a.Exists -and -not$b.Exists){return @([ordered]@{op='removeProperty';path=$Path})}
-  if($b.Value -is [System.Collections.IList]){return @(Get-UEToolSuiteWorkspaceArrayChanges $(if($a.Exists){$a.Value}else{@()}) $b.Value $Path $Context)}
+  if($b.Value -is [System.Collections.IList]){return @(Get-UEToolSuiteWorkspaceArrayChanges -Before $(if($a.Exists){$a.Value}else{@()}) -After $b.Value -Path $Path -Context $Context)}
   if($b.Value -is [System.Collections.IDictionary]){$ops=@();$keys=@();if($a.Exists -and $a.Value -is [System.Collections.IDictionary]){$keys+=@($a.Value.Keys)};$keys+=@($b.Value.Keys);foreach($key in @($keys|Sort-Object -Unique)){$escaped=([string]$key -replace '~','~0') -replace '/','~1';$child=if($Path-eq''){"/$escaped"}else{"$Path/$escaped"};$ops+=Get-UEToolSuiteWorkspaceDiffAtPath $Before $After $child $Context};return @($ops)}
   if(-not$a.Exists -or -not(Test-UEToolSuiteWorkspaceValueEqual $a.Value $b.Value)){return @([ordered]@{op='set';path=$Path;value=Copy-UEToolSuiteWorkspaceValue $b.Value})};return @()
 }
 
 function Get-UEToolSuiteWorkspaceCaptureOperations {
   param($Before,$After,[string[]]$Paths,$Context)
-  $ops=@();foreach($path in $Paths){[void](ConvertFrom-UEToolSuiteJsonPointer $path);$ops+=Get-UEToolSuiteWorkspaceDiffAtPath $Before $After $path $Context};return @($ops)
+  $pathsToCompare=[System.Collections.Generic.List[string]]::new()
+  foreach($selectedPath in @($Paths)){[void]$pathsToCompare.Add([string]$selectedPath)}
+  if($pathsToCompare.Count -eq 0){[void]$pathsToCompare.Add('')}
+  $ops=@();foreach($path in $pathsToCompare){[void](ConvertFrom-UEToolSuiteJsonPointer $path);$ops+=Get-UEToolSuiteWorkspaceDiffAtPath $Before $After $path $Context};return @($ops)
 }
 
 function Test-UEToolSuiteWorkspaceConfiguration {
@@ -494,20 +526,22 @@ function Set-UEToolSuiteWorkspaceCapturedOperations {
 
 function Invoke-UEToolSuiteWorkspaceCapture {
   param([string]$RepoRoot,[string]$WorkspacePath,[ValidateSet('Team','User','Project')][string]$Scope,[string[]]$Path,[switch]$DryRun,[switch]$NonInteractive)
-  if($NonInteractive -and @($Path).Count -eq 0){throw 'settings capture -NonInteractive requires at least one explicit -Path.'};$selectInteractively=@($Path).Count-eq0;if($selectInteractively){$Path=@('')}
-  $context=Resolve-UEToolSuiteWorkspaceSettingsContext $RepoRoot $WorkspacePath;$state=Get-UEToolSuiteWorkspaceState $context;if(-not$state){throw "No workspace provenance ledger exists. Run 'ue settings adopt' first."};$live=Read-UEToolSuiteWorkspaceJsonFile $context.WorkspacePath;$ops=Get-UEToolSuiteWorkspaceCaptureOperations $state.effective $live $Path $context;if($ops.Count -eq 0){Write-Output 'No selected workspace changes were found.';return}
+  $hasExplicitPaths=$null-ne$Path-and$Path.Count-gt0
+  if($NonInteractive -and -not$hasExplicitPaths){throw 'settings capture -NonInteractive requires at least one explicit -Path.'};$selectInteractively=-not$hasExplicitPaths
+  $context=Resolve-UEToolSuiteWorkspaceSettingsContext $RepoRoot $WorkspacePath;$state=Get-UEToolSuiteWorkspaceState $context;if(-not$state){throw "No workspace provenance ledger exists. Run 'ue settings adopt' first."};$live=Read-UEToolSuiteWorkspaceJsonFile $context.WorkspacePath;$ops=@(Get-UEToolSuiteWorkspaceCaptureOperations -Before $state.effective -After $live -Paths $Path -Context $context);if($ops.Count -eq 0){$selection=if($selectInteractively){'the whole workspace'}else{($Path -join ', ')};Write-Output "No workspace changes were found relative to the last effective state for $selection.";Write-Output "Workspace: $($context.WorkspacePath)";Write-Output "State: $($context.Paths.State)";Write-Output "If a change was expected, save the workspace and run 'ue settings status' to verify drift.";return}
   if($selectInteractively){for($i=0;$i-lt$ops.Count;$i++){$kind=if([string]$ops[$i].op -like 'remove*'){'REMOVAL'}else{if((Get-UEToolSuiteWorkspacePointerResult $state.effective ([string]$ops[$i].path)).Exists){'MODIFICATION'}else{'ADDITION'}};Write-Output "[$($i+1)] $kind $($ops[$i].op) $($ops[$i].path)"};$answer=Read-Host "Select change numbers for $Scope (comma-separated, or 'all')";if($answer.Trim().ToLowerInvariant() -ne 'all'){$selected=@();foreach($token in @($answer-split ',')){$index=0;if([int]::TryParse($token.Trim(),[ref]$index)-and$index-ge1-and$index-le$ops.Count){$selected+=$ops[$index-1]}};$ops=@($selected);if($ops.Count-eq0){throw 'No workspace changes were selected; nothing was written.'}}}
   foreach($op in $ops){Write-Output "Capture [$Scope]: $($op.op) $($op.path)"};$captured=Set-UEToolSuiteWorkspaceCapturedOperations $context $Scope $ops -DryRun;if(-not$DryRun){$plan=Get-UEToolSuiteWorkspacePlan $state.pristine $state.pristine $captured.Layers $context;if($plan.HasConflicts){throw 'Captured workspace operations conflict with the stored pristine baseline; no files were written.'};$newState=New-UEToolSuiteWorkspaceState $context $state.pristine $plan.Effective;$writes=[ordered]@{};$writes[$captured.OverlayPath]=ConvertTo-UEToolSuiteWorkspaceFileText $captured.Overlay "`n";$writes[$context.WorkspacePath]=ConvertTo-UEToolSuiteWorkspaceFileText $plan.Effective;$writes[$context.Paths.State]=ConvertTo-UEToolSuiteWorkspaceFileText $newState "`n";Invoke-UEToolSuiteAtomicTextTransaction $writes}
 }
 
 function Invoke-UEToolSuiteWorkspaceAdopt {
   param([string]$RepoRoot,[string]$WorkspacePath,[ValidateSet('Team','User','Project')][string]$Scope,[string[]]$Path,[switch]$DryRun,[switch]$NonInteractive)
-  if($NonInteractive -and (@($Path).Count -eq 0 -or [string]::IsNullOrWhiteSpace($Scope))){throw 'settings adopt -NonInteractive requires explicit -Scope and at least one -Path.'}
+  $hasExplicitPaths=$null-ne$Path-and$Path.Count-gt0
+  if($NonInteractive -and (-not$hasExplicitPaths -or [string]::IsNullOrWhiteSpace($Scope))){throw 'settings adopt -NonInteractive requires explicit -Scope and at least one -Path.'}
   if([string]::IsNullOrWhiteSpace($Scope)){$requestedScope=(Read-Host 'Adoption scope (Team, User, or Project)').Trim();if($requestedScope -notin @('Team','User','Project')){throw "Invalid adoption scope '$requestedScope'."};$Scope=$requestedScope}
-  $selectInteractively=@($Path).Count-eq0;if($selectInteractively){$Path=@('')}
+  $selectInteractively=-not$hasExplicitPaths
   $context=Resolve-UEToolSuiteWorkspaceSettingsContext $RepoRoot $WorkspacePath;if(Get-UEToolSuiteWorkspaceState $context){throw 'A workspace provenance ledger already exists; use settings capture or remove the state file to rebuild it.'};$original=Get-Content -LiteralPath $context.WorkspacePath -Raw
   if($DryRun){Write-Output "Workspace: $($context.WorkspacePath)";Write-Output "Adoption scope: $Scope";Write-Output "Selected paths: $($Path -join ', ')";Write-Output 'Adoption would snapshot the current workspace, regenerate pristine Unreal project files, classify the selected paths, and atomically write overlay/workspace/state. Dry run did not regenerate or write any file.';return}
-  try{Invoke-UEToolSuiteUnrealBuild -RepoRoot $context.RepoRoot -CommandArguments @('-NoBuild','-SkipSettingsSync','-NonInteractive','-WorkspacePath',$context.WorkspacePath);$pristine=Read-UEToolSuiteWorkspaceJsonFile $context.WorkspacePath;$old=ConvertFrom-UEToolSuiteJsoncText $original $context.WorkspacePath;$ops=Get-UEToolSuiteWorkspaceCaptureOperations $pristine $old $Path $context;if($selectInteractively){for($i=0;$i-lt$ops.Count;$i++){$kind=if([string]$ops[$i].op-like'remove*'){'REMOVAL'}else{if((Get-UEToolSuiteWorkspacePointerResult $pristine ([string]$ops[$i].path)).Exists){'MODIFICATION'}else{'ADDITION'}};Write-Output "[$($i+1)] $kind $($ops[$i].op) $($ops[$i].path)"};$answer=Read-Host "Select changes to adopt into $Scope (comma-separated, or 'all')";if($answer.Trim().ToLowerInvariant()-ne'all'){$selected=@();foreach($token in @($answer-split',')){$index=0;if([int]::TryParse($token.Trim(),[ref]$index)-and$index-ge1-and$index-le$ops.Count){$selected+=$ops[$index-1]}};$ops=@($selected);if($ops.Count-eq0){throw 'No adoption candidates were selected; the original workspace was restored.'}}};$captured=Set-UEToolSuiteWorkspaceCapturedOperations $context $Scope $ops -DryRun;$plan=Get-UEToolSuiteWorkspacePlan $pristine $null $captured.Layers $context;if($plan.HasConflicts){throw 'Adoption produced conflicts.'};$state=New-UEToolSuiteWorkspaceState $context $pristine $plan.Effective;$writes=[ordered]@{};$writes[$captured.OverlayPath]=ConvertTo-UEToolSuiteWorkspaceFileText $captured.Overlay "`n";$writes[$context.WorkspacePath]=ConvertTo-UEToolSuiteWorkspaceFileText $plan.Effective;$writes[$context.Paths.State]=ConvertTo-UEToolSuiteWorkspaceFileText $state "`n";Invoke-UEToolSuiteAtomicTextTransaction $writes;Write-Output "Adopted $($ops.Count) operation(s) into $Scope scope."}catch{[IO.File]::WriteAllText($context.WorkspacePath,$original,[Text.UTF8Encoding]::new($false));throw}
+  try{Invoke-UEToolSuiteUnrealBuild -RepoRoot $context.RepoRoot -CommandArguments @('-NoBuild','-SkipSettingsSync','-NonInteractive','-WorkspacePath',$context.WorkspacePath);$pristine=Read-UEToolSuiteWorkspaceJsonFile $context.WorkspacePath;$old=ConvertFrom-UEToolSuiteJsoncText $original $context.WorkspacePath;$ops=@(Get-UEToolSuiteWorkspaceCaptureOperations -Before $pristine -After $old -Paths $Path -Context $context);if($selectInteractively){for($i=0;$i-lt$ops.Count;$i++){$kind=if([string]$ops[$i].op-like'remove*'){'REMOVAL'}else{if((Get-UEToolSuiteWorkspacePointerResult $pristine ([string]$ops[$i].path)).Exists){'MODIFICATION'}else{'ADDITION'}};Write-Output "[$($i+1)] $kind $($ops[$i].op) $($ops[$i].path)"};$answer=Read-Host "Select changes to adopt into $Scope (comma-separated, or 'all')";if($answer.Trim().ToLowerInvariant()-ne'all'){$selected=@();foreach($token in @($answer-split',')){$index=0;if([int]::TryParse($token.Trim(),[ref]$index)-and$index-ge1-and$index-le$ops.Count){$selected+=$ops[$index-1]}};$ops=@($selected);if($ops.Count-eq0){throw 'No adoption candidates were selected; the original workspace was restored.'}}};$captured=Set-UEToolSuiteWorkspaceCapturedOperations $context $Scope $ops -DryRun;$plan=Get-UEToolSuiteWorkspacePlan $pristine $null $captured.Layers $context;if($plan.HasConflicts){throw 'Adoption produced conflicts.'};$state=New-UEToolSuiteWorkspaceState $context $pristine $plan.Effective;$writes=[ordered]@{};$writes[$captured.OverlayPath]=ConvertTo-UEToolSuiteWorkspaceFileText $captured.Overlay "`n";$writes[$context.WorkspacePath]=ConvertTo-UEToolSuiteWorkspaceFileText $plan.Effective;$writes[$context.Paths.State]=ConvertTo-UEToolSuiteWorkspaceFileText $state "`n";Invoke-UEToolSuiteAtomicTextTransaction $writes;Write-Output "Adopted $($ops.Count) operation(s) into $Scope scope."}catch{[IO.File]::WriteAllText($context.WorkspacePath,$original,[Text.UTF8Encoding]::new($false));throw}
 }
 
 function Invoke-UEToolSuiteWorkspaceStatus {
@@ -516,22 +550,210 @@ function Invoke-UEToolSuiteWorkspaceStatus {
 }
 
 function ConvertTo-UEToolSuiteSettingsCommandParameters {
-  param([string]$RepoRoot,[string[]]$Arguments)
-  $p=@{RepoRoot=$RepoRoot;Path=@()};for($i=0;$i -lt @($Arguments).Count;){$t=[string]$Arguments[$i];$n=$t.TrimStart('-','/').ToLowerInvariant();if($n -in @('dryrun','noninteractive')){$p[$(if($n-eq'dryrun'){'DryRun'}else{'NonInteractive'})]=$true;$i++;continue};if($n -in @('reporoot','workspacepath','scope','path')){if($i+1-ge$Arguments.Count){throw "Missing value for settings option '$t'."};$key=switch($n){'reporoot'{'RepoRoot'}'workspacepath'{'WorkspacePath'}'scope'{'Scope'}'path'{'Path'}};if($key-eq'Path'){$p.Path+= [string]$Arguments[$i+1]}else{$p[$key]=[string]$Arguments[$i+1]};$i+=2;continue};throw "Unknown settings option '$t'. Run 'ue settings help'."};return $p
+  param(
+    [string]$RepoRoot,
+    [Parameter(Mandatory)][ValidateSet('sync','capture','adopt','status')][string]$Subcommand,
+    [string[]]$Arguments
+  )
+
+  $allowedOptions = @{
+    sync = @('reporoot','workspacepath','dryrun','noninteractive')
+    capture = @('reporoot','workspacepath','scope','path','dryrun','noninteractive')
+    adopt = @('reporoot','workspacepath','scope','path','dryrun','noninteractive')
+    status = @('reporoot','workspacepath')
+  }
+  $valueOptions = @('reporoot','workspacepath','scope','path')
+  $switchOptions = @('dryrun','noninteractive')
+  $parameters = @{ RepoRoot = $RepoRoot }
+
+  for ($i = 0; $i -lt @($Arguments).Count;) {
+    $token = [string]$Arguments[$i]
+    $option = $token.TrimStart('-','/').ToLowerInvariant()
+    if ($option -notin @($valueOptions + $switchOptions)) {
+      throw "Unknown settings option '$token'. Run 'ue settings $Subcommand help'."
+    }
+    if ($option -notin $allowedOptions[$Subcommand]) {
+      throw "Option '$token' is not valid for 'settings $Subcommand'. Run 'ue settings $Subcommand help'."
+    }
+    if ($option -in $switchOptions) {
+      $parameters[$(if ($option -eq 'dryrun') { 'DryRun' } else { 'NonInteractive' })] = $true
+      $i++
+      continue
+    }
+    if (($i + 1) -ge $Arguments.Count) {
+      throw "Missing value for settings option '$token'."
+    }
+    $value = [string]$Arguments[$i + 1]
+    if ($value.StartsWith('-') -and $value.TrimStart('-','/').ToLowerInvariant() -in @($valueOptions + $switchOptions)) {
+      throw "Missing value for settings option '$token'."
+    }
+    $key = switch ($option) {
+      'reporoot' { 'RepoRoot' }
+      'workspacepath' { 'WorkspacePath' }
+      'scope' { 'Scope' }
+      'path' { 'Path' }
+    }
+    if ($key -eq 'Path') {
+      $existingPaths = if ($parameters.ContainsKey('Path')) { [string[]]@($parameters.Path) } else { [string[]]@() }
+      $parameters.Path = [string[]]@(@($existingPaths) + @($value))
+    }
+    else {
+      $parameters[$key] = $value
+    }
+    $i += 2
+  }
+  return $parameters
 }
 
 function Get-UEToolSuiteSettingsHelpText {
   param([string]$Subcommand)
-  if([string]::IsNullOrWhiteSpace($Subcommand)){return @('Usage: ue settings <sync|capture|adopt|status|help> [options]','  sync                 Apply already-owned operations.','  capture -Scope S -Path P...  Capture selected live additions, modifications, or removals.','  adopt -Scope S -Path P...    Safely classify customization before the first ledger.','  status               Show workspace, layers, ownership, state, and drift.','Common options: -RepoRoot -WorkspacePath -DryRun -NonInteractive')}
-  switch($Subcommand.ToLowerInvariant()){'sync'{@('Usage: ue settings sync [-RepoRoot path] [-WorkspacePath path] [-DryRun] [-NonInteractive]')} 'capture'{@('Usage: ue settings capture -Scope <Team|User|Project> -Path <json-pointer>... [-DryRun] [-NonInteractive]')} 'adopt'{@('Usage: ue settings adopt -Scope <Team|User|Project> -Path <json-pointer>... [-NonInteractive]')} 'status'{@('Usage: ue settings status [-RepoRoot path] [-WorkspacePath path]')} default{@("Unknown settings help topic '$Subcommand'.")}}
+  if ([string]::IsNullOrWhiteSpace($Subcommand)) {
+    return @(
+      'VS Code workspace settings synchronization.'
+      'Usage: ue settings <sync|capture|adopt|status|help> [options]'
+      ''
+      'Commands:'
+      '  sync      Validate and apply operations that are already owned.'
+      '  capture   Convert selected live workspace changes into owned operations.'
+      '  adopt     Establish provenance for a workspace that may already be customized.'
+      '  status    Inspect workspace selection, layers, state, drift, and conflicts.'
+      ''
+      'Getting started:'
+      '  1. Run: ue settings status -WorkspacePath ".\Game.code-workspace"'
+      '  2. If state is missing and the workspace is customized, use settings adopt.'
+      '  3. If state exists, use settings capture for new edits and settings sync to apply ownership.'
+      ''
+      'Help:'
+      '  ue help settings <command>'
+      '  ue settings help <command>'
+      '  ue settings <command> help'
+      ''
+      'Both ue and ue-tools use the same installed runtime and command surface.'
+    )
+  }
+
+  switch ($Subcommand.Trim().ToLowerInvariant()) {
+    'sync' {
+      return @(
+        'Apply owned VS Code workspace settings.'
+        'Usage: ue settings sync [-RepoRoot <path>] [-WorkspacePath <path>] [-DryRun] [-NonInteractive]'
+        ''
+        'What it does:'
+        '  - Requires an existing provenance ledger.'
+        '  - Validates Team, User, and Project overlays before writing.'
+        '  - Applies owned operations in Team -> User -> Project precedence order.'
+        '  - Detects owned-value conflicts and writes nothing when any conflict exists.'
+        '  - Never captures unknown live differences or creates ownership.'
+        ''
+        'Options:'
+        '  -RepoRoot <path>       Select the Unreal repository explicitly.'
+        '  -WorkspacePath <path> Select the .code-workspace file; relative paths use RepoRoot.'
+        '  -DryRun               Run the full planner and validation without writing files.'
+        '  -NonInteractive       Disable prompts for automation and hook-safe execution.'
+        ''
+        'Examples:'
+        '  ue settings sync -WorkspacePath ".\Game.code-workspace" -DryRun'
+        '  ue settings sync -RepoRoot "C:\Projects\Game" -WorkspacePath ".\Game.code-workspace" -NonInteractive'
+        ''
+        'Use settings capture for a saved edit made after the ledger exists. Use settings adopt only when establishing or intentionally rebuilding provenance.'
+      )
+    }
+    'capture' {
+      return @(
+        'Capture selected live workspace changes as owned operations.'
+        'Usage: ue settings capture -Scope <Team|User|Project> [-RepoRoot <path>] [-WorkspacePath <path>] [-Path <json-pointer>]... [-DryRun] [-NonInteractive]'
+        ''
+        'What it does:'
+        '  - Requires an existing provenance ledger.'
+        '  - Compares the saved live workspace with the last effective snapshot.'
+        '  - Classifies selected additions, modifications, and removals as explicit operations.'
+        '  - Applies all layers and atomically updates the overlay, workspace, and ledger.'
+        '  - Scans the whole workspace and prompts for changes when -Path is omitted.'
+        ''
+        'Options:'
+        '  -RepoRoot <path>       Select the Unreal repository explicitly.'
+        '  -WorkspacePath <path> Select the .code-workspace file; relative paths use RepoRoot.'
+        '  -Scope <scope>        Required ownership layer: Team, User, or Project.'
+        '  -Path <json-pointer>  Select one structural path; repeat for multiple paths.'
+        '  -DryRun               Preview selected operations without writing files.'
+        '  -NonInteractive       Disable prompts; requires at least one explicit -Path.'
+        ''
+        'Examples:'
+        '  ue settings capture -Scope Project -Path /settings/editor.fontSize -DryRun -NonInteractive'
+        '  ue settings capture -Scope Team -Path /folders -WorkspacePath ".\Game.code-workspace" -NonInteractive'
+        '  ue settings capture -Scope User'
+        ''
+        'Team is tracked and portable. User is machine-local and reusable. Project is private to this repository and user.'
+      )
+    }
+    'adopt' {
+      return @(
+        'Establish provenance for an existing customized workspace.'
+        'Usage: ue settings adopt [-RepoRoot <path>] [-WorkspacePath <path>] [-Scope <Team|User|Project>] [-Path <json-pointer>]... [-DryRun] [-NonInteractive]'
+        ''
+        'What it does:'
+        '  - Refuses to run when a provenance ledger already exists.'
+        '  - Preserves the original workspace, regenerates a pristine Unreal workspace, and compares them.'
+        '  - Lets interactive users select candidate additions, modifications, and removals.'
+        '  - Atomically writes the selected overlay, effective workspace, and first ledger.'
+        '  - Restores the original workspace if regeneration, validation, or writing fails.'
+        ''
+        'Options:'
+        '  -RepoRoot <path>       Select the Unreal repository explicitly.'
+        '  -WorkspacePath <path> Select the .code-workspace file; relative paths use RepoRoot.'
+        '  -Scope <scope>        Ownership layer: Team, User, or Project; prompted when omitted.'
+        '  -Path <json-pointer>  Select one structural path; repeat for multiple paths.'
+        '  -DryRun               Describe the adoption without regenerating or writing files.'
+        '  -NonInteractive       Disable prompts; requires explicit -Scope and at least one -Path.'
+        ''
+        'Examples:'
+        '  ue settings adopt -WorkspacePath ".\Game.code-workspace"'
+        '  ue settings adopt -Scope User -Path /settings -Path /extensions/recommendations -NonInteractive'
+        '  ue settings adopt -Scope Project -Path /tasks/tasks -DryRun -NonInteractive'
+        ''
+        'If a ledger already exists, use settings capture for new live edits or move a backed-up stale ledger aside before an intentional rebuild.'
+      )
+    }
+    'status' {
+      return @(
+        'Inspect workspace settings provenance and health.'
+        'Usage: ue settings status [-RepoRoot <path>] [-WorkspacePath <path>]'
+        ''
+        'What it does:'
+        '  - Shows the resolved workspace, active user profile, and provenance state path.'
+        '  - Lists Team, User, and Project overlay locations and owned operations.'
+        '  - Reports live workspace drift from the last effective snapshot.'
+        '  - Evaluates and lists current ownership conflicts when state exists.'
+        '  - Never writes files.'
+        ''
+        'Options:'
+        '  -RepoRoot <path>       Select the Unreal repository explicitly.'
+        '  -WorkspacePath <path> Select the .code-workspace file; relative paths use RepoRoot.'
+        ''
+        'Examples:'
+        '  ue settings status'
+        '  ue settings status -WorkspacePath ".\Game.code-workspace"'
+        '  ue settings status -RepoRoot "C:\Projects\Game" -WorkspacePath ".\Game.code-workspace"'
+        ''
+        'Status does not accept -DryRun, -NonInteractive, -Scope, or -Path because it is already read-only.'
+      )
+    }
+    default {
+      return @(
+        "Unknown settings help topic '$Subcommand'."
+        'Available topics: sync, capture, adopt, status.'
+        'Run: ue settings help'
+      )
+    }
+  }
 }
 
 function Invoke-UEToolSuiteSettingsCommand {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$RepoRoot,[string[]]$CommandArguments=@())
   if(@($CommandArguments).Count-eq0 -or [string]$CommandArguments[0] -in @('help','--help','-help','-h','/?','-?')){$topic=if($CommandArguments.Count-gt1){[string]$CommandArguments[1]}else{''};Get-UEToolSuiteSettingsHelpText $topic|Write-Output;return}
-  $sub=[string]$CommandArguments[0];$tail=@($CommandArguments|Select-Object -Skip 1);if(@($tail|Where-Object{$_ -in @('help','--help','-help','-h','/?','-?')}).Count-gt0){Get-UEToolSuiteSettingsHelpText $sub|Write-Output;return};$p=ConvertTo-UEToolSuiteSettingsCommandParameters $RepoRoot $tail
-  switch($sub.ToLowerInvariant()){'sync'{[void](Invoke-UEToolSuiteWorkspaceSync @p)}'capture'{if(-not$p.Scope){throw 'settings capture requires -Scope Team, User, or Project.'};Invoke-UEToolSuiteWorkspaceCapture @p}'adopt'{Invoke-UEToolSuiteWorkspaceAdopt @p}'status'{Invoke-UEToolSuiteWorkspaceStatus -RepoRoot $p.RepoRoot -WorkspacePath $p.WorkspacePath}default{throw "Unknown settings subcommand '$sub'. Run 'ue settings help'."}}
+  $sub=[string]$CommandArguments[0];$tail=@($CommandArguments|Select-Object -Skip 1);if(@($tail|Where-Object{$_ -in @('help','--help','-help','-h','/?','-?')}).Count-gt0){Get-UEToolSuiteSettingsHelpText $sub|Write-Output;return};$normalizedSubcommand=$sub.Trim().ToLowerInvariant();if($normalizedSubcommand -notin @('sync','capture','adopt','status')){throw "Unknown settings subcommand '$sub'. Run 'ue settings help'."};$p=ConvertTo-UEToolSuiteSettingsCommandParameters -RepoRoot $RepoRoot -Subcommand $normalizedSubcommand -Arguments $tail
+  switch($normalizedSubcommand){'sync'{[void](Invoke-UEToolSuiteWorkspaceSync @p)}'capture'{if(-not$p.Scope){throw 'settings capture requires -Scope Team, User, or Project.'};Invoke-UEToolSuiteWorkspaceCapture @p}'adopt'{Invoke-UEToolSuiteWorkspaceAdopt @p}'status'{Invoke-UEToolSuiteWorkspaceStatus @p}}
 }
 
 Export-ModuleMember -Function ConvertFrom-UEToolSuiteJsoncText,Read-UEToolSuiteWorkspaceJsonFile,Copy-UEToolSuiteWorkspaceValue,Get-UEToolSuiteWorkspaceStoragePaths,Resolve-UEToolSuiteWorkspaceSettingsContext,Get-UEToolSuiteWorkspaceLayers,Assert-UEToolSuiteWorkspaceLayersValid,Get-UEToolSuiteWorkspacePlan,Invoke-UEToolSuiteWorkspaceSync,Get-UEToolSuiteWorkspaceCaptureOperations,Test-UEToolSuiteWorkspaceConfiguration,Invoke-UEToolSuiteWorkspaceCapture,Invoke-UEToolSuiteWorkspaceAdopt,Invoke-UEToolSuiteWorkspaceStatus,Get-UEToolSuiteSettingsHelpText,Invoke-UEToolSuiteSettingsCommand

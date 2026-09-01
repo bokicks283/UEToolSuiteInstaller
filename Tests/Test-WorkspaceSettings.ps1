@@ -4,6 +4,7 @@ param([switch]$NoCleanup,[switch]$FailFast)
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
 $modulePath=Join-Path $repoRoot 'payload\Scripts\UETools\UEToolSuite.Settings.psm1'
+$unrealModulePath=Join-Path $repoRoot 'payload\Scripts\UETools\UEToolSuite.Unreal.psm1'
 $resultRoot=Join-Path $PSScriptRoot 'Test-WorkspaceSettingsResults'
 $scratch=Join-Path $resultRoot ('run-'+[guid]::NewGuid().ToString('N'))
 $passed=0;$failed=0
@@ -13,6 +14,19 @@ function Assert-True([string]$Name,[bool]$Condition,[string]$Detail=''){
   $script:failed++;Write-Host "FAIL: $Name $Detail" -ForegroundColor Red;if($FailFast){throw "Assertion failed: $Name"}
 }
 function Write-JsonFile([string]$Path,$Value){$parent=Split-Path -Parent $Path;if(-not(Test-Path $parent)){New-Item -ItemType Directory -Force -Path $parent|Out-Null};[IO.File]::WriteAllText($Path,(($Value|ConvertTo-Json -Depth 100)+"`n"),[Text.UTF8Encoding]::new($false))}
+function Invoke-SettingsCli([string]$RepoRoot,[string[]]$Arguments){
+  $launcher=Join-Path $script:repoRoot 'payload\Scripts\ue-tools.ps1'
+  $output=& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $launcher -RepoRoot $RepoRoot settings @Arguments 2>&1|Out-String
+  return [pscustomobject]@{ExitCode=$LASTEXITCODE;Output=$output}
+}
+function Invoke-SettingsCliWithInput([string]$RepoRoot,[string[]]$Arguments,[string[]]$InputLines){
+  $startInfo=[Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName=(Get-Command pwsh).Source
+  $startInfo.UseShellExecute=$false;$startInfo.RedirectStandardInput=$true;$startInfo.RedirectStandardOutput=$true;$startInfo.RedirectStandardError=$true;$startInfo.CreateNoWindow=$true
+  foreach($argument in @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $script:repoRoot 'payload\Scripts\ue-tools.ps1'),'-RepoRoot',$RepoRoot,'settings')+@($Arguments)){[void]$startInfo.ArgumentList.Add([string]$argument)}
+  $process=[Diagnostics.Process]::Start($startInfo);foreach($line in @($InputLines)){$process.StandardInput.WriteLine($line)};$process.StandardInput.Close();$stdout=$process.StandardOutput.ReadToEnd();$stderr=$process.StandardError.ReadToEnd();$process.WaitForExit()
+  return [pscustomobject]@{ExitCode=$process.ExitCode;Output=($stdout+$stderr)}
+}
 function New-Fixture([string]$Name,[string]$Engine='D:\UE_5.8'){
   $root=Join-Path $scratch $Name;New-Item -ItemType Directory -Force -Path $root|Out-Null
   Write-JsonFile (Join-Path $root 'Game.uproject') ([ordered]@{FileVersion=3;EngineAssociation='5.8';Modules=@([ordered]@{Name='Game';Type='Runtime'})})
@@ -30,6 +44,26 @@ try{
   Assert-True 'JSONC parser preserves comment markers inside strings' ($jsonc.url -eq 'https://example/a//b' -and $jsonc.value -eq 2)
 
   $f=New-Fixture 'precedence' $engine;$ctx=Resolve-UEToolSuiteWorkspaceSettingsContext $f.Root $f.Workspace
+  $wholeBefore=[ordered]@{settings=[ordered]@{generated=$true}};$wholeAfter=Copy-UEToolSuiteWorkspaceValue $wholeBefore;$wholeAfter.settings['custom']=$true;$wholeOps=Get-UEToolSuiteWorkspaceCaptureOperations $wholeBefore $wholeAfter @('') $ctx
+  Assert-True 'empty JSON Pointer captures whole-workspace changes for interactive workflows' (@($wholeOps|Where-Object{$_.op -eq 'set' -and $_.path -eq '/settings/custom'}).Count -eq 1)
+  $badPointerRejected=$false;try{[void](Get-UEToolSuiteWorkspaceCaptureOperations $wholeBefore $wholeAfter @('/settings/bad~2escape') $ctx)}catch{$badPointerRejected=$_.Exception.Message -match "must be '~0' or '~1'"}
+  Assert-True 'invalid JSON Pointer escapes are rejected with guidance' $badPointerRejected
+
+  $oldNoAutorun=$env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN
+  try{
+    $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN='1';$unrealModule=Import-Module $unrealModulePath -Force -DisableNameChecking -PassThru
+    $teamPath='.ue-tools/workspace-settings/team.jsonc'
+    $teamPlans=@(
+      Get-UEToolSuiteUnrealSyncActionPlan @([pscustomobject]@{Status='A';Path=$teamPath;OldPath=$null})
+      Get-UEToolSuiteUnrealSyncActionPlan @([pscustomobject]@{Status='M';Path=$teamPath;OldPath=$null})
+      Get-UEToolSuiteUnrealSyncActionPlan @([pscustomobject]@{Status='D';Path=$teamPath;OldPath=$null})
+      Get-UEToolSuiteUnrealSyncActionPlan @([pscustomobject]@{Status='R100';Path='archive/team.jsonc';OldPath=$teamPath})
+    )
+    $unrelatedPlan=Get-UEToolSuiteUnrealSyncActionPlan @([pscustomobject]@{Status='M';Path='README.md';OldPath=$null})
+    $teamTriggerContract=@($teamPlans|Where-Object{-not$_.ShouldSyncSettings-or$_.ShouldBuild-or$_.ShouldRegen-or@($_.SettingsTriggers).Count-ne1}).Count-eq0-and-not$unrelatedPlan.ShouldSyncSettings
+    Assert-True 'Team overlay create, modify, delete, and rename are settings-only hook triggers' $teamTriggerContract
+  }
+  finally{if([string]::IsNullOrEmpty($oldNoAutorun)){Remove-Item Env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN -ErrorAction SilentlyContinue}else{$env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN=$oldNoAutorun}}
   Write-JsonFile $ctx.Paths.Team ([ordered]@{schemaVersion=1;scope='Team';operations=@([ordered]@{op='set';path='/settings/editor.formatOnSave';value=$true},[ordered]@{op='addStringItem';path='/extensions/recommendations';value='team.extension'},[ordered]@{op='upsertKeyedItem';path='/launch/compounds';identityKey='name';identityValue='Team Compound';value=[ordered]@{name='Team Compound';configurations=@('Team Launch')}},[ordered]@{op='upsertKeyedItem';path='/inputs';identityKey='id';identityValue='teamInput';value=[ordered]@{id='teamInput';type='promptString'}},[ordered]@{op='removeSemantic';path='/folders';selector='activeUnrealEngineRoot'},[ordered]@{op='removeKeyedItem';path='/tasks/tasks';identityKey='label';identityValue='Generated'})})
   Write-JsonFile $ctx.Paths.User ([ordered]@{schemaVersion=1;scope='User';operations=@([ordered]@{op='set';path='/settings/editor.fontSize';value=15})})
   Write-JsonFile $ctx.Paths.Project ([ordered]@{schemaVersion=1;scope='Project';operations=@([ordered]@{op='set';path='/settings/editor.fontSize';value=17})})
@@ -54,7 +88,10 @@ try{
   Assert-True 'UE change to owned value produces no-write conflict' $threw
 
   if(Test-Path -LiteralPath $ctx.Paths.User){Remove-Item -LiteralPath $ctx.Paths.User -Force}
-  $capture=New-Fixture 'capture' $engine;$captureBefore=Get-Content $capture.Workspace -Raw;[void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $capture.Root -WorkspacePath $capture.Workspace -PreviousWorkspaceContent $captureBefore -NonInteractive);$live=Read-UEToolSuiteWorkspaceJsonFile $capture.Workspace;$live.folders=@($live.folders|Where-Object{$_.path -eq '.'});Write-JsonFile $capture.Workspace $live;Invoke-UEToolSuiteWorkspaceCapture -RepoRoot $capture.Root -WorkspacePath $capture.Workspace -Scope Team -Path /folders -NonInteractive;$captureCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $capture.Root $capture.Workspace;$capturedOverlay=Read-UEToolSuiteWorkspaceJsonFile $captureCtx.Paths.Team
+  $capture=New-Fixture 'capture' $engine;$captureBefore=Get-Content $capture.Workspace -Raw;[void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $capture.Root -WorkspacePath $capture.Workspace -PreviousWorkspaceContent $captureBefore -NonInteractive);$live=Read-UEToolSuiteWorkspaceJsonFile $capture.Workspace;$live.folders=@($live.folders|Where-Object{$_.path -eq '.'});Write-JsonFile $capture.Workspace $live;$captureCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $capture.Root $capture.Workspace
+  $interactiveCapture=Invoke-SettingsCliWithInput $capture.Root @('capture','-WorkspacePath','.\Game.code-workspace','-Scope','Team','-DryRun') @('all')
+  Assert-True 'interactive whole-workspace capture detects a removed Engine folder' ($interactiveCapture.ExitCode -eq 0 -and $interactiveCapture.Output -match 'REMOVAL removeSemantic /folders' -and $interactiveCapture.Output -match 'Capture \[Team\]: removeSemantic /folders' -and -not(Test-Path $captureCtx.Paths.Team)) $interactiveCapture.Output
+  Invoke-UEToolSuiteWorkspaceCapture -RepoRoot $capture.Root -WorkspacePath $capture.Workspace -Scope Team -Path /folders -NonInteractive;$capturedOverlay=Read-UEToolSuiteWorkspaceJsonFile $captureCtx.Paths.Team
   Assert-True 'capture records portable Engine removal rather than absolute path' (@($capturedOverlay.operations|Where-Object{$_.op -eq 'removeSemantic' -and $_.selector -eq 'activeUnrealEngineRoot'}).Count -eq 1 -and (Get-Content $captureCtx.Paths.Team -Raw) -notmatch [regex]::Escape($engine))
 
   $private=New-Fixture 'privacy' $engine;$privateCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $private.Root $private.Workspace;Write-JsonFile $privateCtx.Paths.Team ([ordered]@{schemaVersion=1;scope='Team';operations=@([ordered]@{op='set';path='/settings/tool.path';value='C:\Private\tool.exe'})});$rejected=$false;try{Assert-UEToolSuiteWorkspaceLayersValid (Get-UEToolSuiteWorkspaceLayers $privateCtx)}catch{$rejected=$true};Assert-True 'team layer rejects machine absolute path' $rejected
@@ -86,6 +123,40 @@ try{
 
   $helpOutput=& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'payload\Scripts\ue-tools.ps1') -RepoRoot $f.Root settings sync help 2>&1 | Out-String
   Assert-True 'command-first settings help dispatches' ($LASTEXITCODE -eq 0 -and $helpOutput -match 'Usage: ue settings sync') $helpOutput
+
+  $settingsOverview=& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'payload\Scripts\ue-tools.ps1') -RepoRoot $f.Root help settings 2>&1 | Out-String
+  Assert-True 'settings overview help lists every command and supported help form' ($LASTEXITCODE -eq 0 -and $settingsOverview -match 'Commands:' -and $settingsOverview -match 'sync' -and $settingsOverview -match 'capture' -and $settingsOverview -match 'adopt' -and $settingsOverview -match 'status' -and $settingsOverview -match 'ue help settings <command>') $settingsOverview
+
+  foreach($helpCommand in @('sync','capture','adopt','status')){
+    $nestedHelp=& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'payload\Scripts\ue-tools.ps1') -RepoRoot $f.Root help settings $helpCommand 2>&1 | Out-String;$nestedExit=$LASTEXITCODE
+    $settingsHelp=& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'payload\Scripts\ue-tools.ps1') -RepoRoot $f.Root settings help $helpCommand 2>&1 | Out-String;$settingsHelpExit=$LASTEXITCODE
+    $commandHelp=& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'payload\Scripts\ue-tools.ps1') -RepoRoot $f.Root settings $helpCommand help 2>&1 | Out-String;$commandExit=$LASTEXITCODE
+    $completeHelp=$nestedExit-eq0-and$settingsHelpExit-eq0-and$commandExit-eq0-and$nestedHelp-match[regex]::Escape("Usage: ue settings $helpCommand")-and$nestedHelp-match'What it does:'-and$nestedHelp-match'Options:'-and$nestedHelp-match'Examples:'-and$nestedHelp.Trim()-eq$settingsHelp.Trim()-and$nestedHelp.Trim()-eq$commandHelp.Trim()
+    Assert-True "all help routes are complete for settings $helpCommand" $completeHelp ($nestedHelp+$settingsHelp+$commandHelp)
+  }
+
+  $cli=New-Fixture 'public-cli' $engine;$cliCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $cli.Root $cli.Workspace;Write-JsonFile $cliCtx.Paths.Team ([ordered]@{schemaVersion=1;scope='Team';operations=@([ordered]@{op='removeSemantic';path='/folders';selector='activeUnrealEngineRoot'})});$cliBefore=Get-Content $cli.Workspace -Raw;[void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $cli.Root -WorkspacePath $cli.Workspace -PreviousWorkspaceContent $cliBefore -NonInteractive);$cliState=Read-UEToolSuiteWorkspaceJsonFile $cliCtx.Paths.State;Write-JsonFile $cli.Workspace $cliState.pristine
+  $publicSync=Invoke-SettingsCli $cli.Root @('sync','-WorkspacePath','.\Game.code-workspace','-NonInteractive');$publicSyncWorkspace=Read-UEToolSuiteWorkspaceJsonFile $cli.Workspace
+  Assert-True 'public settings sync accepts WorkspacePath without leaking capture-only Path' ($publicSync.ExitCode -eq 0 -and @($publicSyncWorkspace.folders).Count -eq 1) $publicSync.Output
+
+  $publicStatus=Invoke-SettingsCli $cli.Root @('status','-WorkspacePath','.\Game.code-workspace')
+  Assert-True 'public settings status accepts a relative WorkspacePath' ($publicStatus.ExitCode -eq 0 -and $publicStatus.Output -match 'Drift: none' -and $publicStatus.Output -match 'Conflicts: 0') $publicStatus.Output
+
+  $cliLive=Read-UEToolSuiteWorkspaceJsonFile $cli.Workspace;$cliLive.settings['public.one']=$true;$cliLive.settings['public.two']=2;Write-JsonFile $cli.Workspace $cliLive
+  $publicCapture=Invoke-SettingsCli $cli.Root @('capture','-WorkspacePath','.\Game.code-workspace','-Scope','Project','-Path','/settings/public.one','-Path','/settings/public.two','-DryRun','-NonInteractive')
+  Assert-True 'public settings capture accepts repeated Path options' ($publicCapture.ExitCode -eq 0 -and $publicCapture.Output -match '/settings/public.one' -and $publicCapture.Output -match '/settings/public.two' -and -not(Test-Path $cliCtx.Paths.Project)) $publicCapture.Output
+
+  $invalidSyncOption=Invoke-SettingsCli $cli.Root @('sync','-WorkspacePath','.\Game.code-workspace','-Path','/folders')
+  Assert-True 'public settings commands reject options with command-specific guidance' ($invalidSyncOption.ExitCode -eq 1 -and $invalidSyncOption.Output -match "Option '-Path' is not valid for 'settings sync'" -and $invalidSyncOption.Output -notmatch 'parameter cannot be found') $invalidSyncOption.Output
+
+  $publicAdoptFixture=New-Fixture 'public-adopt' $engine;$publicAdopt=Invoke-SettingsCli $publicAdoptFixture.Root @('adopt','-WorkspacePath','.\Game.code-workspace','-Scope','User','-Path','/settings','-DryRun','-NonInteractive')
+  Assert-True 'public settings adopt dry run binds all documented options' ($publicAdopt.ExitCode -eq 0 -and $publicAdopt.Output -match 'Adoption scope: User' -and $publicAdopt.Output -match 'Dry run did not regenerate') $publicAdopt.Output
+
+  $malformedStateFixture=New-Fixture 'malformed-state' $engine;$malformedStateCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $malformedStateFixture.Root $malformedStateFixture.Workspace;Write-JsonFile $malformedStateCtx.Paths.State ([ordered]@{schemaVersion=1;workspaceId=$malformedStateCtx.Paths.WorkspaceId;workspacePath=$malformedStateCtx.WorkspacePath});$malformedStateRejected=$false;try{Invoke-UEToolSuiteWorkspaceStatus -RepoRoot $malformedStateFixture.Root -WorkspacePath $malformedStateFixture.Workspace|Out-Null}catch{$malformedStateRejected=$_.Exception.Message -match "'pristine' must be a workspace object"}
+  Assert-True 'malformed provenance ledger fails with actionable field guidance' $malformedStateRejected
+
+  $staleStateFixture=New-Fixture 'stale-state' $engine;$staleStateCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $staleStateFixture.Root $staleStateFixture.Workspace;Write-JsonFile $staleStateCtx.Paths.State ([ordered]@{schemaVersion=1;workspaceId='wrong-workspace';workspacePath=$staleStateCtx.WorkspacePath;pristine=[ordered]@{};effective=[ordered]@{}});$staleStateRejected=$false;try{Invoke-UEToolSuiteWorkspaceStatus -RepoRoot $staleStateFixture.Root -WorkspacePath $staleStateFixture.Workspace|Out-Null}catch{$staleStateRejected=$_.Exception.Message -match 'workspaceId does not match' -and $_.Exception.Message -match 'settings adopt'}
+  Assert-True 'stale provenance ledger fails with recovery guidance' $staleStateRejected
 }
 finally{$env:LOCALAPPDATA=$oldLocal;$env:UE_ENGINE_ROOT=$oldEngine;if(-not$NoCleanup -and (Test-Path $scratch)){Remove-Item -LiteralPath $scratch -Recurse -Force}}
 

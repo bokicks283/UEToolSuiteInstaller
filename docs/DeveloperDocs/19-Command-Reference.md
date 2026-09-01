@@ -78,4 +78,4 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 | bad docs command | `Unknown ue-tools docs command` | `Invoke-DocsToolsMain` |
 ## Workspace settings
 
-`ue-tools settings sync`, `capture`, `adopt`, and `status` manage explicit `.code-workspace` ownership. Both `ue-tools` and `ue` launchers expose the domain. Use command-first help, for example `ue settings capture help`. See `payload/Docs/WorkflowStandards/Workspace-Settings-Sync.md` for schema, storage, conflict, and recovery details.
+`ue-tools settings sync`, `capture`, `adopt`, and `status` manage explicit `.code-workspace` ownership. Both `ue-tools` and `ue` launchers expose the domain. Use command-first help, for example `ue settings capture help`. See `payload/Docs/WorkflowStandards/CLI/Settings.md` for schema, storage, conflict, and recovery details.

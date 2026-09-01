@@ -76,7 +76,10 @@ function Get-UEToolSuiteDispatcherRootHelpText {
 
 function Get-UEToolSuiteDispatcherDomainHelpText {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$DomainName)
+  param(
+    [Parameter(Mandatory)][string]$DomainName,
+    [AllowNull()][string[]]$TopicArguments = @()
+  )
 
   switch ($DomainName.ToLowerInvariant()) {
     "build" {
@@ -91,7 +94,8 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
       )
     }
     "settings" {
-      return @(Get-UEToolSuiteSettingsHelpText)
+      $settingsTopic = if ($null -ne $TopicArguments -and $TopicArguments.Count -gt 0) { [string]$TopicArguments[0] } else { "" }
+      return @(Get-UEToolSuiteSettingsHelpText -Subcommand $settingsTopic)
     }
     "docs" {
       return @(
@@ -243,7 +247,13 @@ function Invoke-UEToolSuiteDispatcher {
 
   if (Test-UEToolSuiteDispatcherHelpToken -Token $command) {
     if ($remaining.Count -gt 0) {
-      @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0])) | Write-Output
+      $helpTopics = if ($remaining.Count -gt 1) {
+        [string[]](Get-UEToolSuiteDispatcherTailArguments -Values $remaining -Skip 1)
+      }
+      else {
+        @()
+      }
+      @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0]) -TopicArguments $helpTopics) | Write-Output
       return
     }
 
@@ -259,7 +269,13 @@ function Invoke-UEToolSuiteDispatcher {
   switch ($command.Trim().ToLowerInvariant()) {
     "help" {
       if ($remaining.Count -gt 0) {
-        @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0])) | Write-Output
+        $helpTopics = if ($remaining.Count -gt 1) {
+          [string[]](Get-UEToolSuiteDispatcherTailArguments -Values $remaining -Skip 1)
+        }
+        else {
+          @()
+        }
+        @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName ([string]$remaining[0]) -TopicArguments $helpTopics) | Write-Output
       }
       else {
         @(Get-UEToolSuiteDispatcherRootHelpText -RepoRoot $RepoRoot) | Write-Output

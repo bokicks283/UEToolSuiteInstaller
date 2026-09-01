@@ -82,6 +82,16 @@ function Test-UEToolSuiteUnrealAddDeleteOrRenameStatus {
   )
 }
 
+function Test-UEToolSuiteWorkspaceTeamOverlayPath {
+  [CmdletBinding()]
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+  $normalized = $Path.Replace('\', '/')
+  if ($normalized.StartsWith('./')) { $normalized = $normalized.Substring(2) }
+  return $normalized -ieq '.ue-tools/workspace-settings/team.jsonc'
+}
+
 function Get-UEToolSuiteUnrealSyncActionPlan {
   [CmdletBinding()]
   param([object[]]$ChangedFileRecords)
@@ -90,13 +100,16 @@ function Get-UEToolSuiteUnrealSyncActionPlan {
     return [pscustomobject]@{
       BuildTriggers = @()
       RegenTriggers = @()
+      SettingsTriggers = @()
       ShouldBuild = $false
       ShouldRegen = $false
+      ShouldSyncSettings = $false
     }
   }
 
   $buildTriggers = @()
   $regenTriggers = @()
+  $settingsTriggers = @()
 
   foreach ($record in @($ChangedFileRecords)) {
     $paths = @($record.Path, $record.OldPath) |
@@ -104,6 +117,11 @@ function Get-UEToolSuiteUnrealSyncActionPlan {
       Sort-Object -Unique
 
     foreach ($path in $paths) {
+      if (Test-UEToolSuiteWorkspaceTeamOverlayPath -Path $path) {
+        $settingsTriggers += '.ue-tools/workspace-settings/team.jsonc'
+        continue
+      }
+
       if (Test-UEToolSuiteUnrealCppPath -Path $path) {
         $buildTriggers += $path
         if (Test-UEToolSuiteUnrealAddDeleteOrRenameStatus -Status $record.Status) {
@@ -121,12 +139,15 @@ function Get-UEToolSuiteUnrealSyncActionPlan {
 
   $buildTriggers = @($buildTriggers | Sort-Object -Unique)
   $regenTriggers = @($regenTriggers | Sort-Object -Unique)
+  $settingsTriggers = @($settingsTriggers | Sort-Object -Unique)
 
   return [pscustomobject]@{
     BuildTriggers = $buildTriggers
     RegenTriggers = $regenTriggers
+    SettingsTriggers = $settingsTriggers
     ShouldBuild = ($buildTriggers.Count -gt 0)
     ShouldRegen = ($regenTriggers.Count -gt 0)
+    ShouldSyncSettings = ($settingsTriggers.Count -gt 0)
   }
 }
 
@@ -137,7 +158,7 @@ function Write-UEToolSuiteUnrealSyncActionPlan {
     [scriptblock]$WarnWriter
   )
 
-  if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen)) {
+  if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen -and -not $ActionPlan.ShouldSyncSettings)) {
     return
   }
 
@@ -149,6 +170,7 @@ function Write-UEToolSuiteUnrealSyncActionPlan {
   }
 
   $actions = @()
+  if ($ActionPlan.ShouldSyncSettings) { $actions += "synchronize VS Code workspace settings" }
   if ($ActionPlan.ShouldRegen) { $actions += "regenerate project files" }
   if ($ActionPlan.ShouldBuild) { $actions += "build the editor" }
   & $WarnWriter "UE Sync action plan: $($actions -join ' and ')."
@@ -163,6 +185,13 @@ function Write-UEToolSuiteUnrealSyncActionPlan {
   if ($ActionPlan.BuildTriggers.Count -gt 0) {
     & $WarnWriter "Build triggers:"
     foreach ($t in @($ActionPlan.BuildTriggers)) {
+      & $WarnWriter " - $t"
+    }
+  }
+
+  if (@($ActionPlan.SettingsTriggers).Count -gt 0) {
+    & $WarnWriter "Workspace-settings triggers:"
+    foreach ($t in @($ActionPlan.SettingsTriggers)) {
       & $WarnWriter " - $t"
     }
   }
@@ -1108,6 +1137,13 @@ function Test-IsAddDeleteOrRenameStatus([string]$Status) {
   )
 }
 
+function Test-IsWorkspaceTeamOverlayPath([string]$Path) {
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+  $normalized = $Path.Replace('\', '/')
+  if ($normalized.StartsWith('./')) { $normalized = $normalized.Substring(2) }
+  return $normalized -ieq '.ue-tools/workspace-settings/team.jsonc'
+}
+
 function Get-UnrealSyncActionPlan([object[]]$ChangedFileRecords) {
   [void](Import-UEToolSuiteCoreModule)
   $moduleFn = Get-Command -Name "Get-UEToolSuiteUnrealSyncActionPlan" -ErrorAction SilentlyContinue
@@ -1119,13 +1155,16 @@ function Get-UnrealSyncActionPlan([object[]]$ChangedFileRecords) {
     return [pscustomobject]@{
       BuildTriggers = @()
       RegenTriggers = @()
+      SettingsTriggers = @()
       ShouldBuild = $false
       ShouldRegen = $false
+      ShouldSyncSettings = $false
     }
   }
 
   $buildTriggers = @()
   $regenTriggers = @()
+  $settingsTriggers = @()
 
   foreach ($record in @($ChangedFileRecords)) {
     $paths = @($record.Path, $record.OldPath) |
@@ -1133,6 +1172,11 @@ function Get-UnrealSyncActionPlan([object[]]$ChangedFileRecords) {
       Sort-Object -Unique
 
     foreach ($path in $paths) {
+      if (Test-IsWorkspaceTeamOverlayPath -Path $path) {
+        $settingsTriggers += '.ue-tools/workspace-settings/team.jsonc'
+        continue
+      }
+
       if (Test-IsUnrealCppPath -Path $path) {
         $buildTriggers += $path
         if (Test-IsAddDeleteOrRenameStatus -Status $record.Status) {
@@ -1150,12 +1194,15 @@ function Get-UnrealSyncActionPlan([object[]]$ChangedFileRecords) {
 
   $buildTriggers = @($buildTriggers | Sort-Object -Unique)
   $regenTriggers = @($regenTriggers | Sort-Object -Unique)
+  $settingsTriggers = @($settingsTriggers | Sort-Object -Unique)
 
   return [pscustomobject]@{
     BuildTriggers = $buildTriggers
     RegenTriggers = $regenTriggers
+    SettingsTriggers = $settingsTriggers
     ShouldBuild = ($buildTriggers.Count -gt 0)
     ShouldRegen = ($regenTriggers.Count -gt 0)
+    ShouldSyncSettings = ($settingsTriggers.Count -gt 0)
   }
 }
 
@@ -1187,11 +1234,12 @@ function Show-UnrealSyncActionPlan($ActionPlan) {
     return
   }
 
-  if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen)) {
+  if (-not $ActionPlan -or (-not $ActionPlan.ShouldBuild -and -not $ActionPlan.ShouldRegen -and -not $ActionPlan.ShouldSyncSettings)) {
     return
   }
 
   $actions = @()
+  if ($ActionPlan.ShouldSyncSettings) { $actions += "synchronize VS Code workspace settings" }
   if ($ActionPlan.ShouldRegen) { $actions += "regenerate project files" }
   if ($ActionPlan.ShouldBuild) { $actions += "build the editor" }
   Warn "UE Sync action plan: $($actions -join ' and ')."
@@ -1206,6 +1254,13 @@ function Show-UnrealSyncActionPlan($ActionPlan) {
   if ($ActionPlan.BuildTriggers.Count -gt 0) {
     Warn "Build triggers:"
     foreach ($t in @($ActionPlan.BuildTriggers)) {
+      Warn " - $t"
+    }
+  }
+
+  if (@($ActionPlan.SettingsTriggers).Count -gt 0) {
+    Warn "Workspace-settings triggers:"
+    foreach ($t in @($ActionPlan.SettingsTriggers)) {
       Warn " - $t"
     }
   }
@@ -1548,14 +1603,16 @@ return
 $actionPlan = [pscustomobject]@{
   BuildTriggers = @()
   RegenTriggers = @()
+  SettingsTriggers = @()
   ShouldBuild = $Force -and -not $NoBuild
   ShouldRegen = $Force -and -not $NoRegen
+  ShouldSyncSettings = $false
 }
 if (-not $manual) {
   $changedRecords = Get-ChangedFileRecords $OldRev $NewRev
   $actionPlan = Get-UnrealSyncActionPlan $changedRecords
-  if (-not $actionPlan.ShouldBuild -and -not $actionPlan.ShouldRegen) {
-    # No UE C++/project trigger => no-op, keep hook output clean.
+  if (-not $actionPlan.ShouldBuild -and -not $actionPlan.ShouldRegen -and -not $actionPlan.ShouldSyncSettings) {
+    # No UE C++/project or Team workspace-settings trigger => no-op, keep hook output clean.
 return
   }
 }
@@ -1566,6 +1623,7 @@ $projectName = $projectContext.ProjectName
 
 $shouldRunRegen = -not $NoRegen -and ($manual -or $actionPlan.ShouldRegen)
 $shouldRunBuild = -not $NoBuild -and ($manual -or $actionPlan.ShouldBuild)
+$settingsOnlyHook = -not $manual -and $actionPlan.ShouldSyncSettings -and -not $shouldRunRegen -and -not $shouldRunBuild
 
 if (-not $SkipSettingsSync -and -not [string]::IsNullOrWhiteSpace([string]$projectContext.WorkspacePath)) {
   [void](Test-UEToolSuiteWorkspaceConfiguration -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath)
@@ -1586,7 +1644,7 @@ if (-not $manual) {
 if (-not $manual) {
   $rootInteractive = Test-EnvTrue $env:UE_SYNC_ROOT_INTERACTIVE
   $hookHasTty = Test-EnvTrue $env:UE_SYNC_HOOK_HAS_TTY
-  $isNonInteractive = $NonInteractive.IsPresent
+  $isNonInteractive = $NonInteractive.IsPresent -or $settingsOnlyHook
   $promptRequested = $false
   if (-not $isNonInteractive) {
     if ($rootInteractive -and -not $hookHasTty) {
@@ -1680,7 +1738,12 @@ if ($shouldCleanGeneratedFolders) {
   }
 }
 else {
-  Info "Skipping generated folder cleanup for build-only sync."
+  if ($settingsOnlyHook) {
+    Info "Settings-only sync does not clean generated folders."
+  }
+  else {
+    Info "Skipping generated folder cleanup for build-only sync."
+  }
 }
 
 if ($CleanCache) { [void](Remove-IfExists -Path "DerivedDataCache" -NonInteractive:$isNonInteractive) }
@@ -1703,7 +1766,16 @@ if ($shouldRunRegen) {
 else {
   Warn "Skipping project file regeneration..."
   if (-not $SkipSettingsSync -and -not [string]::IsNullOrWhiteSpace([string]$projectContext.WorkspacePath)) {
-    [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath -NonInteractive:$isNonInteractive)
+    try {
+      [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $projectContext.RepoRoot -WorkspacePath $projectContext.WorkspacePath -NonInteractive:$isNonInteractive)
+    }
+    catch {
+      if (-not $manual -and $actionPlan.ShouldSyncSettings) {
+        Warn "Workspace settings synchronization failed; the workspace and provenance ledger were not changed."
+        Warn "Run: ue settings status -WorkspacePath `"$($projectContext.WorkspacePath)`""
+      }
+      throw
+    }
   }
 }
 

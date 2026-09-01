@@ -140,6 +140,23 @@ try {
   Step "Managed payload index contract"
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "docs managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $docsManagedIndexPath
   Assert-ManagedFileIndexMatchesPayload -NamePrefix "website managed index" -PayloadRoot (Join-Path $repoRoot "payload") -IndexPath $websiteManagedIndexPath
+  $docsManagedIndex = Get-Content -LiteralPath $docsManagedIndexPath -Raw | ConvertFrom-Json
+  $docsManagedPaths = @($docsManagedIndex.files | ForEach-Object { [string]$_.relativePath })
+  $requiredCliDocs = @(
+    "Docs/WorkflowStandards/CLI/_category_.json"
+    "Docs/WorkflowStandards/CLI/README.md"
+    "Docs/WorkflowStandards/CLI/Help.md"
+    "Docs/WorkflowStandards/CLI/Build.md"
+    "Docs/WorkflowStandards/CLI/Settings.md"
+    "Docs/WorkflowStandards/CLI/Docs.md"
+    "Docs/WorkflowStandards/CLI/AI.md"
+    "Docs/WorkflowStandards/CLI/Art.md"
+    "Docs/WorkflowStandards/CLI/Init.md"
+    "Docs/WorkflowStandards/CLI/Git.md"
+  )
+  foreach ($requiredCliDoc in $requiredCliDocs) {
+    Assert-Condition -Name "docs managed index includes CLI guide: $requiredCliDoc" -Condition ($docsManagedPaths -contains $requiredCliDoc) -PassDetail "CLI guide page managed" -FailDetail "missing $requiredCliDoc"
+  }
   $websiteManagedIndex = Get-Content -LiteralPath $websiteManagedIndexPath -Raw | ConvertFrom-Json
   $websiteManagedPaths = @($websiteManagedIndex.files | ForEach-Object { [string]$_.relativePath })
   Assert-Condition -Name "website managed index includes runtime discovery source" -Condition ($websiteManagedPaths -contains "website/src/theme/authoring/runtimeDiscovery.ts") -PassDetail "runtime discovery managed" -FailDetail "missing website/src/theme/authoring/runtimeDiscovery.ts"
