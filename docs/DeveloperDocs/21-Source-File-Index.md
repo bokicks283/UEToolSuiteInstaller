@@ -21,13 +21,13 @@ This index covers the most meaningful authored files a new maintainer should rea
 | `Install-UEToolSuite.ps1` | installer | Main installer/update entrypoint | `Read-UEToolSuitePayloadManifest`, `Invoke-ManagedDocsSmartUpdate`, `Write-ManagedWebsiteLedger` | payload manifest, filesystem, PowerShell modules | High |
 | `payload/ue-tool-suite.manifest.json` | packaging contract | Declares managed payload groups and legacy cleanup paths | `managedItems`, `legacyCleanupPaths` | installer | High |
 | `Scripts/Publish-InstallerExe.ps1` | release | Builds the GUI installer EXE | publish script | .NET publish, payload | Medium |
+| `Scripts/Publish-GitHubRelease.ps1` | release | Validates, builds, tags, and creates the GitHub Release | release gates, tag checks, `gh release create` | git, gh, publish script, tests | High |
 | `src/UEToolSuiteInstaller.Gui/Program.cs` | GUI wrapper | Single-file WinForms installer frontend | progress/log parsing, theme loading | installer script, payload | High |
 | `src/UEToolSuiteInstaller.Gui/UEToolSuiteInstaller.Gui.csproj` | GUI packaging | Publish and content-inclusion contract | `PublishSingleFile`, bundled payload rules | dotnet publish | Medium |
-| `.github/workflows/release.yml` | CI/release | Release automation | workflow steps | publish script, artifacts | Medium |
 | `.github/workflows/dependency-pr-validation.yml` | CI/validation | Dependency PR validation | workflow steps | npm/typecheck/build/tests | Medium |
 | `.github/dependabot.yml` | dependency policy | Automated dependency updates for website packages | update schedule | GitHub Dependabot | Low |
 | `docs/EXE-Installer-Architecture.md` | packaging docs | GUI installer architecture note | installer EXE architecture | Program.cs | Medium |
-| `docs/Usage-Build-Release-Guide.md` | release docs | Release/build process note | release workflow | publish script/workflows | Medium |
+| `docs/Usage-Build-Release-Guide.md` | release docs | Release/build process note | local release publisher | publish and release scripts | Medium |
 
 ## PowerShell tool suite
 

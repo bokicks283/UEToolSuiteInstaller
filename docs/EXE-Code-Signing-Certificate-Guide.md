@@ -18,7 +18,7 @@ Use one of these three production options:
    - No private key file in your repo/CI.
    - Good long-term option if your organization qualifies and wants cloud-backed signing.
 
-For this repo’s current CI flow (`WINDOWS_CODESIGN_PFX_BASE64` + `WINDOWS_CODESIGN_PFX_PASSWORD`), OV or EV with PFX is the direct fit.
+For this repository's local release publisher, OV or EV with either a certificate-store thumbprint or a password-protected PFX is the direct fit.
 
 ## 2) Prepare Organization Identity
 
@@ -44,7 +44,7 @@ Important: keep publisher name consistent across renewals. Frequent publisher na
 
 ### OV/EV PFX path (file-based)
 
-After issuance, install/import the certificate on a secure machine and export a password-protected PFX for CI use if needed.
+After issuance, install/import the certificate on the secure machine used for releases and export a password-protected PFX if needed.
 
 PowerShell import example:
 
@@ -59,7 +59,7 @@ Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -match "Your Publ
   Select-Object Subject, Thumbprint, NotAfter
 ```
 
-Export for CI transport (if required):
+Export for local release use (if required):
 
 ```powershell
 $password = Read-Host "PFX password" -AsSecureString
@@ -68,41 +68,25 @@ Export-PfxCertificate -Cert Cert:\CurrentUser\My\<thumbprint> -FilePath C:\secur
 
 ### Trusted Signing path (service-based)
 
-Follow Microsoft onboarding to create the signing identity/profile and grant CI workflow access. Keep this flow separate from PFX secrets.
+Follow Microsoft onboarding to create the signing identity/profile and grant the release operator access. Keep this flow separate from PFX files.
 
 ## 5) Wire Into This Repo
 
-### GitHub Actions (current PFX-based flow)
-
-Set repository secrets:
-
-- `WINDOWS_CODESIGN_PFX_BASE64`
-- `WINDOWS_CODESIGN_PFX_PASSWORD`
-
-Generate Base64 payload:
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\secure\codesign-ci.pfx")) |
-  Set-Content -LiteralPath C:\secure\codesign-ci.pfx.base64 -NoNewline
-```
-
-Paste file contents into `WINDOWS_CODESIGN_PFX_BASE64`.
-
-### Local release signing
+### Local release signing and publishing
 
 Using cert store thumbprint:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 1.0.0 `
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 `
+  -Version 1.0.1 `
   -CertificateThumbprint <thumbprint>
 ```
 
 Using PFX directly:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 1.0.0 `
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 `
+  -Version 1.0.1 `
   -CertificatePath C:\secure\codesign-ci.pfx `
   -CertificatePassword "<password>"
 ```

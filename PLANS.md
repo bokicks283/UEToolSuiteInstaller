@@ -694,3 +694,21 @@ Validation completed for this follow-up:
 | `Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast` | Passed | `PASS=98 FAIL=0 WARN=0 SKIP=1`; manual Unreal Editor integration remains intentionally separate |
 | `Scripts/Publish-InstallerExe.ps1 -Version 1.0.0` | Passed | versioned `win-x64` single-file artifact produced; local build is unsigned because no certificate was supplied |
 | `git ls-remote --tags origin refs/tags/v1.0.0` before release | Passed | no pre-existing `v1.0.0` tag; safe to publish the validated release commit |
+
+### Follow-up: local GitHub release publisher (2026-09-02)
+
+- [x] Add a fail-closed local release script that validates the requested version, clean/synchronized Git state, GitHub authentication, and tag/release availability.
+- [x] Run the same non-mutating and exclusive release gates locally before creating any remote tag.
+- [x] Build and optionally sign the versioned installer, publish an annotated tag, and create the GitHub Release with the installer asset.
+- [x] Remove the tag-triggered GitHub Actions workflow and replace its packaging contracts with local publisher contracts.
+- [x] Update maintainer and release documentation with the new manual command and recovery behavior.
+
+Validation completed for this follow-up:
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| PowerShell parser checks for publisher and packaging contracts | Passed | no parser errors |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=590 FAIL=0` |
+| Publisher invoked from a dirty worktree with `-ValidateOnly` | Passed | failed before tests, build, tag, or GitHub mutation with the expected clean-worktree error |
+| Publisher invoked from an unpushed clean commit with `-ValidateOnly` | Passed | failed before tag or GitHub mutation with the expected `HEAD` versus `origin/main` error |
+| `git diff --check` | Passed | no whitespace errors |

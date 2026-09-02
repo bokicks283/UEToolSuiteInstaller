@@ -97,6 +97,7 @@ try {
   $programPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\Program.cs"
   $iconPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\Assets\UEToolSuiteInstaller.ico"
   $publishScriptPath = Join-Path $repoRoot "Scripts\Publish-InstallerExe.ps1"
+  $releasePublisherPath = Join-Path $repoRoot "Scripts\Publish-GitHubRelease.ps1"
   $workflowPath = Join-Path $repoRoot ".github\workflows\release.yml"
   $themeCatalogPath = Join-Path $repoRoot "payload\website\theme-presets\theme-catalog.json"
   $docsEditorHostPath = Join-Path $repoRoot "payload\Scripts\UETools\DocsEditorApiHost.ps1"
@@ -121,7 +122,8 @@ try {
   Assert-Condition -Name "GUI runtime file exists" -Condition (Test-Path -LiteralPath $programPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $programPath"
   Assert-Condition -Name "GUI icon exists" -Condition (Test-Path -LiteralPath $iconPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $iconPath"
   Assert-Condition -Name "Publish script exists" -Condition (Test-Path -LiteralPath $publishScriptPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $publishScriptPath"
-  Assert-Condition -Name "Release workflow exists" -Condition (Test-Path -LiteralPath $workflowPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $workflowPath"
+  Assert-Condition -Name "Local release publisher exists" -Condition (Test-Path -LiteralPath $releasePublisherPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $releasePublisherPath"
+  Assert-Condition -Name "Tag-triggered release workflow is removed" -Condition (-not (Test-Path -LiteralPath $workflowPath)) -PassDetail "absent" -FailDetail "unexpected workflow: $workflowPath"
   Assert-Condition -Name "Website theme catalog exists" -Condition (Test-Path -LiteralPath $themeCatalogPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $themeCatalogPath"
   Assert-Condition -Name "Docs editor API host exists" -Condition (Test-Path -LiteralPath $docsEditorHostPath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsEditorHostPath"
   Assert-Condition -Name "Docs sidebar swizzle exists" -Condition (Test-Path -LiteralPath $docsSidebarSwizzlePath -PathType Leaf) -PassDetail "present" -FailDetail "missing: $docsSidebarSwizzlePath"
@@ -393,16 +395,20 @@ try {
   Assert-HasLiteral -Name "publish script supports thumbprint signing" -Text $publishScriptText -Needle "CertificateThumbprint"
   Assert-HasLiteral -Name "publish script supports PFX signing" -Text $publishScriptText -Needle "CertificatePath"
 
-  Step "Release workflow gate contract"
-  $workflowText = Get-Content -LiteralPath $workflowPath -Raw
-  Assert-HasLiteral -Name "workflow runs non-mutating full suite" -Text $workflowText -Needle "Tests/Run-UEToolSuiteTests.ps1 -FailFast"
-  Assert-HasLiteral -Name "workflow runs mutating ue-sync suite" -Text $workflowText -Needle "ue-sync-automated"
-  Assert-HasLiteral -Name "workflow runs mutating binary-guard suite" -Text $workflowText -Needle "binary-guard-fixes"
-  Assert-HasLiteral -Name "workflow publishes installer via publish script" -Text $workflowText -Needle "Scripts/Publish-InstallerExe.ps1"
-  Assert-HasLiteral -Name "workflow uploads versioned artifact name" -Text $workflowText -Needle 'UEToolSuiteInstaller-${{ steps.version.outputs.value }}-win-x64.exe'
-  Assert-HasLiteral -Name "workflow validates release version against payload manifest" -Text $workflowText -Needle "does not match payloadVersion"
-  Assert-HasLiteral -Name "workflow manual release defaults to payload version" -Text $workflowText -Needle 'default: "1.0.0"'
-  Assert-HasLiteral -Name "workflow generates release notes" -Text $workflowText -Needle "--generate-notes"
+  Step "Local GitHub release publisher contract"
+  $releasePublisherText = Get-Content -LiteralPath $releasePublisherPath -Raw
+  Assert-HasLiteral -Name "release publisher requires a clean worktree" -Text $releasePublisherText -Needle "Release requires a clean working tree"
+  Assert-HasLiteral -Name "release publisher requires pushed branch parity" -Text $releasePublisherText -Needle "must exactly match `$Remote/`$Branch"
+  Assert-HasLiteral -Name "release publisher validates payload versions" -Text $releasePublisherText -Needle "Requested version '`$Version' does not match"
+  Assert-HasLiteral -Name "release publisher runs non-mutating full suite" -Text $releasePublisherText -Needle "Running the full non-mutating test suite"
+  Assert-HasLiteral -Name "release publisher runs mutating ue-sync suite" -Text $releasePublisherText -Needle "ue-sync-automated"
+  Assert-HasLiteral -Name "release publisher runs mutating binary-guard suite" -Text $releasePublisherText -Needle "binary-guard-fixes"
+  Assert-HasLiteral -Name "release publisher builds through installer publisher" -Text $releasePublisherText -Needle "Publish-InstallerExe.ps1"
+  Assert-HasLiteral -Name "release publisher uses versioned artifact name" -Text $releasePublisherText -Needle 'UEToolSuiteInstaller-$Version-win-x64.exe'
+  Assert-HasLiteral -Name "release publisher creates annotated tags" -Text $releasePublisherText -Needle "git tag -a `$tagName"
+  Assert-HasLiteral -Name "release publisher verifies the remote tag" -Text $releasePublisherText -Needle "--verify-tag"
+  Assert-HasLiteral -Name "release publisher generates release notes" -Text $releasePublisherText -Needle "--generate-notes"
+  Assert-HasLiteral -Name "release publisher refuses to overwrite releases" -Text $releasePublisherText -Needle "will not overwrite a published release"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

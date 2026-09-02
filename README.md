@@ -100,6 +100,18 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1
 Output:
 - `dist/UEToolSuiteInstaller-<version>-win-x64.exe`
 
+## Publish A GitHub Release Locally
+
+After updating the versioned manifests, committing the release, and pushing `main`:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass `
+  -File .\Scripts\Publish-GitHubRelease.ps1 `
+  -Version 1.0.1
+```
+
+This local command runs the release test gates, builds the installer, pushes the annotated version tag, and creates the GitHub Release. The CLI bootstrap only requires the pushed version tag; it does not depend on GitHub Actions or a GitHub Release.
+
 ## Related Docs
 
 - [MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md)

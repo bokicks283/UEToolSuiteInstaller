@@ -58,8 +58,8 @@ For any non-trivial change, verify at least:
 1. Run non-mutating suites.
 2. Run exclusive mutating suites separately if the change touches those areas.
 3. Run website checks if frontend/docs source changed.
-4. Build the installer through `Scripts/Publish-InstallerExe.ps1`.
-5. Validate the artifact and release workflow assumptions.
+4. Validate a release through `Scripts/Publish-GitHubRelease.ps1 -Version <version> -ValidateOnly`.
+5. Publish through `Scripts/Publish-GitHubRelease.ps1 -Version <version>`; it runs release gates, builds the installer, pushes the tag, and creates the GitHub Release.
 
 ## Incident checklist
 

@@ -86,9 +86,9 @@ payload/                                   files installed into target UE projec
 payload/Scripts/UETools/UEToolSuite.Init.psm1      target repo bootstrap module
 payload/Scripts/ue-tools.ps1               unified CLI dispatcher entrypoint
 src/UEToolSuiteInstaller.Gui/              public Windows GUI launcher
-Scripts/Publish-InstallerExe.ps1           local/CI publish script
+Scripts/Publish-InstallerExe.ps1           local installer build/signing script
+Scripts/Publish-GitHubRelease.ps1          local release validation and publishing script
 Tests/Test-Install-UEToolSuite.ps1         installer regression suite
-.github/workflows/release.yml              tag-based GitHub Release workflow
 docs/                                      maintainer documentation for this repo
 ```
 
@@ -178,58 +178,55 @@ The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps
 
 ## Publish A New Version
 
-Recommended release flow:
+The local release publisher replaces the former tag-triggered GitHub Actions workflow. It fails before creating a tag unless the worktree is clean, `HEAD` exactly matches `origin/main`, every release manifest matches the requested version, GitHub CLI authentication works, and the version is unused.
 
-1. Update `payload/`, installer code, GUI code, and docs as needed.
-2. Run:
+1. Update the release version in:
 
-```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -FailFast
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast
-git add -N .
-git diff --check
-```
+   - `payload/ue-tool-suite.manifest.json`
+   - `payload/docs-managed-file-index.json`
+   - `payload/website-managed-file-index.json`
+   - `payload/Scripts/UETools/UETools.psd1`
+   - `Scripts/Publish-InstallerExe.ps1`
 
-3. Commit the changes.
-4. Create a version tag:
+   Update version-specific tests and documentation at the same time.
+2. Commit the completed release changes and push `main`.
+3. Confirm the release preflight without running tests or creating anything:
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\Scripts\Publish-GitHubRelease.ps1 `
+  -Version 1.0.1 `
+  -ValidateOnly
 ```
 
-5. The GitHub Actions workflow builds the exe and creates a GitHub Release for `v*` tags.
-6. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
+4. Publish the release:
+
+```powershell
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\Scripts\Publish-GitHubRelease.ps1 `
+  -Version 1.0.1
+```
+
+The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.0.1`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
+
+5. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
 
 ## GitHub Release Signing
 
 For certificate procurement and operations end-to-end, see:
 - [EXE Code-Signing Certificate Guide](./EXE-Code-Signing-Certificate-Guide.md)
 
-The workflow supports PFX-based signing with these repository secrets:
-
-```text
-WINDOWS_CODESIGN_PFX_BASE64
-WINDOWS_CODESIGN_PFX_PASSWORD
-```
-
-Add them in GitHub:
-
-```text
-Repository -> Settings -> Secrets and variables -> Actions -> New repository secret
-```
-
-Create `WINDOWS_CODESIGN_PFX_BASE64` from a PFX file:
+The local publisher accepts either a certificate-store thumbprint or a PFX file. Keep certificate material outside the repository. To publish with a PFX:
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\secure\codesign.pfx")) |
-  Set-Content -LiteralPath C:\secure\codesign.pfx.base64 -NoNewline
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
+  -File .\Scripts\Publish-GitHubRelease.ps1 `
+  -Version 1.0.1 `
+  -CertificatePath C:\secure\codesign.pfx `
+  -CertificatePassword "<password>"
 ```
 
-Then paste the contents of `codesign.pfx.base64` into the GitHub secret.
-
-Base64 is only a transport encoding. Treat the encoded value like the certificate itself.
+Omitting signing parameters produces an unsigned installer and prints a SmartScreen warning before publishing.
 
 ## Local Signing
 

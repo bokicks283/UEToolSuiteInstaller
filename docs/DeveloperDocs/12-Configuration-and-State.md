@@ -30,7 +30,7 @@ Confirmed notable variables:
 - `UE_TOOLS_INIT_RUNTIME_NO_AUTORUN`
 - `UE_TOOLS_DOCS_START_CONTINUE`
 - `INIT_REPO_TOOL_READINESS_*` test variables
-- signing secrets in CI: `WINDOWS_CODESIGN_PFX_BASE64`, `WINDOWS_CODESIGN_PFX_PASSWORD`
+- local release signing inputs: certificate-store thumbprint or external PFX path/password passed to `Scripts/Publish-GitHubRelease.ps1`
 
 ## Lifecycle notes
 

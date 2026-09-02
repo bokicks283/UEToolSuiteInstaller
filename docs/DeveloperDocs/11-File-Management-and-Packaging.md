@@ -76,7 +76,7 @@ Unsafe to assume project-owned:
 - GUI project: `src/UEToolSuiteInstaller.Gui/UEToolSuiteInstaller.Gui.csproj`
 - GUI source: `src/UEToolSuiteInstaller.Gui/Program.cs`
 - publish script: `Scripts/Publish-InstallerExe.ps1`
-- release workflow: `.github/workflows/release.yml`
+- local release publisher: `Scripts/Publish-GitHubRelease.ps1`
 - dependency validation workflow: `.github/workflows/dependency-pr-validation.yml`
 
 ## Source/install parity verification

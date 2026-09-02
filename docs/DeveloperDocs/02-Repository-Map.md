@@ -41,13 +41,13 @@ UEToolSuiteInstaller/
 
 | Path | Purpose | Contains | Read by | Written by | Installed into target repo | Safe to edit directly |
 |---|---|---|---|---|---|---|
-| `.github/` | release and dependency automation | workflow YAML | GitHub Actions | maintainers | No | Yes |
+| `.github/` | dependency automation | workflow YAML and Dependabot configuration | GitHub | maintainers | No | Yes |
 | `docs/` | repo-maintainer and agent guidance | authored markdown | maintainers, agents | maintainers | No | Yes |
 | `payload/` | installable suite source | PowerShell, docs, site, manifests | installer, tests, publish | maintainers | Yes | Yes |
-| `Scripts/` | root build/sign/publish helpers | PowerShell | maintainers, CI | maintainers | No | Yes |
+| `Scripts/` | root build/sign/publish helpers | PowerShell | maintainers | maintainers | No | Yes |
 | `src/` | GUI executable source | C# / csproj | publish script, dotnet | maintainers | Built artifact only | Yes |
 | `Tests/` | installer-level suites and runner | PowerShell | maintainers, CI | test runs emit `*Results/` | No | Yes |
-| `dist/` | publish output | generated artifacts | release workflow, maintainers | publish script | No | No |
+| `dist/` | publish output | generated artifacts | local release publisher, maintainers | publish script | No | No |
 | `codex-findings/` | prior analysis notes | markdown | maintainers, agents | maintainers | No | Yes |
 
 ## Nested payload directories

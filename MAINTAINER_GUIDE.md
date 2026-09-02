@@ -398,6 +398,9 @@ GUI project:
 Build script:
 - `Scripts/Publish-InstallerExe.ps1`
 
+Release script:
+- `Scripts/Publish-GitHubRelease.ps1`
+
 Example:
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0
@@ -408,6 +411,14 @@ Output:
 
 Optional signing:
 - `-CertificateThumbprint` or `-CertificatePath` (+ `-CertificatePassword`)
+
+After version manifests are updated and the release commit is pushed to `main`, publish without a GitHub Actions runner:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.1
+```
+
+The release script requires a clean, synchronized branch, runs all release gates locally, builds the installer, publishes the annotated version tag, and creates the GitHub Release. Use `-ValidateOnly` for read-only preflight.
 
 Local signing test cert helper:
 - `Scripts/New-TestCodeSigningCertificate.ps1`
