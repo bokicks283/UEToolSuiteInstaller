@@ -653,7 +653,7 @@ Validation completed for this focused change:
 | Default and skipped ArtSource install/init cases | Passed | Canonical template created by default; `-SkipArtSourceTools` leaves it absent |
 | Rebuilt single-file installer extraction smoke | Passed | Installer remained running, manifest extracted, `payload/Scripts/Tests` absent, no .NET runtime errors |
 | `npm run build` in `payload/website` | Passed | Docusaurus client and server compiled successfully |
-| `npm run typecheck` in `payload/website` | Known configuration conflict | Pinned compiler rejects `ignoreDeprecations: "6.0"`; value intentionally preserved for the VS Code language service |
+| `npm run typecheck` in `payload/website` | Passed | TypeScript 5.6 configuration validated |
 
 ### Rollback/recovery
 
@@ -664,3 +664,32 @@ The installer stages a complete version directory before switching the current-v
 - Global uninstall is not part of this first install-mode feature.
 - Dynamic docs API ports and simultaneous multi-project authoring remain intentionally out of scope; the existing fixed-port ownership error is the supported behavior.
 - The optional background docs lifecycle cases remain skipped unless `UE_TOOLS_ENABLE_BACKGROUND_DOCS_TESTS=1`; fixed-port ownership behavior is unchanged by this cutover.
+
+### Follow-up: portable team checkout and missing-user bootstrap (2026-09-01)
+
+- [x] Reproduce and remove the absolute `globalRoot`, `installRoot`, and `launcherPath` values written into the tracked project marker.
+- [x] Keep only deterministic version/bootstrap metadata in `.ue-tools/global-cli.json`; resolve LocalAppData independently for each Windows user.
+- [x] Preserve advanced/test root selection through `UE_TOOLS_GLOBAL_CLI_ROOT` without committing that value.
+- [x] When the declared runtime is missing, prompt in an interactive shell before fetching the exact project-declared release tag, installing it for this user, and resuming the original command.
+- [x] Fail with an actionable interactive command and make no install attempt from hooks, CI, or explicit `-NonInteractive` invocations.
+- [x] Cover separate user roots, consent/decline, non-interactive refusal, project-version pinning, path-free marker regeneration, installer upgrades, hook helpers, and team onboarding documentation.
+
+Validation completed for this follow-up:
+
+| Command/scenario | Result | Key output |
+|---|---|---|
+| PowerShell parser checks for changed installer/test/hook scripts | Passed | No parser errors |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=222 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=585 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name upgrade-compatibility -FailFast` | Passed | `PASS=70 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -Name hooks -FailFast` | Passed | installed-fixture hook plumbing passed |
+| Fresh teammate roots: non-interactive, decline, and approve | Passed | no-write refusals; approved install resumed original `help` command |
+| Project marker with a different global current version | Passed | project-declared version executed |
+| `npm run build` in `payload/website` | Passed | Docusaurus client/server compiled |
+| `dotnet build src/UEToolSuiteInstaller.Gui/UEToolSuiteInstaller.Gui.csproj --configuration Release` | Passed | 0 warnings, 0 errors |
+| `npm run typecheck` in `payload/website` | Passed | TypeScript 5.6 configuration validated |
+| Remaining default release suites | Passed | settings `38`, UE regeneration `73`, AI prompt `17`, init readiness `60`, ArtSource `26`, docs tools `652`, shell aliases `43`, plus hooks and standards advisory |
+| `Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast` | Passed | `PASS=48 FAIL=0` |
+| `Tests/Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name binary-guard-fixes -FailFast` | Passed | `PASS=98 FAIL=0 WARN=0 SKIP=1`; manual Unreal Editor integration remains intentionally separate |
+| `Scripts/Publish-InstallerExe.ps1 -Version 1.0.0` | Passed | versioned `win-x64` single-file artifact produced; local build is unsigned because no certificate was supplied |
+| `git ls-remote --tags origin refs/tags/v1.0.0` before release | Passed | no pre-existing `v1.0.0` tag; safe to publish the validated release commit |

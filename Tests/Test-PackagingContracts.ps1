@@ -252,6 +252,26 @@ try {
   $payloadManifestText = Get-Content -LiteralPath $payloadManifestPath -Raw
   $payloadManifest = $payloadManifestText | ConvertFrom-Json
   Assert-Condition -Name "payload manifest omits repository test install category" -Condition ($null -eq $payloadManifest.managedItems.tests) -PassDetail "managedItems.tests absent" -FailDetail "managedItems.tests still installs repository tests"
+  Assert-Condition -Name "payload manifest declares portable bootstrap repository" -Condition ([string]$payloadManifest.bootstrap.repositoryUrl -eq "https://github.com/bokicks283/UEToolSuiteInstaller.git") -PassDetail "bootstrap repository declared" -FailDetail "bootstrap.repositoryUrl missing or incorrect"
+  $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "Install-UEToolSuite.ps1") -Raw
+  Assert-HasLiteral -Name "installer project shim resolves per-user global root" -Text $installerText -Needle "UE_TOOLS_GLOBAL_CLI_ROOT"
+  Assert-HasLiteral -Name "installer project shim resolves project-declared version" -Text $installerText -Needle 'versions\$version\Scripts\ue-tools.ps1'
+  Assert-HasLiteral -Name "installer project shim prompts before missing CLI bootstrap" -Text $installerText -Needle "Install the project-declared CLI for this user now?"
+  Assert-HasLiteral -Name "installer project shim blocks non-interactive bootstrap" -Text $installerText -Needle "Run 'pwsh -File Scripts\ue-tools.ps1 help' from an interactive PowerShell session"
+  Assert-HasLiteral -Name "installer project shim binds release tag to declared version" -Text $installerText -Needle 'if ($releaseTag -cne "v$version")'
+  Assert-HasLiteral -Name "installer project shim validates downloaded payload version" -Text $installerText -Needle 'bootstrapManifest.payloadVersion'
+  Assert-LacksLiteral -Name "portable project marker omits global root field" -Text (($installerText -split '\$shimContent = @''')[0] -split 'function Write-GlobalCliProjectShim' | Select-Object -Last 1) -Needle 'globalRoot = $GlobalInstall.GlobalRoot'
+  Assert-LacksLiteral -Name "portable project marker omits install root field" -Text (($installerText -split '\$shimContent = @''')[0] -split 'function Write-GlobalCliProjectShim' | Select-Object -Last 1) -Needle 'installRoot = $GlobalInstall.InstallRoot'
+  Assert-LacksLiteral -Name "portable project marker omits launcher path field" -Text (($installerText -split '\$shimContent = @''')[0] -split 'function Write-GlobalCliProjectShim' | Select-Object -Last 1) -Needle 'launcherPath = $GlobalInstall.LauncherPath'
+  foreach ($portableConsumerPath in @(
+    "payload\Scripts\git-hooks\Enable-GitHooks.ps1",
+    "payload\Scripts\git-hooks\Test-Hooks.ps1",
+    "payload\Scripts\Tests\TestHarness.ps1"
+  )) {
+    $portableConsumerText = Get-Content -LiteralPath (Join-Path $repoRoot $portableConsumerPath) -Raw
+    Assert-LacksLiteral -Name "$portableConsumerPath does not read project installRoot" -Text $portableConsumerText -Needle 'marker.installRoot'
+    Assert-HasLiteral -Name "$portableConsumerPath resolves the per-user CLI root" -Text $portableConsumerText -Needle 'UE_TOOLS_GLOBAL_CLI_ROOT'
+  }
   Assert-HasLiteral -Name "docs module starts editor api in foreground start" -Text $docsModuleText -Needle "Start-DocsEditorApiBackground -ResolvedRepoRoot $ResolvedRepoRoot"
   Assert-HasLiteral -Name "docs module writes editor runtime config" -Text $docsModuleText -Needle "editor-runtime.json"
   Assert-HasLiteral -Name "docs module exposes visibility command" -Text $docsModuleText -Needle "ue-tools docs visibility"
@@ -366,6 +386,7 @@ try {
   Step "Publish script contract"
   $publishScriptText = Get-Content -LiteralPath $publishScriptPath -Raw
   Assert-HasLiteral -Name "publish script validates .NET SDK list" -Text $publishScriptText -Needle "--list-sdks"
+  Assert-HasLiteral -Name "publish script defaults to payload release version" -Text $publishScriptText -Needle 'Version = "1.0.0"'
   Assert-HasLiteral -Name "publish script enforces .NET 10 SDK" -Text $publishScriptText -Needle "^10\."
   Assert-HasLiteral -Name "publish script artifact naming convention" -Text $publishScriptText -Needle "UEToolSuiteInstaller-{0}-{1}.exe"
   Assert-HasLiteral -Name "publish script timestamp signing support" -Text $publishScriptText -Needle "/tr $TimestampUrl"
@@ -379,6 +400,9 @@ try {
   Assert-HasLiteral -Name "workflow runs mutating binary-guard suite" -Text $workflowText -Needle "binary-guard-fixes"
   Assert-HasLiteral -Name "workflow publishes installer via publish script" -Text $workflowText -Needle "Scripts/Publish-InstallerExe.ps1"
   Assert-HasLiteral -Name "workflow uploads versioned artifact name" -Text $workflowText -Needle 'UEToolSuiteInstaller-${{ steps.version.outputs.value }}-win-x64.exe'
+  Assert-HasLiteral -Name "workflow validates release version against payload manifest" -Text $workflowText -Needle "does not match payloadVersion"
+  Assert-HasLiteral -Name "workflow manual release defaults to payload version" -Text $workflowText -Needle 'default: "1.0.0"'
+  Assert-HasLiteral -Name "workflow generates release notes" -Text $workflowText -Needle "--generate-notes"
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

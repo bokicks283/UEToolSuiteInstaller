@@ -108,7 +108,12 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 `
 
 - [ ] Install Env A normally; confirm `%LOCALAPPDATA%\UEToolSuite\current.json`, `bin\ue-tools.ps1`, `bin\ue-tools.cmd`, and `versions\<payloadVersion>\Scripts\ue-tools.ps1` exist.
 - [ ] Confirm Env A retains `.githooks`, `Scripts\git-hooks`, `Docs`, and `website`, but its `Scripts\ue-tools.ps1` is a forwarding shim and reusable `Scripts\UETools` modules are not duplicated.
+- [ ] Inspect `.ue-tools\global-cli.json`; confirm it contains portable version/bootstrap metadata and no `globalRoot`, `installRoot`, `launcherPath`, username, drive-specific install path, or timestamp.
+- [ ] Confirm the marker's `bootstrap.releaseTag` exists in its `bootstrap.repositoryUrl` before distributing the suite-enabled checkout.
 - [ ] Install Env B normally; run both project shims and the stable launcher with `help` and explicit `-RepoRoot` values containing spaces.
+- [ ] In a second Windows account or clean LocalAppData environment, run `pwsh -File Scripts\ue-tools.ps1 help`, review the declared source/tag/target, approve installation, and confirm the original `help` command resumes successfully.
+- [ ] Repeat with `-NonInteractive`; confirm the shim does not prompt, clone, or install and instead prints the interactive bootstrap command.
+- [ ] Decline the interactive bootstrap prompt; confirm no per-user global CLI root is created.
 - [ ] Update an existing legacy project-local install; confirm known suite runtime files are backed up/removed while an unknown neighboring file under `Scripts\UETools` is preserved.
 - [ ] Start docs authoring for Env A, then attempt Env B. Confirm the second instance fails with the clear fixed-port ownership error and does not stop Env A.
 
@@ -245,11 +250,11 @@ Use Env A and Env C.
 - [ ] Build installer exe locally:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 0.1.0-manual
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0-manual
 ```
 
 - [ ] Confirm output exists:
-  - `dist\UEToolSuiteInstaller-0.1.0-manual-win-x64.exe`
+  - `dist\UEToolSuiteInstaller-1.0.0-manual-win-x64.exe`
 - [ ] Launch built exe and run a smoke install into a scratch target repo.
 - [ ] Confirm GUI flow executes the same installer behavior as CLI (managed paths + backups + init behavior).
 - [ ] Confirm progress bar advances through payload copy, init, and completion.

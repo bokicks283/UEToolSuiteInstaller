@@ -54,7 +54,11 @@ function Get-LineMatchCount([string]$Text, [string]$Line) {
 }
 
 function Invoke-Installer {
-  param([Parameter(Mandatory)][string]$TargetRoot, [string[]]$ExtraArgs)
+  param(
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [string[]]$ExtraArgs,
+    [string]$GlobalCliRoot = $testGlobalCliRoot
+  )
 
   $pwshArgs = @(
     "-NoLogo",
@@ -62,7 +66,7 @@ function Invoke-Installer {
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
     "-TargetRepoRoot", $TargetRoot,
-    "-GlobalCliRoot", $testGlobalCliRoot
+    "-GlobalCliRoot", $GlobalCliRoot
   ) + @($ExtraArgs)
 
   Write-Log ">> pwsh $($pwshArgs -join ' ')" DarkGray
@@ -87,7 +91,10 @@ function Invoke-ToolEntrypoint {
   param(
     [Parameter(Mandatory)][string]$EntrypointPath,
     [Parameter(Mandatory)][string]$RepoRoot,
-    [string[]]$CommandArguments = @("help")
+    [string[]]$CommandArguments = @("help"),
+    [string]$GlobalCliRoot = $testGlobalCliRoot,
+    [string]$BootstrapSourceRoot,
+    [string[]]$InputLines = @()
   )
 
   $pwshArgs = @(
@@ -98,8 +105,18 @@ function Invoke-ToolEntrypoint {
     "-RepoRoot", $RepoRoot
   ) + @($CommandArguments)
 
-  $out = @(& pwsh @pwshArgs 2>&1)
-  $code = $LASTEXITCODE
+  $oldGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
+  $oldBootstrapSourceRoot = $env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT
+  try {
+    $env:UE_TOOLS_GLOBAL_CLI_ROOT = $GlobalCliRoot
+    $env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT = $BootstrapSourceRoot
+    $out = if ($InputLines.Count -gt 0) { @($InputLines | & pwsh @pwshArgs 2>&1) } else { @(& pwsh @pwshArgs 2>&1) }
+    $code = $LASTEXITCODE
+  }
+  finally {
+    $env:UE_TOOLS_GLOBAL_CLI_ROOT = $oldGlobalCliRoot
+    $env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT = $oldBootstrapSourceRoot
+  }
   $normalized = @($out | ForEach-Object { Remove-AnsiEscapeSequences "$_" })
   return [pscustomobject]@{
     Code = $code
@@ -762,19 +779,119 @@ try {
   Assert-PathExists "case8 versioned docs bridge source installed" (Join-Path $globalVersionRoot "Scripts\Docs\VSCodeBridge\extension.js")
 
   $globalProjectShimA = Join-Path $globalRepoA "Scripts\ue-tools.ps1"
+  $globalProjectMarkerA = Join-Path $globalRepoA ".ue-tools\global-cli.json"
   Assert-FileContains "case8 project A receives global forwarding shim" $globalProjectShimA "UE Tool Suite global project shim"
+  $projectMarkerA = Get-Content -LiteralPath $globalProjectMarkerA -Raw | ConvertFrom-Json
+  $projectMarkerFields = @($projectMarkerA.PSObject.Properties.Name | Sort-Object)
+  $expectedPortableMarkerFields = @("bootstrap", "mode", "schemaVersion", "version")
+  Assert-Condition "case8 project marker contains only portable metadata" `
+    (-not (Compare-Object -ReferenceObject $expectedPortableMarkerFields -DifferenceObject $projectMarkerFields)) `
+    "fields=$($projectMarkerFields -join ',')" `
+    "machine-specific marker fields found: $($projectMarkerFields -join ',')"
+  Assert-Condition "case8 project marker does not contain installer machine paths" `
+    (-not ((Get-Content -LiteralPath $globalProjectMarkerA -Raw).Contains($globalCliRoot))) `
+    "global root absent" `
+    "global root leaked into tracked project marker"
+  Assert-FileContains "case8 project shim resolves an optional per-user global root" $globalProjectShimA "UE_TOOLS_GLOBAL_CLI_ROOT"
+  Assert-FileContains "case8 project shim pins the project-declared runtime version" $globalProjectShimA 'versions\$version\Scripts\ue-tools.ps1'
+  Assert-Condition "case8 project marker declares the versioned bootstrap source" `
+    ([string]$projectMarkerA.bootstrap.repositoryUrl -eq "https://github.com/bokicks283/UEToolSuiteInstaller.git" -and [string]$projectMarkerA.bootstrap.releaseTag -eq "v1.0.0") `
+    "portable bootstrap metadata present" `
+    "bootstrap metadata missing or incorrect"
   Assert-PathMissing "case8 project A omits duplicated core module" (Join-Path $globalRepoA "Scripts\UETools\UEToolSuite.Core.psm1")
   Assert-PathMissing "case8 project A omits duplicated project context helper" (Join-Path $globalRepoA "Scripts\Unreal\ProjectContext.ps1")
   Assert-PathExists "case8 project A keeps docs content" (Join-Path $globalRepoA "Docs\README.md")
   Assert-PathExists "case8 project A keeps Docusaurus site" (Join-Path $globalRepoA "website\package.json")
   Assert-PathExists "case8 project A keeps Git hooks" (Join-Path $globalRepoA ".githooks\pre-commit")
 
-  $currentDescriptor = Get-Content -LiteralPath $globalCurrentPath -Raw | ConvertFrom-Json
+  $currentDescriptorText = Get-Content -LiteralPath $globalCurrentPath -Raw
+  $currentDescriptor = $currentDescriptorText | ConvertFrom-Json
   Assert-Condition "case8 descriptor records payload version" ([string]$currentDescriptor.version -eq "1.0.0") "version=1.0.0" "version=$([string]$currentDescriptor.version)"
   Assert-Condition "case8 descriptor records versioned runtime path" ([System.IO.Path]::GetFullPath([string]$currentDescriptor.installRoot).Equals([System.IO.Path]::GetFullPath($globalVersionRoot), [System.StringComparison]::OrdinalIgnoreCase)) "install root matches" "install root mismatch"
 
   $projectAHelp = Invoke-ToolEntrypoint -EntrypointPath $globalProjectShimA -RepoRoot $globalRepoA -CommandArguments @("help")
   Assert-Condition "case8 project A shim invokes global CLI" ($projectAHelp.Code -eq 0 -and $projectAHelp.Output -like "*UE Tool Suite*") "global help returned" "exit=$($projectAHelp.Code) output=$($projectAHelp.Output)"
+
+  try {
+    $mismatchedDescriptor = [ordered]@{
+      schemaVersion = 1
+      version = "9.9.9"
+      installRoot = (Join-Path $globalCliRoot "versions\9.9.9")
+    }
+    [IO.File]::WriteAllText($globalCurrentPath, (($mismatchedDescriptor | ConvertTo-Json -Depth 3) + "`n"), [Text.UTF8Encoding]::new($false))
+    $projectPinnedHelp = Invoke-ToolEntrypoint -EntrypointPath $globalProjectShimA -RepoRoot $globalRepoA -CommandArguments @("help")
+    Assert-Condition "case8 project shim ignores another current global version" `
+      ($projectPinnedHelp.Code -eq 0 -and $projectPinnedHelp.Output -like "*UE Tool Suite dispatcher.*") `
+      "project-declared version executed" `
+      "exit=$($projectPinnedHelp.Code) output=$($projectPinnedHelp.Output)"
+  }
+  finally {
+    [IO.File]::WriteAllText($globalCurrentPath, $currentDescriptorText, [Text.UTF8Encoding]::new($false))
+  }
+
+  $nonInteractiveGlobalRoot = Join-Path $tempRoot "teammate noninteractive global root"
+  $missingNonInteractive = Invoke-ToolEntrypoint `
+    -EntrypointPath $globalProjectShimA `
+    -RepoRoot $globalRepoA `
+    -CommandArguments @("help", "-NonInteractive") `
+    -GlobalCliRoot $nonInteractiveGlobalRoot `
+    -BootstrapSourceRoot $installerRoot
+  Assert-Condition "case8 missing CLI does not prompt or install in non-interactive mode" `
+    ($missingNonInteractive.Code -ne 0 -and $missingNonInteractive.Output -like "*Run 'pwsh -File Scripts\ue-tools.ps1 help' from an interactive PowerShell session*" -and -not (Test-Path -LiteralPath $nonInteractiveGlobalRoot)) `
+    "non-interactive guidance returned without writes" `
+    "exit=$($missingNonInteractive.Code) output=$($missingNonInteractive.Output)"
+
+  $ciGlobalRoot = Join-Path $tempRoot "teammate ci global root"
+  $oldCI = $env:CI
+  try {
+    $env:CI = "true"
+    $missingInCI = Invoke-ToolEntrypoint `
+      -EntrypointPath $globalProjectShimA `
+      -RepoRoot $globalRepoA `
+      -CommandArguments @("help") `
+      -GlobalCliRoot $ciGlobalRoot `
+      -BootstrapSourceRoot $installerRoot
+  }
+  finally {
+    $env:CI = $oldCI
+  }
+  Assert-Condition "case8 missing CLI does not prompt or install in CI" `
+    ($missingInCI.Code -ne 0 -and $missingInCI.Output -like "*Run 'pwsh -File Scripts\ue-tools.ps1 help' from an interactive PowerShell session*" -and -not (Test-Path -LiteralPath $ciGlobalRoot)) `
+    "CI guidance returned without writes" `
+    "exit=$($missingInCI.Code) output=$($missingInCI.Output)"
+
+  $declinedGlobalRoot = Join-Path $tempRoot "teammate declined global root"
+  $declinedBootstrap = Invoke-ToolEntrypoint `
+    -EntrypointPath $globalProjectShimA `
+    -RepoRoot $globalRepoA `
+    -CommandArguments @("help") `
+    -GlobalCliRoot $declinedGlobalRoot `
+    -BootstrapSourceRoot $installerRoot `
+    -InputLines @("n")
+  Assert-Condition "case8 declined CLI bootstrap leaves the teammate root absent" `
+    ($declinedBootstrap.Code -ne 0 -and $declinedBootstrap.Output -like "*installation was declined*" -and -not (Test-Path -LiteralPath $declinedGlobalRoot)) `
+    "decline returned without writes" `
+    "exit=$($declinedBootstrap.Code) output=$($declinedBootstrap.Output)"
+
+  $teammateGlobalRoot = Join-Path $tempRoot "teammate global cli root with spaces"
+  $teammateBootstrap = Invoke-ToolEntrypoint `
+    -EntrypointPath $globalProjectShimA `
+    -RepoRoot $globalRepoA `
+    -CommandArguments @("help") `
+    -GlobalCliRoot $teammateGlobalRoot `
+    -BootstrapSourceRoot $installerRoot `
+    -InputLines @("y")
+  Assert-Condition "case8 project shim bootstraps a missing teammate CLI after consent" `
+    ($teammateBootstrap.Code -eq 0 -and $teammateBootstrap.Output -like "*UE Tool Suite installed. Continuing the original command.*" -and $teammateBootstrap.Output -like "*UE Tool Suite dispatcher.*") `
+    "teammate install completed and original command resumed" `
+    "exit=$($teammateBootstrap.Code) output=$($teammateBootstrap.Output)"
+  Assert-PathExists "case8 teammate receives a separate stable launcher" (Join-Path $teammateGlobalRoot "bin\ue-tools.ps1")
+  Assert-PathExists "case8 teammate receives a separate versioned runtime" (Join-Path $teammateGlobalRoot "versions\1.0.0\Scripts\ue-tools.ps1")
+  $markerAfterTeammateBootstrap = Get-Content -LiteralPath $globalProjectMarkerA -Raw
+  Assert-Condition "case8 teammate bootstrap keeps the shared marker path-free" `
+    (-not $markerAfterTeammateBootstrap.Contains($globalCliRoot) -and -not $markerAfterTeammateBootstrap.Contains($teammateGlobalRoot)) `
+    "neither user path is stored" `
+    "a per-user global root leaked into the shared marker"
 
   $globalRepoB = New-TargetRepo "global cli target b with spaces"
   $globalInstallB = Invoke-Installer -TargetRoot $globalRepoB -ExtraArgs @(

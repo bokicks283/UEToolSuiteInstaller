@@ -28,6 +28,8 @@ $logPath = Join-Path $resultsDir "UpgradeCompatibility-$stamp.log"
 $scratchRoot = New-TestScratchRoot -Prefix "ue tool suite upgrade compatibility"
 $globalCliRoot = Join-Path $scratchRoot "global cli root with spaces"
 $globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.0"
+$previousGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
+$env:UE_TOOLS_GLOBAL_CLI_ROOT = $globalCliRoot
 
 $script:PassCount = 0
 $script:FailCount = 0
@@ -260,6 +262,7 @@ catch {
   exit 1
 }
 finally {
+  $env:UE_TOOLS_GLOBAL_CLI_ROOT = $previousGlobalCliRoot
   if ($NoCleanup) {
     Write-Log "[WARN] Cleanup - NoCleanup set; leaving scratch root: $scratchRoot" Yellow
   }

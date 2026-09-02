@@ -201,9 +201,20 @@ function Read-UEToolSuitePayloadManifest {
   if ($projectBaseItems.Count -eq 0) { throw "Payload manifest requires managedItems.projectBase." }
   if ($globalCliItems.Count -eq 0) { throw "Payload manifest requires managedItems.globalCli." }
 
+  $bootstrapRepositoryUrl = [string]$manifest.bootstrap.repositoryUrl
+  $bootstrapRepositoryUri = $null
+  if (
+    [string]::IsNullOrWhiteSpace($bootstrapRepositoryUrl) -or
+    -not [Uri]::TryCreate($bootstrapRepositoryUrl, [UriKind]::Absolute, [ref]$bootstrapRepositoryUri) -or
+    $bootstrapRepositoryUri.Scheme -ne 'https'
+  ) {
+    throw "Payload manifest requires an absolute HTTPS bootstrap.repositoryUrl."
+  }
+
   return [pscustomobject]@{
     ManifestPath = $manifestPath
     PayloadVersion = [string]$manifest.payloadVersion
+    BootstrapRepositoryUrl = $bootstrapRepositoryUrl
     DocsManagedFileIndexPath = [string]$manifest.docsManagedFileIndexPath
     WebsiteManagedFileIndexPath = [string]$manifest.websiteManagedFileIndexPath
     ManagedTextItems = ConvertTo-StringArray -Value $manifest.managedTextItems -Name "managedTextItems"
@@ -2797,8 +2808,8 @@ function Remove-ProjectLocalGlobalRuntimeItems {
 function Write-GlobalCliProjectShim {
   param(
     [Parameter(Mandatory)][string]$TargetRoot,
-    [Parameter(Mandatory)]$GlobalInstall,
     [Parameter(Mandatory)][string]$PayloadVersion,
+    [Parameter(Mandatory)][string]$BootstrapRepositoryUrl,
     [Parameter(Mandatory)][string]$BackupRoot
   )
 
@@ -2808,13 +2819,13 @@ function Write-GlobalCliProjectShim {
   }
   $markerPath = Join-Path $TargetRoot ".ue-tools\global-cli.json"
   $marker = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     mode = "global"
     version = $PayloadVersion
-    globalRoot = $GlobalInstall.GlobalRoot
-    installRoot = $GlobalInstall.InstallRoot
-    launcherPath = $GlobalInstall.LauncherPath
-    updatedAt = [DateTimeOffset]::UtcNow.ToString("o")
+    bootstrap = [ordered]@{
+      repositoryUrl = $BootstrapRepositoryUrl
+      releaseTag = "v$PayloadVersion"
+    }
   }
   Write-Utf8NoBomFile -Path $markerPath -Content (($marker | ConvertTo-Json -Depth 4) + "`n")
   $shimContent = @'
@@ -2830,10 +2841,122 @@ try {
   $markerPath = Join-Path $projectRoot ".ue-tools\global-cli.json"
   if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw "Global CLI project marker is missing. Re-run the UE Tool Suite installer." }
   $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
-  $launcher = [string]$marker.launcherPath
-  if ([string]::IsNullOrWhiteSpace($launcher) -or -not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "Global CLI launcher is missing. Re-run the UE Tool Suite installer." }
+  if ([int]$marker.schemaVersion -ne 2 -or [string]$marker.mode -ne 'global') {
+    throw "Global CLI project marker is unsupported. Install the current UE Tool Suite version into this repository."
+  }
+
+  $globalRoot = [string]$env:UE_TOOLS_GLOBAL_CLI_ROOT
+  if ([string]::IsNullOrWhiteSpace($globalRoot)) {
+    $localAppData = [string]$env:LOCALAPPDATA
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+      $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    }
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+      throw "Could not resolve this user's LocalApplicationData directory. Set UE_TOOLS_GLOBAL_CLI_ROOT explicitly."
+    }
+    $globalRoot = Join-Path $localAppData 'UEToolSuite'
+  }
+  $globalRoot = [IO.Path]::GetFullPath($globalRoot)
+  $version = [string]$marker.version
+  if ($version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+    throw "The project marker declares an invalid CLI version '$version'."
+  }
+  $entrypoint = Join-Path $globalRoot "versions\$version\Scripts\ue-tools.ps1"
+
+  if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
+    $ciEnvironment = @(
+      [string]$env:CI,
+      [string]$env:GITHUB_ACTIONS,
+      [string]$env:TF_BUILD
+    ) | Where-Object { $_ -match '^(?i:1|true)$' }
+    $nonInteractive = @($CommandArgs | ForEach-Object { ([string]$_).TrimStart('-','/').ToLowerInvariant() }) -contains 'noninteractive'
+    $nonInteractive = $nonInteractive -or $ciEnvironment.Count -gt 0 -or [string]$env:UE_SYNC_ROOT_INTERACTIVE -eq '0' -or [string]$env:UE_SYNC_HOOK_HAS_TTY -eq '0'
+    if ($nonInteractive) {
+      throw "UE Tool Suite $($marker.version) is not installed for this user. Run 'pwsh -File Scripts\ue-tools.ps1 help' from an interactive PowerShell session to review and approve installation."
+    }
+
+    $repositoryUrl = [string]$marker.bootstrap.repositoryUrl
+    $releaseTag = [string]$marker.bootstrap.releaseTag
+    $repositoryUri = $null
+    if (
+      [string]::IsNullOrWhiteSpace($repositoryUrl) -or
+      -not [Uri]::TryCreate($repositoryUrl, [UriKind]::Absolute, [ref]$repositoryUri) -or
+      $repositoryUri.Scheme -ne 'https'
+    ) {
+      throw "The project marker does not declare a valid HTTPS bootstrap repository."
+    }
+    if ($releaseTag -notmatch '^v[A-Za-z0-9][A-Za-z0-9._-]*$') {
+      throw "The project marker declares an invalid bootstrap release tag '$releaseTag'."
+    }
+    if ($releaseTag -cne "v$version") {
+      throw "The project marker release tag '$releaseTag' does not match CLI version '$version'."
+    }
+
+    Write-Host "UE Tool Suite $($marker.version) is not installed for this Windows user." -ForegroundColor Yellow
+    Write-Host "Source: $repositoryUrl ($releaseTag)"
+    Write-Host "Target: $globalRoot"
+    $answer = [string](Read-Host 'Install the project-declared CLI for this user now? [y/N]')
+    if ([string]::IsNullOrWhiteSpace($answer) -or $answer.Trim().ToLowerInvariant() -notin @('y','yes')) {
+      throw "UE Tool Suite installation was declined. No global CLI files were installed."
+    }
+
+    $bootstrapSourceRoot = [string]$env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT
+    $removeBootstrapSource = $false
+    if ([string]::IsNullOrWhiteSpace($bootstrapSourceRoot)) {
+      $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+      if (-not $gitCommand) { throw "Git is required to download the project-declared UE Tool Suite release." }
+      $tempBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+      $bootstrapRoot = [IO.Path]::GetFullPath((Join-Path $tempBase ('uetools-bootstrap-' + [Guid]::NewGuid().ToString('N'))))
+      if (-not $bootstrapRoot.StartsWith($tempBase + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to create the bootstrap checkout outside the temporary directory."
+      }
+      $bootstrapSourceRoot = Join-Path $bootstrapRoot 'source'
+      New-Item -ItemType Directory -Force -Path $bootstrapRoot | Out-Null
+      Write-Host "Downloading $releaseTag..."
+      & $gitCommand.Source clone --quiet --depth 1 --branch $releaseTag --single-branch $repositoryUrl $bootstrapSourceRoot
+      if ($LASTEXITCODE -ne 0) {
+        Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Could not download UE Tool Suite release $releaseTag from $repositoryUrl. Confirm that the tag has been published and is accessible."
+      }
+      $removeBootstrapSource = $true
+    }
+    else {
+      $bootstrapSourceRoot = [IO.Path]::GetFullPath($bootstrapSourceRoot)
+      Write-Host "Using trusted bootstrap source override: $bootstrapSourceRoot"
+    }
+
+    try {
+      $installerScript = Join-Path $bootstrapSourceRoot 'Install-UEToolSuite.ps1'
+      $payloadRoot = Join-Path $bootstrapSourceRoot 'payload'
+      $bootstrapManifestPath = Join-Path $payloadRoot 'ue-tool-suite.manifest.json'
+      if (-not (Test-Path -LiteralPath $installerScript -PathType Leaf) -or -not (Test-Path -LiteralPath $bootstrapManifestPath -PathType Leaf)) {
+        throw "The bootstrap source does not contain Install-UEToolSuite.ps1 and payload/ue-tool-suite.manifest.json."
+      }
+      $bootstrapManifest = Get-Content -LiteralPath $bootstrapManifestPath -Raw | ConvertFrom-Json
+      if ([string]$bootstrapManifest.payloadVersion -cne $version) {
+        throw "The downloaded bootstrap payload version '$([string]$bootstrapManifest.payloadVersion)' does not match project version '$version'."
+      }
+      Write-Host "Installing UE Tool Suite $($marker.version) for this user..."
+      & pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installerScript -TargetRepoRoot $projectRoot -GlobalCliRoot $globalRoot -SkipTests
+      if ($LASTEXITCODE -ne 0) { throw "UE Tool Suite bootstrap installer failed with exit code $LASTEXITCODE." }
+    }
+    finally {
+      if ($removeBootstrapSource -and (Test-Path -LiteralPath $bootstrapRoot)) {
+        $resolvedBootstrapRoot = [IO.Path]::GetFullPath($bootstrapRoot)
+        if ($resolvedBootstrapRoot.StartsWith($tempBase + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+          Remove-Item -LiteralPath $resolvedBootstrapRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+      }
+    }
+
+    if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
+      throw "Installation completed without creating the expected per-user runtime: $entrypoint"
+    }
+    Write-Host "UE Tool Suite installed. Continuing the original command." -ForegroundColor Green
+  }
+
   $effectiveRepoRoot = if ([string]::IsNullOrWhiteSpace($RepoRoot)) { $projectRoot } else { $RepoRoot }
-  & $launcher -RepoRoot $effectiveRepoRoot @CommandArgs
+  & $entrypoint -RepoRoot $effectiveRepoRoot @CommandArgs
   if (-not $?) { exit 1 }
 }
 catch {
@@ -2964,8 +3087,8 @@ foreach ($item in @($managedItems.ToArray() | Sort-Object -Unique)) {
 
 Write-GlobalCliProjectShim `
   -TargetRoot $resolvedTargetRoot `
-  -GlobalInstall $globalCliInstall `
   -PayloadVersion $payloadManifest.PayloadVersion `
+  -BootstrapRepositoryUrl $payloadManifest.BootstrapRepositoryUrl `
   -BackupRoot $backupRoot
 [void]$installed.Add("Scripts/ue-tools.ps1")
 [void]$installed.Add(".ue-tools/global-cli.json")

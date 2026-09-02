@@ -25,6 +25,8 @@ Use this flow when bootstrapping a fresh clone or when moving the repo to a new 
 pwsh -NoProfile -ExecutionPolicy Bypass -File Scripts/ue-tools.ps1 init
 ```
 
+If this Windows user does not have the project-declared UEToolSuite version installed yet, the project shim displays the portable version/source declared by the repository and asks for approval. Approving installs the tagged CLI under the current user's LocalAppData and then resumes `init`. The declared release tag must already be published in the bootstrap repository. A teammate's absolute install path is never read from or written to the repository. Non-interactive invocations do not install automatically; run the command above interactively once first.
+
 3. Open the project `.uproject` and let Unreal regenerate local workspace data if needed.
 4. If the repo was moved, verify the `.code-workspace` file points at the current repo root and local engine install.
 5. Start the docs site when you need a local preview:
@@ -103,4 +105,4 @@ The git-hook `ue-sync` workflow decides between build and project-file regenerat
 
 ## Tool Suite Updates
 
-Use the standalone UE tool suite installer repo to install or update these tools in a project. Installer/updater logic should stay outside this project; this repo should contain only the usable tools and docs payload.
+Use the standalone UE tool suite installer repo to update an existing installation. The project shim bootstraps only when this user is missing the version declared by the checkout; it does not silently update an existing runtime. Installer/updater logic otherwise stays outside the project, while the repo retains the portable shim, marker, hooks, docs, and website payload.

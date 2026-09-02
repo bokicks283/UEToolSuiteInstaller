@@ -94,7 +94,7 @@ Using cert store thumbprint:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 0.1.0 `
+  -Version 1.0.0 `
   -CertificateThumbprint <thumbprint>
 ```
 
@@ -102,7 +102,7 @@ Using PFX directly:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 0.1.0 `
+  -Version 1.0.0 `
   -CertificatePath C:\secure\codesign-ci.pfx `
   -CertificatePassword "<password>"
 ```
@@ -112,7 +112,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-Installe
 Run on produced exe:
 
 ```powershell
-Get-AuthenticodeSignature .\dist\UEToolSuiteInstaller-0.1.0-win-x64.exe | Format-List *
+Get-AuthenticodeSignature .\dist\UEToolSuiteInstaller-1.0.0-win-x64.exe | Format-List *
 ```
 
 Expected:

@@ -57,7 +57,7 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 
 | Purpose | Working dir | Exact command | Side effects |
 |---|---|---|---|
-| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 0.1.0` | Publishes GUI EXE under `dist/` |
+| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0` | Publishes GUI EXE under `dist/` |
 
 ## Verification and troubleshooting commands
 

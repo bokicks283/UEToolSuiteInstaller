@@ -165,13 +165,13 @@ winget install Microsoft.DotNet.SDK.10
 Publish the unsigned exe:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 0.1.0
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0
 ```
 
 Output:
 
 ```text
-dist/UEToolSuiteInstaller-0.1.0-win-x64.exe
+dist/UEToolSuiteInstaller-1.0.0-win-x64.exe
 ```
 
 The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps1`, and `payload/`. Users still need PowerShell 7 installed because the installed UE tools run on `pwsh`.
@@ -195,8 +195,8 @@ git diff --check
 4. Create a version tag:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 5. The GitHub Actions workflow builds the exe and creates a GitHub Release for `v*` tags.
@@ -237,7 +237,7 @@ Sign with a certificate in your current user's certificate store:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 0.1.0 `
+  -Version 1.0.0 `
   -CertificateThumbprint <thumbprint>
 ```
 
@@ -245,7 +245,7 @@ Sign with a PFX file:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 0.1.0 `
+  -Version 1.0.0 `
   -CertificatePath C:\secure\codesign.pfx `
   -CertificatePassword "<password>"
 ```

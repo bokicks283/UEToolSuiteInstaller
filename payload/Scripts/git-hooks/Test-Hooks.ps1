@@ -15,7 +15,15 @@ if (-not (Test-Path -LiteralPath $coreModuleEntryPath -PathType Leaf)) {
   $globalMarkerPath = Join-Path $repoRoot ".ue-tools\global-cli.json"
   if (Test-Path -LiteralPath $globalMarkerPath -PathType Leaf) {
     $globalMarker = Get-Content -LiteralPath $globalMarkerPath -Raw | ConvertFrom-Json
-    $scriptsRoot = Join-Path ([string]$globalMarker.installRoot) "Scripts"
+    $globalVersion = [string]$globalMarker.version
+    if ($globalVersion -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+      throw "The global CLI project marker declares an invalid version '$globalVersion'."
+    }
+    $globalRoot = [string]$env:UE_TOOLS_GLOBAL_CLI_ROOT
+    if ([string]::IsNullOrWhiteSpace($globalRoot)) {
+      $globalRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "UEToolSuite"
+    }
+    $scriptsRoot = Join-Path ([IO.Path]::GetFullPath($globalRoot)) "versions\$globalVersion\Scripts"
     $coreModuleEntryPath = Join-Path $scriptsRoot "UETools\UETools.psd1"
   }
 }

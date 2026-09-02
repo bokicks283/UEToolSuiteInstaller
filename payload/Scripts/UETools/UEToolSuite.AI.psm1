@@ -79,10 +79,19 @@ function Get-UEToolSuiteAICodingStandardsSnapshotInfo {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$ResolvedRepoRoot)
 
-  $currentSnapshotRoot = Join-Path $ResolvedRepoRoot "Docs\CodingStandards\Current"
-  $sourcePath = Join-Path $currentSnapshotRoot "SOURCE.md"
+  $snapshotCandidates = @(
+    [pscustomobject]@{
+      Root = Join-Path $ResolvedRepoRoot "Docs\WorkflowStandards\CodingStandards\Current"
+      RelativePath = "Docs/WorkflowStandards/CodingStandards/Current"
+    },
+    [pscustomobject]@{
+      Root = Join-Path $ResolvedRepoRoot "Docs\CodingStandards\Current"
+      RelativePath = "Docs/CodingStandards/Current"
+    }
+  )
+  $snapshotCandidate = @($snapshotCandidates | Where-Object { Test-Path -LiteralPath $_.Root -PathType Container } | Select-Object -First 1)
 
-  if (-not (Test-Path -LiteralPath $currentSnapshotRoot)) {
+  if ($snapshotCandidate.Count -eq 0) {
     return [pscustomobject]@{
       Exists = $false
       Path = $null
@@ -91,6 +100,10 @@ function Get-UEToolSuiteAICodingStandardsSnapshotInfo {
       HasValidDate = $false
     }
   }
+
+  $currentSnapshotRoot = [string]$snapshotCandidate[0].Root
+  $relativeSnapshotPath = [string]$snapshotCandidate[0].RelativePath
+  $sourcePath = Join-Path $currentSnapshotRoot "SOURCE.md"
 
   $snapshotDate = $null
   $hasValidDate = $false
@@ -109,7 +122,7 @@ function Get-UEToolSuiteAICodingStandardsSnapshotInfo {
 
   return [pscustomobject]@{
     Exists = $true
-    Path = "Docs/CodingStandards/Current"
+    Path = $relativeSnapshotPath
     SnapshotDate = $snapshotDate
     IsStale = $isStale
     HasValidDate = $hasValidDate
@@ -141,6 +154,8 @@ function New-UEToolSuiteAIStartupPrompt {
   $lines.Add("") | Out-Null
 
   if ($snapshotInfo.Exists) {
+    $codingStandardsRoot = $snapshotInfo.Path -replace '/Current$', ''
+    $syncScriptPath = "$codingStandardsRoot/Sync-UnrealCppStandard.ps1"
     if ($snapshotInfo.HasValidDate) {
       $lines.Add(("Current Unreal C++ standard snapshot: {0} ({1:yyyy-MM-dd})." -f $snapshotInfo.Path, $snapshotInfo.SnapshotDate)) | Out-Null
     }
@@ -149,20 +164,20 @@ function New-UEToolSuiteAIStartupPrompt {
     }
 
     if ($snapshotInfo.HasValidDate -and $snapshotInfo.IsStale) {
-      $lines.Add("It is older than six months. Refresh it with `pwsh -File Docs/CodingStandards/Sync-UnrealCppStandard.ps1` before treating the local standard reference as current.") | Out-Null
+      $lines.Add("It is older than six months. Refresh it with `pwsh -File $syncScriptPath` before treating the local standard reference as current.") | Out-Null
     }
     elseif ($snapshotInfo.HasValidDate) {
       $lines.Add("It is not older than six months.") | Out-Null
     }
     else {
-      $lines.Add("Refresh SOURCE.md and re-run `pwsh -File Docs/CodingStandards/Sync-UnrealCppStandard.ps1` before treating the local standard reference as current.") | Out-Null
+      $lines.Add("Refresh SOURCE.md and re-run `pwsh -File $syncScriptPath` before treating the local standard reference as current.") | Out-Null
     }
   }
   else {
-    $lines.Add("No local Unreal C++ standard snapshot was found under Docs/CodingStandards/Current/.") | Out-Null
+    $lines.Add("No local Unreal C++ standard snapshot was found under Docs/WorkflowStandards/CodingStandards/Current/ or the legacy Docs/CodingStandards/Current/ path.") | Out-Null
   }
 
-  $lines.Add("If this task touches C++ or style-sensitive code, scrutinize Docs/CodingStandards/README.md, Docs/CodingStandards/UnrealCppStandard.md, and Docs/CodingStandards/Current/SOURCE.md first.") | Out-Null
+  $lines.Add("If this task touches C++ or style-sensitive code, scrutinize Docs/WorkflowStandards/CodingStandards/README.md, Docs/WorkflowStandards/CodingStandards/UnrealCppStandard.md, and Docs/WorkflowStandards/CodingStandards/Current/SOURCE.md first.") | Out-Null
 
   if (-not [string]::IsNullOrWhiteSpace($Task)) {
     $lines.Add("") | Out-Null

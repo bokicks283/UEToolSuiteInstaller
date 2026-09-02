@@ -93,7 +93,7 @@ This boundary keeps user-facing CLI stable while keeping runtime helpers central
 - legacy cleanup by explicit path list
 - optional init invocation after install/update
 
-Installed payload scripts do not self-update. Updates always come from rerunning the installer.
+Installed payload scripts do not silently self-update. Updates to an existing runtime come from rerunning the installer. The project forwarding shim may bootstrap a missing per-user runtime after explicit interactive consent by fetching the exact release tag declared in the portable project marker; non-interactive hooks and CI never install.
 
 ## Multi-Repo Shell/Profile Behavior
 
@@ -103,6 +103,9 @@ Installed payload scripts do not self-update. Updates always come from rerunning
 - Existing installs using the older `# >>>` / `# <<<` markers are migrated the next time shell aliases are installed.
 - The block registers lazy aliases (`ue-tools`, `ue`) and loads `%LOCALAPPDATA%\UEToolSuite\Shell\UEToolsBootstrap.ps1` on first command use.
 - The bootstrap resolves the active git repo at invocation time and runs that repo's `Scripts/ue-tools.ps1`.
+- The project marker contains portable version/bootstrap metadata only. The shim resolves `%LOCALAPPDATA%\UEToolSuite` independently for each user and supports `UE_TOOLS_GLOBAL_CLI_ROOT` as an explicit advanced override.
+- The project shim invokes `versions\<projectVersion>\Scripts\ue-tools.ps1`, so different checkouts can declare different installed versions even when the user's stable launcher selects another current version.
+- When the current user lacks that declared runtime, an interactive shim asks before installing the project-declared tagged release and then resumes the requested command.
 
 This prevents cross-project alias conflicts and avoids profile clutter when many UE repos are installed.
 

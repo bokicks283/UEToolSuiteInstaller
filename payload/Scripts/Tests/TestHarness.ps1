@@ -13,7 +13,16 @@ function Resolve-UEToolSuiteRuntimeFile {
   $markerPath = Join-Path $RepoRoot ".ue-tools\global-cli.json"
   if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
     $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
-    $globalPath = Join-Path ([string]$marker.installRoot) $RelativePath
+    $version = [string]$marker.version
+    if ($version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+      throw "The global CLI project marker declares an invalid version '$version'."
+    }
+    $globalRoot = [string]$env:UE_TOOLS_GLOBAL_CLI_ROOT
+    if ([string]::IsNullOrWhiteSpace($globalRoot)) {
+      $globalRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "UEToolSuite"
+    }
+    $globalVersionRoot = Join-Path ([IO.Path]::GetFullPath($globalRoot)) "versions\$version"
+    $globalPath = Join-Path $globalVersionRoot $RelativePath
     if (Test-Path -LiteralPath $globalPath -PathType Leaf) { return (Resolve-Path -LiteralPath $globalPath).Path }
   }
 

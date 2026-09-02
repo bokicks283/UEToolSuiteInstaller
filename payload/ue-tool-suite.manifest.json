@@ -1,6 +1,9 @@
 {
   "manifestVersion": 1,
   "payloadVersion": "1.0.0",
+  "bootstrap": {
+    "repositoryUrl": "https://github.com/bokicks283/UEToolSuiteInstaller.git"
+  },
   "docsManagedFileIndexPath": "docs-managed-file-index.json",
   "websiteManagedFileIndexPath": "website-managed-file-index.json",
   "managedTextItems": [

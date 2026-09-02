@@ -86,7 +86,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/CLI/README.md",
       "category": "docs",
-      "sha256": "afd563b173e5f2640d13a9084fdd5fdd22de216c4962c18aef32447355fe7e5f"
+      "sha256": "a6a245d332dc2b0efefc35d67ce060cf75bfa0e91acd0ca0fee567483b243833"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Settings.md",
@@ -171,7 +171,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/Setup.md",
       "category": "docs",
-      "sha256": "47f449785d21286b56acb84d24cc6ea28da68ee62f7cf67f13a3b677cae68bd2"
+      "sha256": "f7841aed16f4b4a4389c710c79a0fbaae889c40bf3212fe50bc3e9048cc6458b"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Testing.md",

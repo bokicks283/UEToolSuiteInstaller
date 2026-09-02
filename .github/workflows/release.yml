@@ -9,7 +9,7 @@ on:
       version:
         description: "Release version without the leading v"
         required: true
-        default: "0.1.0"
+        default: "1.0.0"
 
 permissions:
   contents: write
@@ -40,6 +40,15 @@ jobs:
             $version = "${{ github.ref_name }}".TrimStart("v")
           }
           "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Validate payload release version
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -LiteralPath "payload/ue-tool-suite.manifest.json" -Raw | ConvertFrom-Json
+          $releaseVersion = "${{ steps.version.outputs.value }}"
+          if ([string]$manifest.payloadVersion -cne $releaseVersion) {
+            throw "Release version '$releaseVersion' does not match payloadVersion '$($manifest.payloadVersion)'."
+          }
 
       - name: Run full non-mutating suite
         shell: pwsh
@@ -92,6 +101,7 @@ jobs:
           gh release create "${{ github.ref_name }}" `
             "dist/UEToolSuiteInstaller-${{ steps.version.outputs.value }}-win-x64.exe" `
             --title "UE Tool Suite Installer ${{ steps.version.outputs.value }}" `
+            --generate-notes `
             --notes "Download and run the Windows installer. PowerShell 7 is required on the target machine."
 
             

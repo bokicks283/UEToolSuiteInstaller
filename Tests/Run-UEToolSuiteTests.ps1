@@ -97,13 +97,14 @@ function New-InstalledToolSuiteFixture {
   Write-TestUtf8NoBomFile -Path (Join-Path $fixtureRepo ".ai-local\Private-Context.md") -Content "Local test-only private context.`n"
 
   $installerScript = Join-Path $repoRoot "Install-UEToolSuite.ps1"
+  $globalCliRoot = Join-Path $scratchRoot "global cli root with spaces"
   $installArgs = @(
     "-NoLogo",
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
     "-File", $installerScript,
     "-TargetRepoRoot", $fixtureRepo,
-    "-GlobalCliRoot", (Join-Path $scratchRoot "global cli root with spaces"),
+    "-GlobalCliRoot", $globalCliRoot,
     "-AdoptExistingWebsite",
     "-RunInit",
     "-InitNonInteractive",
@@ -147,6 +148,7 @@ function New-InstalledToolSuiteFixture {
   [pscustomobject]@{
     RepoRoot = $fixtureRepo
     ScratchRoot = $scratchRoot
+    GlobalCliRoot = $globalCliRoot
   }
 }
 
@@ -288,14 +290,19 @@ function Invoke-TestEntry {
   Write-SuiteLog "Branch : $($repoState.Branch)" Cyan
 
   $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+  $oldGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
   Push-Location $executionRoot
   try {
+    if ($fixture) {
+      $env:UE_TOOLS_GLOBAL_CLI_ROOT = $fixture.GlobalCliRoot
+    }
     & pwsh @args 2>&1 | ForEach-Object {
       Write-ChildOutputLine -Text "$_"
     }
     $exitCode = $LASTEXITCODE
   }
   finally {
+    $env:UE_TOOLS_GLOBAL_CLI_ROOT = $oldGlobalCliRoot
     Pop-Location
     $stopwatch.Stop()
   }
