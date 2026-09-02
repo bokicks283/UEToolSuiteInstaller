@@ -10,6 +10,7 @@ param(
   [string]$Branch = "main",
   [switch]$Draft,
   [switch]$ValidateOnly,
+  [switch]$SkipTests,
   [string]$CertificateThumbprint,
   [string]$CertificatePath,
   [string]$CertificatePassword
@@ -184,9 +185,11 @@ try {
   }
 
   $pwshPath = (Get-Command pwsh).Source
-  Invoke-ReleaseTest -PwshPath $pwshPath -TestRunnerPath $testRunnerPath
-  Invoke-ReleaseTest -PwshPath $pwshPath -TestRunnerPath $testRunnerPath -ExclusiveName 'ue-sync-automated'
-  Invoke-ReleaseTest -PwshPath $pwshPath -TestRunnerPath $testRunnerPath -ExclusiveName 'binary-guard-fixes'
+  if (-not $SkipTests) {
+    Invoke-ReleaseTest -PwshPath $pwshPath -TestRunnerPath $testRunnerPath
+    Invoke-ReleaseTest -PwshPath $pwshPath -TestRunnerPath $testRunnerPath -ExclusiveName 'ue-sync-automated'
+    Invoke-ReleaseTest -PwshPath $pwshPath -TestRunnerPath $testRunnerPath -ExclusiveName 'binary-guard-fixes'
+  }
 
   Info "Building installer $artifactPath..."
   $publishArgs = @(
