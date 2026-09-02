@@ -680,7 +680,7 @@ Validation completed for this follow-up:
 |---|---|---|
 | PowerShell parser checks for changed installer/test/hook scripts | Passed | No parser errors |
 | `Tests/Run-UEToolSuiteTests.ps1 -Name installer -FailFast` | Passed | `PASS=222 FAIL=0` |
-| Clean-runner `-RunInit` with explicit `-GlobalCliRoot` | Passed | installer-selected runtime root overrides an invalid inherited root for the child bootstrap |
+| Clean-runner bootstrap scenarios under CI environment markers | Passed | `-RunInit` uses the installer-selected runtime root; interactive consent tests explicitly isolate CI while CI refusal remains covered |
 | `Tests/Run-UEToolSuiteTests.ps1 -Name packaging-contracts -FailFast` | Passed | `PASS=585 FAIL=0` |
 | `Tests/Run-UEToolSuiteTests.ps1 -Name upgrade-compatibility -FailFast` | Passed | `PASS=70 FAIL=0` |
 | `Tests/Run-UEToolSuiteTests.ps1 -Name hooks -FailFast` | Passed | installed-fixture hook plumbing passed |

@@ -94,7 +94,8 @@ function Invoke-ToolEntrypoint {
     [string[]]$CommandArguments = @("help"),
     [string]$GlobalCliRoot = $testGlobalCliRoot,
     [string]$BootstrapSourceRoot,
-    [string[]]$InputLines = @()
+    [string[]]$InputLines = @(),
+    [switch]$Interactive
   )
 
   $pwshArgs = @(
@@ -107,15 +108,32 @@ function Invoke-ToolEntrypoint {
 
   $oldGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
   $oldBootstrapSourceRoot = $env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT
+  $oldCI = $env:CI
+  $oldGitHubActions = $env:GITHUB_ACTIONS
+  $oldTfBuild = $env:TF_BUILD
+  $oldRootInteractive = $env:UE_SYNC_ROOT_INTERACTIVE
+  $oldHookHasTty = $env:UE_SYNC_HOOK_HAS_TTY
   try {
     $env:UE_TOOLS_GLOBAL_CLI_ROOT = $GlobalCliRoot
     $env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT = $BootstrapSourceRoot
+    if ($Interactive) {
+      $env:CI = $null
+      $env:GITHUB_ACTIONS = $null
+      $env:TF_BUILD = $null
+      $env:UE_SYNC_ROOT_INTERACTIVE = $null
+      $env:UE_SYNC_HOOK_HAS_TTY = $null
+    }
     $out = if ($InputLines.Count -gt 0) { @($InputLines | & pwsh @pwshArgs 2>&1) } else { @(& pwsh @pwshArgs 2>&1) }
     $code = $LASTEXITCODE
   }
   finally {
     $env:UE_TOOLS_GLOBAL_CLI_ROOT = $oldGlobalCliRoot
     $env:UE_TOOLS_BOOTSTRAP_SOURCE_ROOT = $oldBootstrapSourceRoot
+    $env:CI = $oldCI
+    $env:GITHUB_ACTIONS = $oldGitHubActions
+    $env:TF_BUILD = $oldTfBuild
+    $env:UE_SYNC_ROOT_INTERACTIVE = $oldRootInteractive
+    $env:UE_SYNC_HOOK_HAS_TTY = $oldHookHasTty
   }
   $normalized = @($out | ForEach-Object { Remove-AnsiEscapeSequences "$_" })
   return [pscustomobject]@{
@@ -874,7 +892,8 @@ try {
     -CommandArguments @("help") `
     -GlobalCliRoot $declinedGlobalRoot `
     -BootstrapSourceRoot $installerRoot `
-    -InputLines @("n")
+    -InputLines @("n") `
+    -Interactive
   Assert-Condition "case8 declined CLI bootstrap leaves the teammate root absent" `
     ($declinedBootstrap.Code -ne 0 -and $declinedBootstrap.Output -like "*installation was declined*" -and -not (Test-Path -LiteralPath $declinedGlobalRoot)) `
     "decline returned without writes" `
@@ -887,7 +906,8 @@ try {
     -CommandArguments @("help") `
     -GlobalCliRoot $teammateGlobalRoot `
     -BootstrapSourceRoot $installerRoot `
-    -InputLines @("y")
+    -InputLines @("y") `
+    -Interactive
   Assert-Condition "case8 project shim bootstraps a missing teammate CLI after consent" `
     ($teammateBootstrap.Code -eq 0 -and $teammateBootstrap.Output -like "*UE Tool Suite installed. Continuing the original command.*" -and $teammateBootstrap.Output -like "*UE Tool Suite dispatcher.*") `
     "teammate install completed and original command resumed" `
