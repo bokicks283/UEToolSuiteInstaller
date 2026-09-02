@@ -342,6 +342,7 @@ try {
   Assert-PathMissing "case1 excludes generated website build output" (Join-Path $targetRepo "website\build")
   Assert-FileContains "case1 installed git attributes marker" (Join-Path $targetRepo ".gitattributes") "# >>> ue tool suite git attributes >>>"
   Assert-FileContains "case1 installed git ignore marker" (Join-Path $targetRepo ".gitignore") "# >>> ue tool suite git ignore >>>"
+  Assert-FileContains "case1 ignores installer update reports" (Join-Path $targetRepo ".gitignore") ".ue-tools-installer-updates/"
   Assert-FileContains "case1 ignores private workspace settings" (Join-Path $targetRepo ".gitignore") ".ue-tools/local/"
   Assert-FileContains "case1 ignores workspace provenance state" (Join-Path $targetRepo ".gitignore") ".ue-tools/state/"
   Assert-FileContains "case1 allows tracked team workspace overlay" (Join-Path $targetRepo ".gitignore") "!.ue-tools/workspace-settings/team.jsonc"
