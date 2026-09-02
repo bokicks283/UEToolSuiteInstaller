@@ -621,16 +621,23 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "git add failed for tracked ignored fixture file: $ignoredTrackedRelativePath" }
   & git -C $initRepo commit -m "test: add tracked file that should become ignored after install" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "git commit failed for tracked ignored fixture file: $ignoredTrackedRelativePath" }
-  $initResult = Invoke-Installer -TargetRoot $initRepo -ExtraArgs @(
-    "-SkipTests",
-    "-RunInit",
-    "-InitNonInteractive",
-    "-SkipLfsPull",
-    "-SkipShellAliases",
-    "-SkipOptionalToolSetup",
-    "-SkipDocsSetup",
-    "-SkipUnrealSync"
-  )
+  $previousInheritedGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
+  try {
+    $env:UE_TOOLS_GLOBAL_CLI_ROOT = Join-Path $tempRoot "wrong inherited global root"
+    $initResult = Invoke-Installer -TargetRoot $initRepo -ExtraArgs @(
+      "-SkipTests",
+      "-RunInit",
+      "-InitNonInteractive",
+      "-SkipLfsPull",
+      "-SkipShellAliases",
+      "-SkipOptionalToolSetup",
+      "-SkipDocsSetup",
+      "-SkipUnrealSync"
+    )
+  }
+  finally {
+    $env:UE_TOOLS_GLOBAL_CLI_ROOT = $previousInheritedGlobalCliRoot
+  }
   Assert-Condition "case3 init install exits cleanly" ($initResult.Code -eq 0) "exit=0" "exit=$($initResult.Code)"
   Assert-Condition "case3 init bootstrap forced non-interactive" ($initResult.Output -like "*-NonInteractive*") "non-interactive switch present" "non-interactive switch missing"
   Assert-Condition "case3 init ran" ($initResult.Output -like "*Repo initialization complete.*") "init completed" "init output missing completion"

@@ -3223,9 +3223,16 @@ if ($RunInit) {
 
   Info "Running target bootstrap: pwsh $($initArgs -join ' ')"
   if ($PSCmdlet.ShouldProcess($resolvedTargetRoot, "Run ue-tools init in target repo")) {
-    & pwsh @initArgs
-    if ($LASTEXITCODE -ne 0) {
-      throw "Target ue-tools init failed with exit code $LASTEXITCODE."
+    $previousGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
+    try {
+      $env:UE_TOOLS_GLOBAL_CLI_ROOT = $resolvedGlobalCliRoot
+      & pwsh @initArgs
+      if ($LASTEXITCODE -ne 0) {
+        throw "Target ue-tools init failed with exit code $LASTEXITCODE."
+      }
+    }
+    finally {
+      $env:UE_TOOLS_GLOBAL_CLI_ROOT = $previousGlobalCliRoot
     }
   }
 }
