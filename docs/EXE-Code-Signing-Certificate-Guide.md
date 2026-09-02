@@ -96,7 +96,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRe
 Run on produced exe:
 
 ```powershell
-Get-AuthenticodeSignature .\dist\UEToolSuiteInstaller-1.0.0-win-x64.exe | Format-List *
+Get-AuthenticodeSignature .\dist\UEToolSuiteInstaller-1.0.1-win-x64.exe | Format-List *
 ```
 
 Expected:

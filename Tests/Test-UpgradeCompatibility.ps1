@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
 $logPath = Join-Path $resultsDir "UpgradeCompatibility-$stamp.log"
 $scratchRoot = New-TestScratchRoot -Prefix "ue tool suite upgrade compatibility"
 $globalCliRoot = Join-Path $scratchRoot "global cli root with spaces"
-$globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.0"
+$globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.1"
 $previousGlobalCliRoot = $env:UE_TOOLS_GLOBAL_CLI_ROOT
 $env:UE_TOOLS_GLOBAL_CLI_ROOT = $globalCliRoot
 

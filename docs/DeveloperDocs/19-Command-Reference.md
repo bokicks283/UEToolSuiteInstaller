@@ -57,7 +57,7 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 
 | Purpose | Working dir | Exact command | Side effects |
 |---|---|---|---|
-| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0` | Publishes GUI EXE under `dist/` |
+| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.1` | Publishes GUI EXE under `dist/` |
 | Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.1 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
 | Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.1` | Runs release gates, builds installer, pushes annotated tag, and creates release |
 

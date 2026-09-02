@@ -94,7 +94,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTes
 ## Build `.exe` Installer
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.1
 ```
 
 Output:

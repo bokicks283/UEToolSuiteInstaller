@@ -388,7 +388,7 @@ try {
   Step "Publish script contract"
   $publishScriptText = Get-Content -LiteralPath $publishScriptPath -Raw
   Assert-HasLiteral -Name "publish script validates .NET SDK list" -Text $publishScriptText -Needle "--list-sdks"
-  Assert-HasLiteral -Name "publish script defaults to payload release version" -Text $publishScriptText -Needle 'Version = "1.0.0"'
+  Assert-HasLiteral -Name "publish script defaults to payload release version" -Text $publishScriptText -Needle 'Version = "1.0.1"'
   Assert-HasLiteral -Name "publish script enforces .NET 10 SDK" -Text $publishScriptText -Needle "^10\."
   Assert-HasLiteral -Name "publish script artifact naming convention" -Text $publishScriptText -Needle "UEToolSuiteInstaller-{0}-{1}.exe"
   Assert-HasLiteral -Name "publish script timestamp signing support" -Text $publishScriptText -Needle "/tr $TimestampUrl"

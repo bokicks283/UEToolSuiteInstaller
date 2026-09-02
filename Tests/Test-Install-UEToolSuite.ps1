@@ -20,7 +20,7 @@ $logPath = Join-Path $resultsDir "Install-UEToolSuite-$stamp.log"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("ue tool suite installer tests " + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 $testGlobalCliRoot = Join-Path $tempRoot "global cli root with spaces"
-$testGlobalVersionRoot = Join-Path $testGlobalCliRoot "versions\1.0.0"
+$testGlobalVersionRoot = Join-Path $testGlobalCliRoot "versions\1.0.1"
 $testHarnessPath = Join-Path $installerRoot "payload\Scripts\Tests\TestHarness.ps1"
 if (-not (Test-Path -LiteralPath $testHarnessPath -PathType Leaf)) {
   throw "Test harness not found: $testHarnessPath"
@@ -793,7 +793,7 @@ try {
   $globalCurrentPath = Join-Path $globalCliRoot "current.json"
   $globalLauncherPath = Join-Path $globalCliRoot "bin\ue-tools.ps1"
   $globalCmdPath = Join-Path $globalCliRoot "bin\ue-tools.cmd"
-  $globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.0"
+  $globalVersionRoot = Join-Path $globalCliRoot "versions\1.0.1"
   Assert-PathExists "case8 global current descriptor installed" $globalCurrentPath
   Assert-PathExists "case8 stable PowerShell launcher installed" $globalLauncherPath
   Assert-PathExists "case8 stable cmd launcher installed" $globalCmdPath
@@ -820,7 +820,7 @@ try {
   Assert-FileContains "case8 project shim resolves an optional per-user global root" $globalProjectShimA "UE_TOOLS_GLOBAL_CLI_ROOT"
   Assert-FileContains "case8 project shim pins the project-declared runtime version" $globalProjectShimA 'versions\$version\Scripts\ue-tools.ps1'
   Assert-Condition "case8 project marker declares the versioned bootstrap source" `
-    ([string]$projectMarkerA.bootstrap.repositoryUrl -eq "https://github.com/bokicks283/UEToolSuiteInstaller.git" -and [string]$projectMarkerA.bootstrap.releaseTag -eq "v1.0.0") `
+    ([string]$projectMarkerA.bootstrap.repositoryUrl -eq "https://github.com/bokicks283/UEToolSuiteInstaller.git" -and [string]$projectMarkerA.bootstrap.releaseTag -eq "v1.0.1") `
     "portable bootstrap metadata present" `
     "bootstrap metadata missing or incorrect"
   Assert-PathMissing "case8 project A omits duplicated core module" (Join-Path $globalRepoA "Scripts\UETools\UEToolSuite.Core.psm1")
@@ -831,7 +831,7 @@ try {
 
   $currentDescriptorText = Get-Content -LiteralPath $globalCurrentPath -Raw
   $currentDescriptor = $currentDescriptorText | ConvertFrom-Json
-  Assert-Condition "case8 descriptor records payload version" ([string]$currentDescriptor.version -eq "1.0.0") "version=1.0.0" "version=$([string]$currentDescriptor.version)"
+  Assert-Condition "case8 descriptor records payload version" ([string]$currentDescriptor.version -eq "1.0.1") "version=1.0.1" "version=$([string]$currentDescriptor.version)"
   Assert-Condition "case8 descriptor records versioned runtime path" ([System.IO.Path]::GetFullPath([string]$currentDescriptor.installRoot).Equals([System.IO.Path]::GetFullPath($globalVersionRoot), [System.StringComparison]::OrdinalIgnoreCase)) "install root matches" "install root mismatch"
 
   $projectAHelp = Invoke-ToolEntrypoint -EntrypointPath $globalProjectShimA -RepoRoot $globalRepoA -CommandArguments @("help")
@@ -913,7 +913,7 @@ try {
     "teammate install completed and original command resumed" `
     "exit=$($teammateBootstrap.Code) output=$($teammateBootstrap.Output)"
   Assert-PathExists "case8 teammate receives a separate stable launcher" (Join-Path $teammateGlobalRoot "bin\ue-tools.ps1")
-  Assert-PathExists "case8 teammate receives a separate versioned runtime" (Join-Path $teammateGlobalRoot "versions\1.0.0\Scripts\ue-tools.ps1")
+  Assert-PathExists "case8 teammate receives a separate versioned runtime" (Join-Path $teammateGlobalRoot "versions\1.0.1\Scripts\ue-tools.ps1")
   $markerAfterTeammateBootstrap = Get-Content -LiteralPath $globalProjectMarkerA -Raw
   Assert-Condition "case8 teammate bootstrap keeps the shared marker path-free" `
     (-not $markerAfterTeammateBootstrap.Contains($globalCliRoot) -and -not $markerAfterTeammateBootstrap.Contains($teammateGlobalRoot)) `

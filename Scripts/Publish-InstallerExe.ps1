@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-  [string]$Version = "1.0.0",
+  [string]$Version = "1.0.1",
   [string]$Configuration = "Release",
   [string]$Runtime = "win-x64",
   [string]$DotNetPath,
@@ -109,7 +109,7 @@ $numericVersion = if ($Version -match '^(?<numeric>\d+(?:\.\d+){0,3})') {
   $Matches.numeric
 }
 else {
-  throw "Version must start with a numeric version, for example 1.0.0 or 1.0.0-beta. Value: $Version"
+  throw "Version must start with a numeric version, for example 1.0.1 or 1.0.1-beta. Value: $Version"
 }
 
 $publishRoot = Join-Path $repoRoot "dist"

@@ -165,13 +165,13 @@ winget install Microsoft.DotNet.SDK.10
 Publish the unsigned exe:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.0
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.1
 ```
 
 Output:
 
 ```text
-dist/UEToolSuiteInstaller-1.0.0-win-x64.exe
+dist/UEToolSuiteInstaller-1.0.1-win-x64.exe
 ```
 
 The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps1`, and `payload/`. Users still need PowerShell 7 installed because the installed UE tools run on `pwsh`.
@@ -234,7 +234,7 @@ Sign with a certificate in your current user's certificate store:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 1.0.0 `
+  -Version 1.0.1 `
   -CertificateThumbprint <thumbprint>
 ```
 
@@ -242,7 +242,7 @@ Sign with a PFX file:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 1.0.0 `
+  -Version 1.0.1 `
   -CertificatePath C:\secure\codesign.pfx `
   -CertificatePassword "<password>"
 ```
