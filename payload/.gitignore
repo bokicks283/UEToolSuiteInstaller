@@ -51,6 +51,7 @@ website/node_modules/
 website/build/
 website/.docusaurus/
 website/.cache-loader/
+website/static/ue-tools/*
 
 # VSCode shared config
 !.vscode/settings.json
