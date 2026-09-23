@@ -218,7 +218,7 @@ function Write-UEToolSuiteRuntimeLog {
   [CmdletBinding()]
   param(
     [AllowNull()][AllowEmptyString()][string]$Message,
-    [ValidateSet("Info", "Warn", "Err", "Ok", "Success")][string]$Level = "Info",
+    [ValidateSet("Info", "Warn", "Err", "Ok", "Success")][string]$Level = $null,
     [string]$LogPrefix
   )
 
@@ -272,6 +272,12 @@ function Success {
   [CmdletBinding()]
   param([AllowNull()][AllowEmptyString()][string]$Message)
   Write-UEToolSuiteRuntimeLog -Message $Message -Level "Success"
+}
+
+function Text {
+  [CmdletBinding()]
+  param([AllowNull()][AllowEmptyString()][string]$Message)
+  Write-UEToolSuiteRuntimeLog -Message $Message
 }
 
 function Write-Utf8NoBomFile {

@@ -922,7 +922,7 @@ function Resolve-EngineRootForBuild([string]$workspacePathOverride, [string]$upr
     -EngineAssociation $projectContext.EngineAssociation `
     -Attempts $attempts
   if (-not [string]::IsNullOrWhiteSpace($registryRoot)) {
-    Info "Engine root resolved from registry using EngineAssociation '$($projectContext.EngineAssociation)': $registryRoot"
+    Ok "Engine root resolved from registry using EngineAssociation '$($projectContext.EngineAssociation)': $registryRoot"
     return $registryRoot
   }
 
@@ -1277,16 +1277,16 @@ function Invoke-Regenerate-ProjectFiles(
   }
   else {
     $uvsArgs = @("/projectfiles", $uprojectPath)
-    Warn "Regenerating project files (context menu UVS)..."
-    Info "UVS path: $uvs"
+    Info "Regenerating project files (context menu UVS)..."
+    Text "UVS path: $uvs"
     if ($script:LastUVSResolution -and $script:LastUVSResolution.Source) {
-      Info "UVS source: $($script:LastUVSResolution.Source)"
+      Text "UVS source: $($script:LastUVSResolution.Source)"
     }
     if ($script:LastUVSResolution -and $script:LastUVSResolution.Command) {
-      Info "UVS command: $($script:LastUVSResolution.Command)"
+      Text "UVS command: $($script:LastUVSResolution.Command)"
     }
-    Info "UVS args: $($uvsArgs -join ' ')"
-    Info "UVS cwd : $((Get-Location).Path)"
+    Text "UVS args: $($uvsArgs -join ' ')"
+    Text "UVS cwd : $((Get-Location).Path)"
 
     $maxAttempts = 2
     if ($env:UE_SYNC_UVS_MAX_ATTEMPTS -as [int]) {
@@ -1361,9 +1361,9 @@ $($candidateText -join "`n")
     $fallbackArgs += "-dotnet"
   }
 
-  Warn "Regenerating project files (fallback via $($fallbackTool.Name))..."
-  Info "Fallback tool: $($fallbackTool.Path)"
-  Info "Fallback args: $($fallbackArgs -join ' ')"
+  Info "Regenerating project files (fallback via $($fallbackTool.Name))..."
+  Text "Fallback tool: $($fallbackTool.Path)"
+  Text "Fallback args: $($fallbackArgs -join ' ')"
   & $fallbackTool.Path @fallbackArgs | Out-Host
 
   if ($LASTEXITCODE -ne 0) {
@@ -1637,7 +1637,7 @@ if ($shouldRunBuild -and (Test-BlueprintOnlyProject -ProjectContext $projectCont
 
 Info "UProject Path: $uprojectPath"
 if (-not $manual) {
-  Info "Checking UE sync actions between $OldRev and $NewRev..."
+  Text "Checking UE sync actions between $OldRev and $NewRev..."
   Show-UnrealSyncActionPlan $actionPlan
 }
 
@@ -1731,7 +1731,7 @@ return
 
 $shouldCleanGeneratedFolders = $shouldRunRegen -or $CleanGenerated -or $CleanSaved -or $CleanCache
 if ($shouldCleanGeneratedFolders) {
-  Info "Cleaning generated folders..."
+  Text "Cleaning generated folders..."
   if ($shouldRunRegen -or $CleanGenerated) {
     [void](Remove-IfExists -Path "Binaries" -NonInteractive:$isNonInteractive)
     [void](Remove-IfExists -Path "Intermediate" -NonInteractive:$isNonInteractive)
