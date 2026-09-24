@@ -137,7 +137,7 @@ Explanation:
 
 | Boundary | Primary source | Why it matters |
 |---|---|---|
-| installer vs payload | `Install-UEToolSuite.ps1` vs `payload/**` | Source repo decides updates; installed payload does not self-update |
+| installer vs payload | `Install-UEToolSuite.ps1` vs `payload/**` | `ue update` discovers an immutable release tag, then delegates all mutations to that release's installer |
 | CLI dispatch vs domain logic | `payload/Scripts/ue-tools.ps1`, `UEToolSuite.Dispatcher.psm1` | Public command surface stays stable while implementation changes inside modules |
 | docs frontend vs docs transport | `payload/website/src/**` vs `DocsEditorApiHost.ps1` | UI state and filesystem mutation are intentionally separate |
 | authored source vs generated state | `payload/website/src/**` vs `website/build/**`, `.ue-tools/state/**` | Bugs often come from drift between these layers |

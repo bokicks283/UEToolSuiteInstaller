@@ -24,6 +24,7 @@ if ($MyInvocation.InvocationName -ne '.') {
       "UEToolSuite.AI.psm1",
       "UEToolSuite.Init.psm1",
       "UEToolSuite.Git.psm1",
+      "UEToolSuite.Update.psm1",
       "UEToolSuite.Dispatcher.psm1"
     ) | ForEach-Object { Join-Path (Join-Path $PSScriptRoot "UETools") $_ }
 

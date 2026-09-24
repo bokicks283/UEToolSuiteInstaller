@@ -47,6 +47,8 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     ""
     "Root commands:"
     "  help                    Show this help text."
+    "  version                 Fetch and compare the latest published package version."
+    "  update [--yes]          Update this project to the latest published release."
     "  build [sync options]    Run Unreal build/sync flow."
     "  settings <command>      Synchronize owned VS Code workspace settings."
     ""
@@ -62,6 +64,8 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     ""
     "Examples:"
     "  ue-tools help"
+    "  ue-tools version"
+    "  ue-tools update"
     "  ue-tools build -DryRun"
     "  ue-tools settings sync -DryRun"
     "  ue-tools docs help"
@@ -91,6 +95,18 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
         "  ue-tools build -Config Debug -Platform Win64"
         "Notes:"
         "  - Dispatcher always passes -Force to Unreal sync."
+      )
+    }
+    "version" {
+      return @(
+        "Usage: ue version"
+        "Fetch and compare the project's declared version with the latest stable published release."
+      )
+    }
+    "update" {
+      return @(
+        "Usage: ue update [--yes]"
+        "Fetch and install the latest stable published release into this project."
       )
     }
     "settings" {
@@ -291,6 +307,27 @@ function Invoke-UEToolSuiteDispatcher {
       }
 
       Invoke-UEToolSuiteUnrealBuild -RepoRoot $RepoRoot -CommandArguments $remaining
+      return
+    }
+    "version" {
+      if ($remaining.Count -gt 0) {
+        if (Test-UEToolSuiteDispatcherHelpToken -Token ([string]$remaining[0])) {
+          @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName "version") | Write-Output
+          return
+        }
+        throw "The version command does not accept options. Usage: ue version"
+      }
+      Invoke-UEToolSuiteVersionCommand -RepoRoot $RepoRoot
+      return
+    }
+    "update" {
+      foreach ($arg in @($remaining)) {
+        if (Test-UEToolSuiteDispatcherHelpToken -Token $arg) {
+          @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName "update") | Write-Output
+          return
+        }
+      }
+      Invoke-UEToolSuiteUpdateCommand -RepoRoot $RepoRoot -CommandArguments $remaining
       return
     }
     "settings" {

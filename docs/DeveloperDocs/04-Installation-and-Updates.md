@@ -8,6 +8,8 @@
 
 The GUI does not contain a separate installer engine. It constructs arguments and launches `pwsh.exe -File Install-UEToolSuite.ps1 ...`.
 
+Installed projects also expose `ue version` for read-only stable-tag discovery and `ue update` for an explicit, confirmation-gated update. The update command downloads the selected immutable tag and delegates to that tag's `Install-UEToolSuite.ps1`; it does not maintain a second installer engine.
+
 ## Accepted installer parameters
 
 The installer parameter block starts at `Install-UEToolSuite.ps1:4` and includes these notable groups:

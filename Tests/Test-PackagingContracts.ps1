@@ -114,6 +114,7 @@ try {
   $docsStandaloneEditorPagePath = Join-Path $repoRoot "payload\website\src\pages\editor.tsx"
   $docsStandaloneEditorStylesPath = Join-Path $repoRoot "payload\website\src\pages\editor.module.css"
   $payloadManifestPath = Join-Path $repoRoot "payload\ue-tool-suite.manifest.json"
+  $updateModulePath = Join-Path $repoRoot "payload\Scripts\UETools\UEToolSuite.Update.psm1"
   $testRunnerPath = Join-Path $repoRoot "Tests\Run-UEToolSuiteTests.ps1"
   $docsManagedIndexPath = Join-Path $repoRoot "payload\docs-managed-file-index.json"
   $websiteManagedIndexPath = Join-Path $repoRoot "payload\website-managed-file-index.json"
@@ -388,7 +389,8 @@ try {
   Step "Publish script contract"
   $publishScriptText = Get-Content -LiteralPath $publishScriptPath -Raw
   Assert-HasLiteral -Name "publish script validates .NET SDK list" -Text $publishScriptText -Needle "--list-sdks"
-  Assert-HasLiteral -Name "publish script defaults to payload release version" -Text $publishScriptText -Needle 'Version = "1.0.1"'
+  Assert-HasLiteral -Name "publish script defaults to payload release version" -Text $publishScriptText -Needle '$Version = $manifestVersion'
+  Assert-HasLiteral -Name "publish script validates built exe product version" -Text $publishScriptText -Needle 'ProductVersion'
   Assert-HasLiteral -Name "publish script enforces .NET 10 SDK" -Text $publishScriptText -Needle "^10\."
   Assert-HasLiteral -Name "publish script artifact naming convention" -Text $publishScriptText -Needle "UEToolSuiteInstaller-{0}-{1}.exe"
   Assert-HasLiteral -Name "publish script timestamp signing support" -Text $publishScriptText -Needle "/tr $TimestampUrl"
@@ -400,6 +402,7 @@ try {
   Assert-HasLiteral -Name "release publisher requires a clean worktree" -Text $releasePublisherText -Needle "Release requires a clean working tree"
   Assert-HasLiteral -Name "release publisher requires pushed branch parity" -Text $releasePublisherText -Needle "must exactly match `$Remote/`$Branch"
   Assert-HasLiteral -Name "release publisher validates payload versions" -Text $releasePublisherText -Needle "Requested version '`$Version' does not match"
+  Assert-HasLiteral -Name "release publisher defaults tag version from manifest" -Text $releasePublisherText -Needle '$Version = $manifestVersion'
   Assert-HasLiteral -Name "release publisher runs non-mutating full suite" -Text $releasePublisherText -Needle "Running the full non-mutating test suite"
   Assert-HasLiteral -Name "release publisher runs mutating ue-sync suite" -Text $releasePublisherText -Needle "ue-sync-automated"
   Assert-HasLiteral -Name "release publisher runs mutating binary-guard suite" -Text $releasePublisherText -Needle "binary-guard-fixes"
@@ -409,6 +412,14 @@ try {
   Assert-HasLiteral -Name "release publisher verifies the remote tag" -Text $releasePublisherText -Needle "--verify-tag"
   Assert-HasLiteral -Name "release publisher generates release notes" -Text $releasePublisherText -Needle "--generate-notes"
   Assert-HasLiteral -Name "release publisher refuses to overwrite releases" -Text $releasePublisherText -Needle "will not overwrite a published release"
+
+  Step "Version and update contract"
+  $installerText = Get-Content -LiteralPath (Join-Path $repoRoot "Install-UEToolSuite.ps1") -Raw
+  $manifestText = Get-Content -LiteralPath $payloadManifestPath -Raw
+  Assert-Condition -Name "update module exists" -Condition (Test-Path -LiteralPath $updateModulePath -PathType Leaf) -PassDetail "present" -FailDetail "missing"
+  Assert-HasLiteral -Name "global runtime packages update module" -Text $manifestText -Needle "Scripts/UETools/UEToolSuite.Update.psm1"
+  Assert-HasLiteral -Name "stable launcher checks project marker" -Text $installerText -Needle '$projectMarker = Join-Path $resolvedRepoRoot ".ue-tools\global-cli.json"'
+  Assert-HasLiteral -Name "stable launcher delegates to project shim" -Text $installerText -Needle '& $projectShim -RepoRoot $resolvedRepoRoot @CommandArgs'
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

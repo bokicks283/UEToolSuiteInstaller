@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "payloadVersion": "1.0.1",
+  "payloadVersion": "1.0.2",
   "generatedUtc": "2026-06-22T01:13:19Z",
   "files": [
     {
@@ -86,7 +86,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/CLI/README.md",
       "category": "docs",
-      "sha256": "a6a245d332dc2b0efefc35d67ce060cf75bfa0e91acd0ca0fee567483b243833"
+      "sha256": "db2c58318b7eb983b6dc772249ead06f303e1a7bae659a77fafee6b9271da9b3"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Settings.md",
@@ -171,7 +171,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/Setup.md",
       "category": "docs",
-      "sha256": "f7841aed16f4b4a4389c710c79a0fbaae889c40bf3212fe50bc3e9048cc6458b"
+      "sha256": "d4f4c907c5a45d349c467cc1abb2bbdc01a3de3a69c9cc5b136389be7f56bade"
     },
     {
       "relativePath": "Docs/WorkflowStandards/Testing.md",

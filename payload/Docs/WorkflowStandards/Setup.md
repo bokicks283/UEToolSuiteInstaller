@@ -105,4 +105,4 @@ The git-hook `ue-sync` workflow decides between build and project-file regenerat
 
 ## Tool Suite Updates
 
-Use the standalone UE tool suite installer repo to update an existing installation. The project shim bootstraps only when this user is missing the version declared by the checkout; it does not silently update an existing runtime. Installer/updater logic otherwise stays outside the project, while the repo retains the portable shim, marker, hooks, docs, and website payload.
+Use `ue version` to fetch and compare the latest published stable package version. Use `ue update` to explicitly install that release into the active project; it prompts before changing files unless `--yes` is supplied. Commit the updated project shim and `.ue-tools/global-cli.json` marker. After teammates pull that marker, their next interactive `ue` command prompts to install the newly required runtime when it is missing. Hooks, CI, and non-interactive commands fail with guidance instead of prompting.

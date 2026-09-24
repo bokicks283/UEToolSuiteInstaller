@@ -44,6 +44,8 @@ The automatic bootstrap requires Git, PowerShell 7, and a published Git tag matc
 | Command | Purpose | Detailed page |
 |---|---|---|
 | `help` | Discover the root command surface and command-specific help. | [`ue help`](./Help.md) |
+| `version` | Fetch the latest stable package tag and compare it with this project's declared version. | This page |
+| `update` | Download and install the latest stable release into this project after confirmation. | This page |
 | `build` | Run Unreal project-file regeneration, settings reconciliation, and Editor build phases. | [`ue build`](./Build.md) |
 | `settings` | Manage provenance-aware `.code-workspace` ownership with Team, User, and Project layers. | [`ue settings`](./Settings.md) |
 | `docs` | Create, organize, validate, run, and administer the local Docusaurus documentation site. | [`ue docs`](./Docs.md) |
@@ -51,6 +53,14 @@ The automatic bootstrap requires Git, PowerShell 7, and a published Git tag matc
 | `art` | Interactively create canonical ArtSource item directories from the project template. | [`ue art`](./Art.md) |
 | `init` | Bootstrap Git, hooks, aliases, optional docs tooling, ArtSource, and first Unreal synchronization. | [`ue init`](./Init.md) |
 | `git` | Resolve and audit guarded binary conflicts during merge and rebase workflows. | [`ue git`](./Git.md) |
+
+## Version discovery and updates
+
+Run `ue version` for a read-only network check. It prints the version declared by the project's tracked marker and the latest stable `v<major>.<minor>.<patch>` tag published by the configured repository.
+
+Run `ue update` to download that exact tag and run its installer against the active project. The command asks before changing anything; use `ue update --yes` only when explicit unattended approval is appropriate. Commit the resulting managed shim and `.ue-tools/global-cli.json` marker so teammates inherit the new requirement.
+
+After teammates pull the marker change, any interactive `ue` command routes through the project shim. If the newly declared runtime is missing for that Windows user, the command stops and asks to install it before continuing. Hooks, CI, and explicit non-interactive invocations never prompt.
 
 ## Command selection rules
 

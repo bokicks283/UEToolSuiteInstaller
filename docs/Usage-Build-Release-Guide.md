@@ -165,13 +165,13 @@ winget install Microsoft.DotNet.SDK.10
 Publish the unsigned exe:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.1
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1
 ```
 
 Output:
 
 ```text
-dist/UEToolSuiteInstaller-1.0.1-win-x64.exe
+dist/UEToolSuiteInstaller-1.0.2-win-x64.exe
 ```
 
 The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps1`, and `payload/`. Users still need PowerShell 7 installed because the installed UE tools run on `pwsh`.
@@ -180,34 +180,23 @@ The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps
 
 The local release publisher replaces the former tag-triggered GitHub Actions workflow. It fails before creating a tag unless the worktree is clean, `HEAD` exactly matches `origin/main`, every release manifest matches the requested version, GitHub CLI authentication works, and the version is unused.
 
-1. Update the release version in:
-
-   - `payload/ue-tool-suite.manifest.json`
-   - `payload/docs-managed-file-index.json`
-   - `payload/website-managed-file-index.json`
-   - `payload/Scripts/UETools/UETools.psd1`
-   - `Scripts/Publish-InstallerExe.ps1`
-
-   Update version-specific tests and documentation at the same time.
+1. Run `pwsh -File .\Scripts\Set-UEToolSuiteVersion.ps1 -Version <next-version>`. This updates the release-coupled manifests, tests, and current documentation transactionally.
 2. Commit the completed release changes and push `main`.
 3. Confirm the release preflight without running tests or creating anything:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\Scripts\Publish-GitHubRelease.ps1 `
-  -Version 1.0.1 `
   -ValidateOnly
 ```
 
 4. Publish the release:
 
 ```powershell
-pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
-  -File .\Scripts\Publish-GitHubRelease.ps1 `
-  -Version 1.0.1
+pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1
 ```
 
-The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.0.1`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
+The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.0.2`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
 
 5. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
 
@@ -221,7 +210,6 @@ The local publisher accepts either a certificate-store thumbprint or a PFX file.
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
   -File .\Scripts\Publish-GitHubRelease.ps1 `
-  -Version 1.0.1 `
   -CertificatePath C:\secure\codesign.pfx `
   -CertificatePassword "<password>"
 ```
@@ -234,7 +222,6 @@ Sign with a certificate in your current user's certificate store:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 1.0.1 `
   -CertificateThumbprint <thumbprint>
 ```
 
@@ -242,7 +229,6 @@ Sign with a PFX file:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 `
-  -Version 1.0.1 `
   -CertificatePath C:\secure\codesign.pfx `
   -CertificatePassword "<password>"
 ```

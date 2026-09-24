@@ -90,7 +90,7 @@ Payload structure:
 9. Optional legacy cleanup (remove old paths like `Scripts/Install-UEProjectTools.ps1`).
 10. Optional target bootstrap (`-RunInit`) with forwarded init switches.
 
-Global mode writes `.ue-tools/global-cli.json` plus a project `Scripts/ue-tools.ps1` shim. The tracked marker contains only the payload version and HTTPS tagged-release bootstrap metadata; it never stores a user's global path. The project shim resolves that version under the current user's `%LOCALAPPDATA%\UEToolSuite` root (or the explicit `UE_TOOLS_GLOBAL_CLI_ROOT` override). If the declared version is missing, interactive use can install it after consent; hooks and CI fail with manual bootstrap guidance. The corresponding `v<payloadVersion>` tag must be published before distributing a suite-enabled checkout to new users. The stable global launcher still resolves `current.json` for direct alias use. A fixed docs API port remains intentional: a second authoring instance for another project fails with the existing clear port-ownership error rather than selecting another port.
+Global mode writes `.ue-tools/global-cli.json` plus a project `Scripts/ue-tools.ps1` shim. The tracked marker contains only the payload version and HTTPS tagged-release bootstrap metadata; it never stores a user's global path. The project shim resolves that version under the current user's `%LOCALAPPDATA%\UEToolSuite` root (or the explicit `UE_TOOLS_GLOBAL_CLI_ROOT` override). If the declared version is missing, interactive use can install it after consent; hooks and CI fail with manual bootstrap guidance. The corresponding `v<payloadVersion>` tag must be published before distributing a suite-enabled checkout to new users. The stable global launcher first delegates to an active repository's shim and uses `current.json` only outside a suite-enabled project. A fixed docs API port remains intentional: a second authoring instance for another project fails with the existing clear port-ownership error rather than selecting another port.
 
 ### Backup model
 
@@ -403,7 +403,7 @@ Release script:
 
 Example:
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1
 ```
 
 Output:
@@ -415,7 +415,7 @@ Optional signing:
 After version manifests are updated and the release commit is pushed to `main`, publish without a GitHub Actions runner:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1
 ```
 
 The release script requires a clean, synchronized branch, runs all release gates locally, builds the installer, publishes the annotated version tag, and creates the GitHub Release. Use `-ValidateOnly` for read-only preflight.

@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-  [string]$Version = "1.0.1",
+  [string]$Version,
   [string]$Configuration = "Release",
   [string]$Runtime = "win-x64",
   [string]$DotNetPath,
@@ -97,6 +97,15 @@ function Find-SignTool {
 }
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+$manifestPath = Join-Path $repoRoot "payload\ue-tool-suite.manifest.json"
+if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+  throw "Payload manifest not found: $manifestPath"
+}
+$manifestVersion = [string]((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).payloadVersion)
+if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $manifestVersion }
+if ($Version -cne $manifestVersion) {
+  throw "Requested installer version '$Version' does not match payload manifest version '$manifestVersion'."
+}
 $projectPath = Join-Path $repoRoot "src\UEToolSuiteInstaller.Gui\UEToolSuiteInstaller.Gui.csproj"
 if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
   throw "GUI project not found: $projectPath"
@@ -146,6 +155,10 @@ if (-not (Test-Path -LiteralPath $publishedExe -PathType Leaf)) {
 }
 
 Copy-Item -LiteralPath $publishedExe -Destination $artifactPath -Force
+$versionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($artifactPath)
+if ([string]$versionInfo.ProductVersion -notlike "$Version*") {
+  throw "Built installer ProductVersion '$([string]$versionInfo.ProductVersion)' does not match payload version '$Version'."
+}
 
 if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint) -and -not [string]::IsNullOrWhiteSpace($CertificatePath)) {
   throw "Pass either -CertificateThumbprint or -CertificatePath, not both."

@@ -9,6 +9,8 @@ This file lists commands that are explicitly visible from the current repository
 | Purpose | Working dir | Shell | Exact command | Side effects | Safe on active project |
 |---|---|---|---|---|---|
 | Install or update UEToolSuite | repo root | `pwsh` | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 -TargetRepoRoot C:\Path\To\UEProject -RunInit -SkipUnrealSync` | Copies payload, may remove old managed files, may run init | No |
+| Fetch latest published package version | installed project | `pwsh` | `ue version` | Network read only | Yes |
+| Update active project to latest stable release | installed project | `pwsh` | `ue update` | Downloads a tagged release and runs its installer after confirmation | No |
 | Install without backups | repo root | `pwsh` | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 -TargetRepoRoot C:\Path\To\UEProject -NoBackup` | Same as install, but does not write backup copy | No |
 | Adopt an existing website and apply a theme | repo root | `pwsh` | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Install-UEToolSuite.ps1 -TargetRepoRoot C:\Path\To\UEProject -AdoptExistingWebsite -WebsiteTheme neutral` | Converts website to installer-managed state | No |
 
@@ -57,9 +59,9 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 
 | Purpose | Working dir | Exact command | Side effects |
 |---|---|---|---|
-| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.1` | Publishes GUI EXE under `dist/` |
-| Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.1 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
-| Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.1` | Runs release gates, builds installer, pushes annotated tag, and creates release |
+| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.2` | Publishes GUI EXE under `dist/` |
+| Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.2 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
+| Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.2` | Runs release gates, builds installer, pushes annotated tag, and creates release |
 
 ## Verification and troubleshooting commands
 

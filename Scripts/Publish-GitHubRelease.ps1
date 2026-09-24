@@ -2,8 +2,6 @@
 
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)]
-  [ValidatePattern('^\d+\.\d+\.\d+$')]
   [string]$Version,
 
   [string]$Remote = "origin",
@@ -89,6 +87,10 @@ $websiteIndexPath = Join-Path $repoRoot "payload\website-managed-file-index.json
 $moduleManifestPath = Join-Path $repoRoot "payload\Scripts\UETools\UETools.psd1"
 $testRunnerPath = Join-Path $repoRoot "Tests\Run-UEToolSuiteTests.ps1"
 $installerPublisherPath = Join-Path $repoRoot "Scripts\Publish-InstallerExe.ps1"
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$manifestVersion = [string]$manifest.payloadVersion
+if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $manifestVersion }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Release version must be a stable three-part version. Value: $Version" }
 $artifactPath = Join-Path $repoRoot "dist\UEToolSuiteInstaller-$Version-win-x64.exe"
 $tagName = "v$Version"
 
@@ -138,7 +140,6 @@ try {
   & gh auth status | Out-Null
   Assert-LastExitCode -Operation "GitHub CLI authentication check"
 
-  $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
   $docsIndex = Get-Content -LiteralPath $docsIndexPath -Raw | ConvertFrom-Json
   $websiteIndex = Get-Content -LiteralPath $websiteIndexPath -Raw | ConvertFrom-Json
   $moduleManifest = Import-PowerShellDataFile -LiteralPath $moduleManifestPath

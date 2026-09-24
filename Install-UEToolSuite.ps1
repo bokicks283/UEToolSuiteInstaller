@@ -2740,6 +2740,20 @@ param(
 $ErrorActionPreference = "Stop"
 try {
   $globalRoot = Split-Path -Path $PSScriptRoot -Parent
+  $resolvedRepoRoot = $RepoRoot
+  if ([string]::IsNullOrWhiteSpace($resolvedRepoRoot)) {
+    $resolvedRepoRoot = [string]((& git rev-parse --show-toplevel 2>$null) | Select-Object -First 1)
+  }
+  if (-not [string]::IsNullOrWhiteSpace($resolvedRepoRoot)) {
+    $resolvedRepoRoot = [IO.Path]::GetFullPath($resolvedRepoRoot.Trim())
+    $projectMarker = Join-Path $resolvedRepoRoot ".ue-tools\global-cli.json"
+    $projectShim = Join-Path $resolvedRepoRoot "Scripts\ue-tools.ps1"
+    if ((Test-Path -LiteralPath $projectMarker -PathType Leaf) -and (Test-Path -LiteralPath $projectShim -PathType Leaf)) {
+      & $projectShim -RepoRoot $resolvedRepoRoot @CommandArgs
+      if (-not $?) { exit 1 }
+      exit 0
+    }
+  }
   $descriptorPath = Join-Path $globalRoot "current.json"
   if (-not (Test-Path -LiteralPath $descriptorPath -PathType Leaf)) {
     throw "Global CLI descriptor is missing. Re-run the UE Tool Suite installer."
@@ -2749,8 +2763,8 @@ try {
   if ([string]::IsNullOrWhiteSpace([string]$descriptor.installRoot) -or -not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
     throw "The active global CLI runtime is missing or incomplete. Re-run the UE Tool Suite installer."
   }
-  if ([string]::IsNullOrWhiteSpace($RepoRoot)) { & $entrypoint @CommandArgs }
-  else { & $entrypoint -RepoRoot $RepoRoot @CommandArgs }
+  if ([string]::IsNullOrWhiteSpace($resolvedRepoRoot)) { & $entrypoint @CommandArgs }
+  else { & $entrypoint -RepoRoot $resolvedRepoRoot @CommandArgs }
   if (-not $?) { exit 1 }
 }
 catch {

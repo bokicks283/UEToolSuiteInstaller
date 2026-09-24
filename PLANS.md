@@ -712,3 +712,35 @@ Validation completed for this follow-up:
 | Publisher invoked from a dirty worktree with `-ValidateOnly` | Passed | failed before tests, build, tag, or GitHub mutation with the expected clean-worktree error |
 | Publisher invoked from an unpushed clean commit with `-ValidateOnly` | Passed | failed before tag or GitHub mutation with the expected `HEAD` versus `origin/main` error |
 | `git diff --check` | Passed | no whitespace errors |
+## Explicit runtime version discovery and updates (2026-09-23)
+
+### Goal
+
+Make release state visible and updates intentional: `ue version` fetches the latest published package version, `ue update` installs that release into the active project, and every launcher honors the version declared by the project so an older user is prompted before a command runs.
+
+### Boundaries
+
+- Project shim and stable per-user launcher routing.
+- Installed CLI dispatcher and a focused update domain.
+- Installer payload/package contracts and upgrade tests.
+- Local EXE build, Git tag, and GitHub Release version alignment.
+- User and maintainer documentation.
+
+### Execution
+
+- [x] Add focused coverage for version discovery, explicit update, and stable-launcher project pinning.
+- [x] Add `ue version` and `ue update` with deterministic test overrides and safe interactive/non-interactive behavior.
+- [x] Route the stable launcher through the active repository shim when a project marker is present.
+- [x] Derive EXE/release publishing versions from the payload manifest and verify the built executable metadata.
+- [x] Update CLI, setup, installation, command-reference, and release documentation.
+- [ ] Run the narrow update tests, installer, upgrade-compatibility, and packaging-contract suites. Update and packaging contracts pass; installer and upgrade-compatibility are blocked because `Tests/TestSupport/UEProjectFixtures.ps1` is absent from this checkout.
+
+### Decisions
+
+| Decision | Reason |
+|---|---|
+| Published stable Git tags are the update source of truth | Keeps runtime installation reproducible and binds updates to immutable releases. |
+| `ue version` is read-only; `ue update` is the only update mutation | Makes network discovery and repository mutation explicit. |
+| Hooks, CI, and explicit non-interactive invocations never prompt | Preserves deterministic automation and the existing bootstrap safety boundary. |
+| The project marker remains the required runtime contract | Installing a new EXE into a project gives teammates a tracked version requirement. |
+| Release scripts default to the manifest version | Removes a redundant hand-entered version from EXE names and Git tags. |

@@ -55,6 +55,15 @@ function Get-UEToolSuiteTestManifest {
       -ResultDirectory "Tests/Test-Install-UEToolSuiteResults")
 
     (New-UEToolSuiteTestEntry `
+      -Id "update-commands" `
+      -Name "Version and Update Commands" `
+      -Path "Tests/Test-UpdateCommands.ps1" `
+      -Category "update" `
+      -Description "Validates explicit published-version discovery and project update behavior." `
+      -SupportsFailFast $true `
+      -ResultDirectory "Tests/Test-UpdateCommandsResults")
+
+    (New-UEToolSuiteTestEntry `
       -Id "upgrade-compatibility" `
       -Name "Upgrade Compatibility" `
       -Path "Tests/Test-UpgradeCompatibility.ps1" `

@@ -32,10 +32,8 @@ $requiredRelativePaths = @(
   'payload\docs-managed-file-index.json',
   'payload\website-managed-file-index.json',
   'payload\Scripts\UETools\UETools.psd1',
-  'Scripts\Publish-InstallerExe.ps1',
   'src\UEToolSuiteInstaller.Gui\app.manifest',
   'Tests\Test-Install-UEToolSuite.ps1',
-  'Tests\Test-PackagingContracts.ps1',
   'Tests\Test-UpgradeCompatibility.ps1'
 )
 
