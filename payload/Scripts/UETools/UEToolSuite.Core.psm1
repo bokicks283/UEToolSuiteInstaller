@@ -404,6 +404,7 @@ Export-ModuleMember -Function `
   Err, `
   Ok, `
   Success, `
+  Text, `
   Write-Utf8NoBomFile, `
   Test-CommandAvailable, `
   Resolve-UEToolSuiteRuntimeRepoRoot, `

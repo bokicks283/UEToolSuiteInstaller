@@ -418,6 +418,8 @@ try {
   $manifestText = Get-Content -LiteralPath $payloadManifestPath -Raw
   Assert-Condition -Name "update module exists" -Condition (Test-Path -LiteralPath $updateModulePath -PathType Leaf) -PassDetail "present" -FailDetail "missing"
   Assert-HasLiteral -Name "global runtime packages update module" -Text $manifestText -Needle "Scripts/UETools/UEToolSuite.Update.psm1"
+  $coreModuleText = Get-Content -LiteralPath (Join-Path $repoRoot "payload\Scripts\UETools\UEToolSuite.Core.psm1") -Raw
+  Assert-HasLiteral -Name "core module exports plain text logger" -Text $coreModuleText -Needle "  Text,"
   Assert-HasLiteral -Name "stable launcher checks project marker" -Text $installerText -Needle '$projectMarker = Join-Path $resolvedRepoRoot ".ue-tools\global-cli.json"'
   Assert-HasLiteral -Name "stable launcher delegates to project shim" -Text $installerText -Needle '& $projectShim -RepoRoot $resolvedRepoRoot @CommandArgs'
 
