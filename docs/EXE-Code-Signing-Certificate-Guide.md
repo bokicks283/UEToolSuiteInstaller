@@ -78,7 +78,7 @@ Using cert store thumbprint:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 `
-  -Version 1.0.5 `
+  -Version 1.0.6 `
   -CertificateThumbprint <thumbprint>
 ```
 
@@ -86,7 +86,7 @@ Using PFX directly:
 
 ```powershell
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 `
-  -Version 1.0.5 `
+  -Version 1.0.6 `
   -CertificatePath C:\secure\codesign-ci.pfx `
   -CertificatePassword "<password>"
 ```
@@ -96,7 +96,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRe
 Run on produced exe:
 
 ```powershell
-Get-AuthenticodeSignature .\dist\UEToolSuiteInstaller-1.0.5-win-x64.exe | Format-List *
+Get-AuthenticodeSignature .\dist\UEToolSuiteInstaller-1.0.6-win-x64.exe | Format-List *
 ```
 
 Expected:

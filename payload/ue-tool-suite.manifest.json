@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "payloadVersion": "1.0.5",
+  "payloadVersion": "1.0.6",
   "bootstrap": {
     "repositoryUrl": "https://github.com/bokicks283/UEToolSuiteInstaller.git"
   },

@@ -59,9 +59,9 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 
 | Purpose | Working dir | Exact command | Side effects |
 |---|---|---|---|
-| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.5` | Publishes GUI EXE under `dist/` |
-| Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.5 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
-| Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.5` | Runs release gates, builds installer, pushes annotated tag, and creates release |
+| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.6` | Publishes GUI EXE under `dist/` |
+| Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.6 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
+| Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.0.6` | Runs release gates, builds installer, pushes annotated tag, and creates release |
 
 ## Verification and troubleshooting commands
 

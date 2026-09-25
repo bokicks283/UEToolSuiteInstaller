@@ -11,7 +11,7 @@
     "UEToolSuite.Init.psm1",
     "UEToolSuite.Git.psm1"
   )
-  ModuleVersion = "1.0.5"
+  ModuleVersion = "1.0.6"
   GUID = "7dce18a5-cf40-40f8-8e94-b8fe6b86b4be"
   Author = "UEToolSuiteInstaller"
   CompanyName = "UEToolSuiteInstaller"
