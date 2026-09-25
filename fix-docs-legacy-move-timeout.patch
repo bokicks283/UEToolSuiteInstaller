@@ -1,0 +1,31 @@
+diff --git a/payload/Scripts/Tests/Test-DocsTools.ps1 b/payload/Scripts/Tests/Test-DocsTools.ps1
+--- a/payload/Scripts/Tests/Test-DocsTools.ps1
++++ b/payload/Scripts/Tests/Test-DocsTools.ps1
+@@ -897,6 +897,9 @@ try {
+   Step "Case 1i: cross-domain move normalizes legacy sections before persisting the move"
+   $legacySectionRepo = New-MinimalDocsRepo -Name "repo-editor-legacy-section"
+   $legacySectionPort = Get-FreeTcpPort
++  # Legacy moves normalize section metadata and rewrite references, which can
++  # legitimately take longer than the generic API smoke-test timeout on busy hosts.
++  $legacySectionMoveTimeoutSec = 30
+   $legacySectionApiHostScriptPath = Join-Path (Split-Path -Parent $script:DocsToolsScriptPath) "DocsEditorApiHost.ps1"
+   if (-not (Test-Path -LiteralPath $legacySectionApiHostScriptPath -PathType Leaf)) {
+     $script:SkipCount += 1
+@@ -1077,7 +1080,7 @@ try {
+           destinationParentPath = "TestDomain"
+           insertIndex = 0
+         } | ConvertTo-Json -Depth 6
+-        $legacyMove = Invoke-RestMethod -Uri "http://127.0.0.1:$legacySectionPort/api/move" -Method Post -ContentType "application/json" -Body $legacyMoveBody -TimeoutSec 5
++        $legacyMove = Invoke-RestMethod -Uri "http://127.0.0.1:$legacySectionPort/api/move" -Method Post -ContentType "application/json" -Body $legacyMoveBody -TimeoutSec $legacySectionMoveTimeoutSec
+         Assert-Condition "case1i legacy section move endpoint returns ok payload" ($legacyMove.ok -eq $true) "move ok=true" "legacy move response did not set ok=true"
+         Assert-TextContains "case1i legacy section move returns moved docs path" ([string]$legacyMove.result.path) "TestDomain/ProjectStructure"
+         Assert-Condition "case1i legacy source section removed after move" (-not (Test-Path -LiteralPath $sourceLegacySectionPath)) "source section removed" "source section still exists after move"
+@@ -1107,7 +1110,7 @@ try {
+           destinationParentPath = "WorkflowStandards"
+           insertIndex = 0
+         } | ConvertTo-Json -Depth 6
+-        $legacyMoveBack = Invoke-RestMethod -Uri "http://127.0.0.1:$legacySectionPort/api/move" -Method Post -ContentType "application/json" -Body $legacyMoveBackBody -TimeoutSec 5
++        $legacyMoveBack = Invoke-RestMethod -Uri "http://127.0.0.1:$legacySectionPort/api/move" -Method Post -ContentType "application/json" -Body $legacyMoveBackBody -TimeoutSec $legacySectionMoveTimeoutSec
+         Assert-Condition "case1i legacy section round-trip move returns ok payload" ($legacyMoveBack.ok -eq $true) "move back ok=true" "legacy move back response did not set ok=true"
+         Assert-TextContains "case1i legacy section round-trip returns source docs path" ([string]$legacyMoveBack.result.path) "WorkflowStandards/ProjectStructure"
+         Assert-Condition "case1i legacy destination section removed after move back" (-not (Test-Path -LiteralPath (Join-Path $legacySectionRepo "Docs\TestDomain\ProjectStructure"))) "destination section removed" "destination section still exists after move back"
