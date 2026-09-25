@@ -1379,7 +1379,7 @@ function Build-Editor([string]$engineRoot, [string]$uprojectPath, [string]$proje
   if (-not (Test-Path $buildBat)) { throw "Build.bat not found: $buildBat" }
 
   $target = "${projectName}Editor"
-  Warn "Building $target ($platform $config) using engine root: $engineRoot"
+  Info "Building $target ($platform $config) using engine root: $engineRoot"
   & $buildBat $target $platform $config -Project="`"$uprojectPath`"" -WaitMutex | Out-Host
 }
 
@@ -1534,10 +1534,10 @@ function Restore-ProjectFileArtifactSnapshot {
         -PristineOverride $generatedWorkspace `
         -PreviousWorkspaceContent $workspaceSnapshot.Content `
         -NonInteractive)
-      Warn "Reconciled owned VS Code workspace settings after project-file regeneration: $($workspaceSnapshot.Path)"
+      Ok "Reconciled owned VS Code workspace settings after project-file regeneration: $($workspaceSnapshot.Path)"
     }
     catch {
-      Warn "Could not reconcile VS Code workspace settings after project-file regeneration. Restoring the pre-regen workspace file and stopping before build."
+      Err "Could not reconcile VS Code workspace settings after project-file regeneration. Restoring the pre-regen workspace file and stopping before build."
       Write-Utf8NoBomFile -Path $workspaceSnapshot.Path -Content $workspaceSnapshot.Content
       if ($Snapshot.IgnoreExists) {
         Write-Utf8NoBomFile -Path $Snapshot.IgnorePath -Content $Snapshot.IgnoreContent
@@ -1553,12 +1553,12 @@ function Restore-ProjectFileArtifactSnapshot {
     $currentIgnoreContent = Get-Content -LiteralPath $Snapshot.IgnorePath -Raw
     if ($currentIgnoreContent -cne $Snapshot.IgnoreContent) {
       Write-Utf8NoBomFile -Path $Snapshot.IgnorePath -Content $Snapshot.IgnoreContent
-      Warn "Restored .ignore after project-file regeneration to avoid tracked file churn."
+      Text "Restored .ignore after project-file regeneration to avoid tracked file churn."
     }
   }
   elseif (-not $Snapshot.IgnoreExists -and $Snapshot.IgnoreTracked -and (Test-Path -LiteralPath $Snapshot.IgnorePath -PathType Leaf)) {
     Remove-Item -LiteralPath $Snapshot.IgnorePath -Force
-    Warn "Removed generated .ignore because it is tracked but did not exist before regeneration."
+    Info "Removed generated .ignore because it is tracked but did not exist before regeneration."
   }
 }
 
