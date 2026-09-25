@@ -89,7 +89,12 @@ function Invoke-UEToolSuiteUpdateCommand {
 
   $yes = $false
   foreach ($arg in @($CommandArguments)) {
-    switch (([string]$arg).Trim().ToLowerInvariant()) {
+    $normalizedArg = ([string]$arg).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalizedArg)) {
+      continue
+    }
+
+    switch ($normalizedArg) {
       { $_ -in @('-y','--yes','-yes','/yes') } { $yes = $true; continue }
       default { throw "Unknown update option '$arg'. Usage: ue update [--yes]" }
     }

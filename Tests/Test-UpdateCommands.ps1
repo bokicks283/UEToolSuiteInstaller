@@ -44,13 +44,13 @@ $marker.bootstrap.releaseTag = 'v1.0.2'
     return "n"
   }
   try {
-    $declinedOutput = @(Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @()) -join "`n"
+    $declinedOutput = @(Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @("")) -join "`n"
   }
   finally {
     Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
   }
   $declinedMarker = Get-Content -LiteralPath (Join-Path $projectRoot ".ue-tools\global-cli.json") -Raw | ConvertFrom-Json
-  Assert-Condition "interactive update prompts with target tag" ($global:UEToolSuiteTestUpdatePrompt -like "*v1.0.2*[y/N]*") "prompt=$global:UEToolSuiteTestUpdatePrompt" "prompt=$global:UEToolSuiteTestUpdatePrompt"
+  Assert-Condition "interactive update ignores blank forwarded argument and prompts with target tag" ($global:UEToolSuiteTestUpdatePrompt -like "*v1.0.2*[y/N]*") "prompt=$global:UEToolSuiteTestUpdatePrompt" "prompt=$global:UEToolSuiteTestUpdatePrompt"
   Assert-TextContains "declined update reports cancellation" $declinedOutput "update cancelled. No files were changed."
   Assert-Condition "declined update leaves project version unchanged" ([string]$declinedMarker.version -eq '1.0.1') "version=1.0.1" "version=$([string]$declinedMarker.version)"
 
