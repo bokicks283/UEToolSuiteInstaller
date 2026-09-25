@@ -55,10 +55,13 @@ function Get-UEToolSuiteVersionStatus {
   $repositoryUrl = [string]$marker.bootstrap.repositoryUrl
   if ([string]::IsNullOrWhiteSpace($repositoryUrl)) { throw "The project marker does not declare an update repository." }
   $latest = Get-UEToolSuiteLatestRelease -RepositoryUrl $repositoryUrl
+  $projectVersion = [version]([string]$marker.version)
+  $latestVersion = [version]$latest.Version
   [pscustomobject]@{
     ProjectVersion = [string]$marker.version
     LatestVersion = [string]$latest.Version
-    UpdateAvailable = ([version]$latest.Version -gt [version]([string]$marker.version))
+    UpdateAvailable = ($latestVersion -gt $projectVersion)
+    ProjectAhead = ($projectVersion -gt $latestVersion)
     RepositoryUrl = $repositoryUrl
     ReleaseTag = [string]$latest.Tag
     SourceRoot = $latest.SourceRoot
@@ -73,7 +76,7 @@ function Invoke-UEToolSuiteVersionCommand {
   Write-Output "Project version: $($status.ProjectVersion)"
   Write-Output "Latest published version: $($status.LatestVersion)"
   if ($status.UpdateAvailable) { Write-Output "Update available. Run 'ue update'." }
-  elseif ([version]$status.ProjectVersion -gt [version]$status.LatestVersion) { Write-Output "This project version has not been published yet." }
+  elseif ($status.ProjectAhead) { Write-Output "This project version is newer than the latest published release." }
   else { Write-Output "This project is up to date." }
 }
 
@@ -93,7 +96,12 @@ function Invoke-UEToolSuiteUpdateCommand {
   }
   $status = Get-UEToolSuiteVersionStatus -RepoRoot $RepoRoot
   if (-not $status.UpdateAvailable) {
-    Write-Output "UE Tool Suite $($status.ProjectVersion) is already the latest published version."
+    if ($status.ProjectAhead) {
+      Write-Output "No published update is available: $($status.ProjectVersion) is newer than latest published $($status.LatestVersion)."
+    }
+    else {
+      Write-Output "UE Tool Suite $($status.ProjectVersion) is already the latest published version."
+    }
     return
   }
 
@@ -103,7 +111,8 @@ function Invoke-UEToolSuiteUpdateCommand {
     if ($ci.Count -gt 0) { throw "UE Tool Suite update requires confirmation. Re-run with --yes only when the update is explicitly approved." }
     $answer = [string](Read-Host "Update this project and install $($status.ReleaseTag) for this user now? [y/N]")
     if ($answer.Trim().ToLowerInvariant() -notin @('y','yes')) {
-      throw "UE Tool Suite update was declined. No files were changed."
+      Write-Output "UE Tool Suite update cancelled. No files were changed."
+      return
     }
   }
 

@@ -1749,6 +1749,7 @@ function Write-WebsiteMergeReport {
     replacedSuiteManaged = @($Report.ReplacedSuiteManaged)
     removedObsoleteManagedFiles = @($Report.RemovedObsoleteManagedFiles)
     preservedProjectOverrides = @($Report.PreservedProjectOverrides)
+    preservedLocalCustomizations = @($Report.PreservedLocalCustomizations)
     mergedConfigs = @($Report.MergedConfigs)
     restoredProjectOverrides = @($Report.RestoredProjectOverrides)
   }
@@ -1762,6 +1763,7 @@ function Write-WebsiteMergeReport {
   $lines.Add("- Replaced suite-managed files: $($Report.ReplacedSuiteManaged.Count)") | Out-Null
   $lines.Add("- Removed obsolete managed files: $($Report.RemovedObsoleteManagedFiles.Count)") | Out-Null
   $lines.Add("- Preserved project overrides: $($Report.PreservedProjectOverrides.Count)") | Out-Null
+  $lines.Add("- Preserved local customizations: $($Report.PreservedLocalCustomizations.Count)") | Out-Null
   $lines.Add("- Structured merges: $($Report.MergedConfigs.Count)") | Out-Null
   $lines.Add("- Restored project overrides after replace: $($Report.RestoredProjectOverrides.Count)") | Out-Null
   $lines.Add("") | Out-Null
@@ -1771,6 +1773,7 @@ function Write-WebsiteMergeReport {
       [pscustomobject]@{ Title = "Replaced Suite-Managed Files"; Items = @($Report.ReplacedSuiteManaged) },
       [pscustomobject]@{ Title = "Removed Obsolete Managed Files"; Items = @($Report.RemovedObsoleteManagedFiles) },
       [pscustomobject]@{ Title = "Preserved Project Overrides"; Items = @($Report.PreservedProjectOverrides) },
+      [pscustomobject]@{ Title = "Preserved Local Customizations"; Items = @($Report.PreservedLocalCustomizations) },
       [pscustomobject]@{ Title = "Structured Merges"; Items = @($Report.MergedConfigs) },
       [pscustomobject]@{ Title = "Restored Project Overrides"; Items = @($Report.RestoredProjectOverrides) }
     )) {
@@ -1805,6 +1808,7 @@ function Invoke-ManagedWebsiteUpdate {
     ReplacedSuiteManaged = New-Object System.Collections.Generic.List[string]
     RemovedObsoleteManagedFiles = New-Object System.Collections.Generic.List[string]
     PreservedProjectOverrides = New-Object System.Collections.Generic.List[string]
+    PreservedLocalCustomizations = New-Object System.Collections.Generic.List[string]
     MergedConfigs = New-Object System.Collections.Generic.List[string]
     RestoredProjectOverrides = New-Object System.Collections.Generic.List[string]
   }
@@ -1841,8 +1845,23 @@ function Invoke-ManagedWebsiteUpdate {
     $category = [string]$file.category
     $sourcePath = Join-Path $PayloadRoot ($relativePath -replace "/", "\")
     $targetPath = Join-Path $TargetRoot ($relativePath -replace "/", "\")
-    $defaultMode = if ($category -eq "overridable") { "suite" } else { "suite" }
-    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode $defaultMode
+    $explicitOverrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode ""
+    $overrideMode = if ([string]::IsNullOrWhiteSpace($explicitOverrideMode)) { "suite" } else { $explicitOverrideMode }
+    $forceSuiteManaged = ($explicitOverrideMode -eq "suite")
+    $existing = Test-Path -LiteralPath $targetPath -PathType Leaf
+    $ledgerEntry = if ($ledger.EntriesByPath.ContainsKey($relativePath)) { $ledger.EntriesByPath[$relativePath] } else { $null }
+    $localCustomizationDetected = $false
+    if (
+      $RequestedMode -eq "managed_update" -and
+      $category -ne "structured" -and
+      $overrideMode -ne "project" -and
+      -not $forceSuiteManaged -and
+      $existing -and
+      $null -ne $ledgerEntry
+    ) {
+      $currentHash = Get-FileSha256 -Path $targetPath
+      $localCustomizationDetected = ($currentHash -cne [string]$ledgerEntry.installedHash)
+    }
 
     if ($category -eq "structured") {
       $parent = Split-Path -Path $targetPath -Parent
@@ -1866,11 +1885,13 @@ function Invoke-ManagedWebsiteUpdate {
         $report.MergedConfigs.Add($relativePath) | Out-Null
       }
     }
-    elseif ($overrideMode -eq "project" -and (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
+    elseif ($overrideMode -eq "project" -and $existing) {
       $report.PreservedProjectOverrides.Add($relativePath) | Out-Null
     }
+    elseif ($localCustomizationDetected) {
+      $report.PreservedLocalCustomizations.Add($relativePath) | Out-Null
+    }
     else {
-      $existing = Test-Path -LiteralPath $targetPath -PathType Leaf
       Copy-ManagedWebsiteIndexedFile -PayloadRoot $PayloadRoot -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
       if ($existing) {
         $report.ReplacedSuiteManaged.Add($relativePath) | Out-Null
@@ -1893,12 +1914,19 @@ function Invoke-ManagedWebsiteUpdate {
     }
 
     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
-      $nextEntries[$relativePath] = [pscustomobject]@{
-        relativePath = $relativePath
-        installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
-        installedHash = (Get-FileSha256 -Path $targetPath)
-        updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        category = $category
+      if ($localCustomizationDetected -and $null -ne $ledgerEntry) {
+        # Keep the last suite-installed hash so later updates can continue to recognize
+        # this path as locally customized instead of adopting the custom bytes as suite state.
+        $nextEntries[$relativePath] = $ledgerEntry
+      }
+      else {
+        $nextEntries[$relativePath] = [pscustomobject]@{
+          relativePath = $relativePath
+          installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+          installedHash = (Get-FileSha256 -Path $targetPath)
+          updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          category = $category
+        }
       }
     }
   }
@@ -1908,9 +1936,25 @@ function Invoke-ManagedWebsiteUpdate {
       continue
     }
 
-    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode "suite"
+    $explicitOverrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode ""
+    $overrideMode = if ([string]::IsNullOrWhiteSpace($explicitOverrideMode)) { "suite" } else { $explicitOverrideMode }
     if ($overrideMode -eq "project") {
       continue
+    }
+
+    $targetPath = Join-Path $TargetRoot ($relativePath -replace "/", "\")
+    $ledgerEntry = $ledger.EntriesByPath[$relativePath]
+    if (
+      $RequestedMode -eq "managed_update" -and
+      $explicitOverrideMode -ne "suite" -and
+      (Test-Path -LiteralPath $targetPath -PathType Leaf)
+    ) {
+      $currentHash = Get-FileSha256 -Path $targetPath
+      if ($currentHash -cne [string]$ledgerEntry.installedHash) {
+        $report.PreservedLocalCustomizations.Add($relativePath) | Out-Null
+        $nextEntries[$relativePath] = $ledgerEntry
+        continue
+      }
     }
 
     Remove-ManagedWebsiteIndexedFile -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
@@ -3018,6 +3062,13 @@ Ok "Installed shared CLI runtime: $($globalCliInstall.InstallRoot)"
 
 $resolvedWebsiteInstallMode = $null
 $websiteRequestedModeWasExplicit = $PSBoundParameters.ContainsKey("WebsiteInstallMode")
+$websiteThemeWasExplicit = $PSBoundParameters.ContainsKey("WebsiteTheme")
+$websiteBrandingWasExplicit = (
+  $PSBoundParameters.ContainsKey("WebsiteGlobalIconPath") -or
+  $PSBoundParameters.ContainsKey("WebsiteLogoPath") -or
+  $PSBoundParameters.ContainsKey("WebsiteFaviconPath") -or
+  $PSBoundParameters.ContainsKey("WebsiteSocialCardPath")
+)
 $websiteOverridesState = $null
 $websiteOverrideMap = @{}
 if (-not $SkipWebsite) {
@@ -3028,7 +3079,7 @@ if (-not $SkipWebsite) {
     -WebsiteWasExplicitlyRequested:$websiteRequestedModeWasExplicit
   if ($resolvedWebsiteInstallMode -eq "preserve_existing") {
     Warn "Existing website directory is not managed by this installer. Preserving current Docusaurus site; website payload and theme override are skipped."
-    if (-not [string]::IsNullOrWhiteSpace($WebsiteTheme) -or -not [string]::IsNullOrWhiteSpace($WebsiteLogoPath) -or -not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath) -or -not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) {
+    if ($websiteThemeWasExplicit -or $websiteBrandingWasExplicit) {
       Warn "Website theme/branding overrides were provided but are blocked for unmanaged sites. Re-run with -WebsiteInstallMode MergeExisting or run 'ue-tools docs theme apply -Theme <id> --adopt-existing' later."
     }
   }
@@ -3149,46 +3200,68 @@ if (-not $SkipDocs) {
 }
 
 if (-not $SkipWebsite -and $resolvedWebsiteInstallMode -ne "preserve_existing") {
-  $themeResult = Apply-WebsiteThemeAndBranding `
-    -PayloadRoot $resolvedPayloadRoot `
-    -TargetRoot $resolvedTargetRoot `
-    -TargetUProjectPath $targetUProject `
-    -RequestedTheme $WebsiteTheme `
-    -GlobalIconPath $WebsiteGlobalIconPath `
-    -LogoPath $WebsiteLogoPath `
-    -FaviconPath $WebsiteFaviconPath `
-    -SocialCardPath $WebsiteSocialCardPath
+  $shouldApplyWebsiteThemeAndBranding = (
+    $resolvedWebsiteInstallMode -ne "managed_update" -or
+    $websiteThemeWasExplicit -or
+    $websiteBrandingWasExplicit
+  )
 
-  if ($null -ne $themeResult) {
-    if ($null -eq $websiteOverridesState) {
-      $websiteOverridesState = Read-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot
-    }
-    if ($null -eq $websiteOverridesState.Document.theme) {
-      $websiteOverridesState.Document.theme = [ordered]@{}
-    }
-    $websiteOverridesState.Document.theme.themeId = [string]$themeResult.ThemeId
-    $websiteOverridesState.Document.theme.logoPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.LogoPath } else { "" }
-    $websiteOverridesState.Document.theme.faviconPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.FaviconPath } else { "" }
-    $websiteOverridesState.Document.theme.socialCardPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.SocialCardPath } else { "" }
-    $websiteOverridesState.Document.fileOverrides = @(
-      foreach ($key in @($websiteOverrideMap.Keys | Sort-Object)) {
-        [ordered]@{
-          path = $key
-          mode = [string]$websiteOverrideMap[$key]
-        }
+  if ($shouldApplyWebsiteThemeAndBranding) {
+    $themeResult = Apply-WebsiteThemeAndBranding `
+      -PayloadRoot $resolvedPayloadRoot `
+      -TargetRoot $resolvedTargetRoot `
+      -TargetUProjectPath $targetUProject `
+      -RequestedTheme $WebsiteTheme `
+      -GlobalIconPath $WebsiteGlobalIconPath `
+      -LogoPath $WebsiteLogoPath `
+      -FaviconPath $WebsiteFaviconPath `
+      -SocialCardPath $WebsiteSocialCardPath
+
+    if ($null -ne $themeResult) {
+      if ($null -eq $websiteOverridesState) {
+        $websiteOverridesState = Read-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot
       }
-    )
-    Write-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot -Document $websiteOverridesState.Document
+      if ($null -eq $websiteOverridesState.Document.theme) {
+        $websiteOverridesState.Document.theme = [ordered]@{}
+      }
+      $websiteOverridesState.Document.theme.themeId = [string]$themeResult.ThemeId
+      $websiteOverridesState.Document.theme.logoPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.LogoPath } else { "" }
+      $websiteOverridesState.Document.theme.faviconPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.FaviconPath } else { "" }
+      $websiteOverridesState.Document.theme.socialCardPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.SocialCardPath } else { "" }
+      $websiteOverridesState.Document.fileOverrides = @(
+        foreach ($key in @($websiteOverrideMap.Keys | Sort-Object)) {
+          [ordered]@{
+            path = $key
+            mode = [string]$websiteOverrideMap[$key]
+          }
+        }
+      )
+      Write-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot -Document $websiteOverridesState.Document
 
+      Write-WebsiteOwnershipMarker `
+        -TargetRoot $resolvedTargetRoot `
+        -PayloadVersion ([string]$payloadManifest.PayloadVersion) `
+        -ProjectName ([string]$themeResult.ProjectName) `
+        -InstallMode ([string]$resolvedWebsiteInstallMode) `
+        -ThemeId ([string]$themeResult.ThemeId) `
+        -LogoPath ([string]$themeResult.LogoPath) `
+        -FaviconPath ([string]$themeResult.FaviconPath) `
+        -SocialCardPath ([string]$themeResult.SocialCardPath)
+    }
+  }
+  else {
+    $persistedTheme = $websiteOverridesState.Document.theme
+    $projectName = [System.IO.Path]::GetFileNameWithoutExtension($targetUProject)
     Write-WebsiteOwnershipMarker `
       -TargetRoot $resolvedTargetRoot `
       -PayloadVersion ([string]$payloadManifest.PayloadVersion) `
-      -ProjectName ([string]$themeResult.ProjectName) `
+      -ProjectName $projectName `
       -InstallMode ([string]$resolvedWebsiteInstallMode) `
-      -ThemeId ([string]$themeResult.ThemeId) `
-      -LogoPath ([string]$themeResult.LogoPath) `
-      -FaviconPath ([string]$themeResult.FaviconPath) `
-      -SocialCardPath ([string]$themeResult.SocialCardPath)
+      -ThemeId ([string]$persistedTheme.themeId) `
+      -LogoPath ([string]$persistedTheme.logoPath) `
+      -FaviconPath ([string]$persistedTheme.faviconPath) `
+      -SocialCardPath ([string]$persistedTheme.socialCardPath)
+    Info "Preserved existing website theme and branding during managed update."
   }
 }
 
