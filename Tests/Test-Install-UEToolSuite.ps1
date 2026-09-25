@@ -767,6 +767,20 @@ try {
   $adoptSnapshotMatches = @(Get-ChildItem -LiteralPath (Join-Path $adoptWebsiteRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*website*" })
   Assert-Condition "case5h pre-adopt website snapshot backup created" ($adoptSnapshotMatches.Count -gt 0) "backup count=$($adoptSnapshotMatches.Count)" "adopt snapshot backup missing"
 
+  Step "Case 5i: managed website update preserves theme, branding, and local customizations"
+  $managedPreserveRepo = New-TargetRepo "managed website preserve target"
+  $managedPreserveInstall = Invoke-Installer -TargetRoot $managedPreserveRepo -ExtraArgs @("-SkipTests", "-SkipDocs", "-WebsiteTheme", "ocean", "-WebsiteLogoPath", $svgLogoPath)
+  Assert-Condition "case5i initial themed install exits cleanly" ($managedPreserveInstall.Code -eq 0) "exit=0" "exit=$($managedPreserveInstall.Code)"
+  $managedPreserveIndexPath = Join-Path $managedPreserveRepo "website\src\pages\index.tsx"
+  Add-Content -LiteralPath $managedPreserveIndexPath -Value "`n// project-owned customization"
+  $managedPreserveUpdate = Invoke-Installer -TargetRoot $managedPreserveRepo -ExtraArgs @("-SkipTests", "-SkipDocs")
+  Assert-Condition "case5i managed update exits cleanly" ($managedPreserveUpdate.Code -eq 0) "exit=0" "exit=$($managedPreserveUpdate.Code)"
+  Assert-FileContains "case5i managed update preserves ocean theme" (Join-Path $managedPreserveRepo "website\theme-presets\active-theme.css") "--ifm-color-primary: #0d7ea2;"
+  Assert-FileContains "case5i managed update preserves configured theme id" (Join-Path $managedPreserveRepo "website\docusaurus.config.ts") "suiteThemeId: 'ocean'"
+  Assert-FileContains "case5i managed update preserves custom logo reference" (Join-Path $managedPreserveRepo "website\docusaurus.config.ts") "src: 'img/branding/project-logo.svg'"
+  Assert-FileContains "case5i managed update preserves locally edited website file" $managedPreserveIndexPath "// project-owned customization"
+  Assert-Condition "case5i managed update reports preserved theme and branding" ($managedPreserveUpdate.Output -like "*Preserved existing website theme and branding during managed update.*") "preserve message emitted" "preserve message missing"
+
   Step "Case 6: NoBackup replaces managed paths without writing backup output"
   $noBackupRepo = New-TargetRepo "no backup target"
   Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo ".gitattributes") -Content "custom attributes`n"

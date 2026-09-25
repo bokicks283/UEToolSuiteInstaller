@@ -1,0 +1,402 @@
+diff --git a/Install-UEToolSuite.ps1 b/Install-UEToolSuite.ps1
+index f933274a369a72cd5f715baca349e7ef822823c1..09378dea754078d5195969b78f8d890576f65f2e 100644
+--- a/Install-UEToolSuite.ps1
++++ b/Install-UEToolSuite.ps1
+@@ -1749,6 +1749,7 @@ function Write-WebsiteMergeReport {
+     replacedSuiteManaged = @($Report.ReplacedSuiteManaged)
+     removedObsoleteManagedFiles = @($Report.RemovedObsoleteManagedFiles)
+     preservedProjectOverrides = @($Report.PreservedProjectOverrides)
++    preservedLocalCustomizations = @($Report.PreservedLocalCustomizations)
+     mergedConfigs = @($Report.MergedConfigs)
+     restoredProjectOverrides = @($Report.RestoredProjectOverrides)
+   }
+@@ -1762,6 +1763,7 @@ function Write-WebsiteMergeReport {
+   $lines.Add("- Replaced suite-managed files: $($Report.ReplacedSuiteManaged.Count)") | Out-Null
+   $lines.Add("- Removed obsolete managed files: $($Report.RemovedObsoleteManagedFiles.Count)") | Out-Null
+   $lines.Add("- Preserved project overrides: $($Report.PreservedProjectOverrides.Count)") | Out-Null
++  $lines.Add("- Preserved local customizations: $($Report.PreservedLocalCustomizations.Count)") | Out-Null
+   $lines.Add("- Structured merges: $($Report.MergedConfigs.Count)") | Out-Null
+   $lines.Add("- Restored project overrides after replace: $($Report.RestoredProjectOverrides.Count)") | Out-Null
+   $lines.Add("") | Out-Null
+@@ -1771,6 +1773,7 @@ function Write-WebsiteMergeReport {
+       [pscustomobject]@{ Title = "Replaced Suite-Managed Files"; Items = @($Report.ReplacedSuiteManaged) },
+       [pscustomobject]@{ Title = "Removed Obsolete Managed Files"; Items = @($Report.RemovedObsoleteManagedFiles) },
+       [pscustomobject]@{ Title = "Preserved Project Overrides"; Items = @($Report.PreservedProjectOverrides) },
++      [pscustomobject]@{ Title = "Preserved Local Customizations"; Items = @($Report.PreservedLocalCustomizations) },
+       [pscustomobject]@{ Title = "Structured Merges"; Items = @($Report.MergedConfigs) },
+       [pscustomobject]@{ Title = "Restored Project Overrides"; Items = @($Report.RestoredProjectOverrides) }
+     )) {
+@@ -1805,6 +1808,7 @@ function Invoke-ManagedWebsiteUpdate {
+     ReplacedSuiteManaged = New-Object System.Collections.Generic.List[string]
+     RemovedObsoleteManagedFiles = New-Object System.Collections.Generic.List[string]
+     PreservedProjectOverrides = New-Object System.Collections.Generic.List[string]
++    PreservedLocalCustomizations = New-Object System.Collections.Generic.List[string]
+     MergedConfigs = New-Object System.Collections.Generic.List[string]
+     RestoredProjectOverrides = New-Object System.Collections.Generic.List[string]
+   }
+@@ -1841,8 +1845,23 @@ function Invoke-ManagedWebsiteUpdate {
+     $category = [string]$file.category
+     $sourcePath = Join-Path $PayloadRoot ($relativePath -replace "/", "\")
+     $targetPath = Join-Path $TargetRoot ($relativePath -replace "/", "\")
+-    $defaultMode = if ($category -eq "overridable") { "suite" } else { "suite" }
+-    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode $defaultMode
++    $explicitOverrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode ""
++    $overrideMode = if ([string]::IsNullOrWhiteSpace($explicitOverrideMode)) { "suite" } else { $explicitOverrideMode }
++    $forceSuiteManaged = ($explicitOverrideMode -eq "suite")
++    $existing = Test-Path -LiteralPath $targetPath -PathType Leaf
++    $ledgerEntry = if ($ledger.EntriesByPath.ContainsKey($relativePath)) { $ledger.EntriesByPath[$relativePath] } else { $null }
++    $localCustomizationDetected = $false
++    if (
++      $RequestedMode -eq "managed_update" -and
++      $category -ne "structured" -and
++      $overrideMode -ne "project" -and
++      -not $forceSuiteManaged -and
++      $existing -and
++      $null -ne $ledgerEntry
++    ) {
++      $currentHash = Get-FileSha256 -Path $targetPath
++      $localCustomizationDetected = ($currentHash -cne [string]$ledgerEntry.installedHash)
++    }
+ 
+     if ($category -eq "structured") {
+       $parent = Split-Path -Path $targetPath -Parent
+@@ -1866,11 +1885,13 @@ function Invoke-ManagedWebsiteUpdate {
+         $report.MergedConfigs.Add($relativePath) | Out-Null
+       }
+     }
+-    elseif ($overrideMode -eq "project" -and (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
++    elseif ($overrideMode -eq "project" -and $existing) {
+       $report.PreservedProjectOverrides.Add($relativePath) | Out-Null
+     }
++    elseif ($localCustomizationDetected) {
++      $report.PreservedLocalCustomizations.Add($relativePath) | Out-Null
++    }
+     else {
+-      $existing = Test-Path -LiteralPath $targetPath -PathType Leaf
+       Copy-ManagedWebsiteIndexedFile -PayloadRoot $PayloadRoot -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
+       if ($existing) {
+         $report.ReplacedSuiteManaged.Add($relativePath) | Out-Null
+@@ -1893,12 +1914,19 @@ function Invoke-ManagedWebsiteUpdate {
+     }
+ 
+     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
+-      $nextEntries[$relativePath] = [pscustomobject]@{
+-        relativePath = $relativePath
+-        installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
+-        installedHash = (Get-FileSha256 -Path $targetPath)
+-        updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+-        category = $category
++      if ($localCustomizationDetected -and $null -ne $ledgerEntry) {
++        # Keep the last suite-installed hash so later updates can continue to recognize
++        # this path as locally customized instead of adopting the custom bytes as suite state.
++        $nextEntries[$relativePath] = $ledgerEntry
++      }
++      else {
++        $nextEntries[$relativePath] = [pscustomobject]@{
++          relativePath = $relativePath
++          installedPayloadVersion = [string]$PayloadManifest.PayloadVersion
++          installedHash = (Get-FileSha256 -Path $targetPath)
++          updatedUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
++          category = $category
++        }
+       }
+     }
+   }
+@@ -1908,11 +1936,27 @@ function Invoke-ManagedWebsiteUpdate {
+       continue
+     }
+ 
+-    $overrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode "suite"
++    $explicitOverrideMode = Get-WebsiteOverrideModeForPath -RelativePath $relativePath -OverrideMap $OverrideMap -DefaultMode ""
++    $overrideMode = if ([string]::IsNullOrWhiteSpace($explicitOverrideMode)) { "suite" } else { $explicitOverrideMode }
+     if ($overrideMode -eq "project") {
+       continue
+     }
+ 
++    $targetPath = Join-Path $TargetRoot ($relativePath -replace "/", "\")
++    $ledgerEntry = $ledger.EntriesByPath[$relativePath]
++    if (
++      $RequestedMode -eq "managed_update" -and
++      $explicitOverrideMode -ne "suite" -and
++      (Test-Path -LiteralPath $targetPath -PathType Leaf)
++    ) {
++      $currentHash = Get-FileSha256 -Path $targetPath
++      if ($currentHash -cne [string]$ledgerEntry.installedHash) {
++        $report.PreservedLocalCustomizations.Add($relativePath) | Out-Null
++        $nextEntries[$relativePath] = $ledgerEntry
++        continue
++      }
++    }
++
+     Remove-ManagedWebsiteIndexedFile -TargetRoot $TargetRoot -RelativePath $relativePath -BackupRoot $BackupRoot
+     $report.RemovedObsoleteManagedFiles.Add($relativePath) | Out-Null
+   }
+@@ -3018,6 +3062,13 @@ Ok "Installed shared CLI runtime: $($globalCliInstall.InstallRoot)"
+ 
+ $resolvedWebsiteInstallMode = $null
+ $websiteRequestedModeWasExplicit = $PSBoundParameters.ContainsKey("WebsiteInstallMode")
++$websiteThemeWasExplicit = $PSBoundParameters.ContainsKey("WebsiteTheme")
++$websiteBrandingWasExplicit = (
++  $PSBoundParameters.ContainsKey("WebsiteGlobalIconPath") -or
++  $PSBoundParameters.ContainsKey("WebsiteLogoPath") -or
++  $PSBoundParameters.ContainsKey("WebsiteFaviconPath") -or
++  $PSBoundParameters.ContainsKey("WebsiteSocialCardPath")
++)
+ $websiteOverridesState = $null
+ $websiteOverrideMap = @{}
+ if (-not $SkipWebsite) {
+@@ -3028,7 +3079,7 @@ if (-not $SkipWebsite) {
+     -WebsiteWasExplicitlyRequested:$websiteRequestedModeWasExplicit
+   if ($resolvedWebsiteInstallMode -eq "preserve_existing") {
+     Warn "Existing website directory is not managed by this installer. Preserving current Docusaurus site; website payload and theme override are skipped."
+-    if (-not [string]::IsNullOrWhiteSpace($WebsiteTheme) -or -not [string]::IsNullOrWhiteSpace($WebsiteLogoPath) -or -not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath) -or -not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) {
++    if ($websiteThemeWasExplicit -or $websiteBrandingWasExplicit) {
+       Warn "Website theme/branding overrides were provided but are blocked for unmanaged sites. Re-run with -WebsiteInstallMode MergeExisting or run 'ue-tools docs theme apply -Theme <id> --adopt-existing' later."
+     }
+   }
+@@ -3149,46 +3200,68 @@ if (-not $SkipDocs) {
+ }
+ 
+ if (-not $SkipWebsite -and $resolvedWebsiteInstallMode -ne "preserve_existing") {
+-  $themeResult = Apply-WebsiteThemeAndBranding `
+-    -PayloadRoot $resolvedPayloadRoot `
+-    -TargetRoot $resolvedTargetRoot `
+-    -TargetUProjectPath $targetUProject `
+-    -RequestedTheme $WebsiteTheme `
+-    -GlobalIconPath $WebsiteGlobalIconPath `
+-    -LogoPath $WebsiteLogoPath `
+-    -FaviconPath $WebsiteFaviconPath `
+-    -SocialCardPath $WebsiteSocialCardPath
+-
+-  if ($null -ne $themeResult) {
+-    if ($null -eq $websiteOverridesState) {
+-      $websiteOverridesState = Read-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot
+-    }
+-    if ($null -eq $websiteOverridesState.Document.theme) {
+-      $websiteOverridesState.Document.theme = [ordered]@{}
+-    }
+-    $websiteOverridesState.Document.theme.themeId = [string]$themeResult.ThemeId
+-    $websiteOverridesState.Document.theme.logoPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.LogoPath } else { "" }
+-    $websiteOverridesState.Document.theme.faviconPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.FaviconPath } else { "" }
+-    $websiteOverridesState.Document.theme.socialCardPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.SocialCardPath } else { "" }
+-    $websiteOverridesState.Document.fileOverrides = @(
+-      foreach ($key in @($websiteOverrideMap.Keys | Sort-Object)) {
+-        [ordered]@{
+-          path = $key
+-          mode = [string]$websiteOverrideMap[$key]
+-        }
++  $shouldApplyWebsiteThemeAndBranding = (
++    $resolvedWebsiteInstallMode -ne "managed_update" -or
++    $websiteThemeWasExplicit -or
++    $websiteBrandingWasExplicit
++  )
++
++  if ($shouldApplyWebsiteThemeAndBranding) {
++    $themeResult = Apply-WebsiteThemeAndBranding `
++      -PayloadRoot $resolvedPayloadRoot `
++      -TargetRoot $resolvedTargetRoot `
++      -TargetUProjectPath $targetUProject `
++      -RequestedTheme $WebsiteTheme `
++      -GlobalIconPath $WebsiteGlobalIconPath `
++      -LogoPath $WebsiteLogoPath `
++      -FaviconPath $WebsiteFaviconPath `
++      -SocialCardPath $WebsiteSocialCardPath
++
++    if ($null -ne $themeResult) {
++      if ($null -eq $websiteOverridesState) {
++        $websiteOverridesState = Read-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot
+       }
+-    )
+-    Write-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot -Document $websiteOverridesState.Document
++      if ($null -eq $websiteOverridesState.Document.theme) {
++        $websiteOverridesState.Document.theme = [ordered]@{}
++      }
++      $websiteOverridesState.Document.theme.themeId = [string]$themeResult.ThemeId
++      $websiteOverridesState.Document.theme.logoPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.LogoPath } else { "" }
++      $websiteOverridesState.Document.theme.faviconPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteFaviconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.FaviconPath } else { "" }
++      $websiteOverridesState.Document.theme.socialCardPath = if ((-not [string]::IsNullOrWhiteSpace($WebsiteGlobalIconPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteSocialCardPath)) -or (-not [string]::IsNullOrWhiteSpace($WebsiteLogoPath))) { [string]$themeResult.SocialCardPath } else { "" }
++      $websiteOverridesState.Document.fileOverrides = @(
++        foreach ($key in @($websiteOverrideMap.Keys | Sort-Object)) {
++          [ordered]@{
++            path = $key
++            mode = [string]$websiteOverrideMap[$key]
++          }
++        }
++      )
++      Write-WebsiteSiteOverrides -TargetRoot $resolvedTargetRoot -Document $websiteOverridesState.Document
+ 
++      Write-WebsiteOwnershipMarker `
++        -TargetRoot $resolvedTargetRoot `
++        -PayloadVersion ([string]$payloadManifest.PayloadVersion) `
++        -ProjectName ([string]$themeResult.ProjectName) `
++        -InstallMode ([string]$resolvedWebsiteInstallMode) `
++        -ThemeId ([string]$themeResult.ThemeId) `
++        -LogoPath ([string]$themeResult.LogoPath) `
++        -FaviconPath ([string]$themeResult.FaviconPath) `
++        -SocialCardPath ([string]$themeResult.SocialCardPath)
++    }
++  }
++  else {
++    $persistedTheme = $websiteOverridesState.Document.theme
++    $projectName = [System.IO.Path]::GetFileNameWithoutExtension($targetUProject)
+     Write-WebsiteOwnershipMarker `
+       -TargetRoot $resolvedTargetRoot `
+       -PayloadVersion ([string]$payloadManifest.PayloadVersion) `
+-      -ProjectName ([string]$themeResult.ProjectName) `
++      -ProjectName $projectName `
+       -InstallMode ([string]$resolvedWebsiteInstallMode) `
+-      -ThemeId ([string]$themeResult.ThemeId) `
+-      -LogoPath ([string]$themeResult.LogoPath) `
+-      -FaviconPath ([string]$themeResult.FaviconPath) `
+-      -SocialCardPath ([string]$themeResult.SocialCardPath)
++      -ThemeId ([string]$persistedTheme.themeId) `
++      -LogoPath ([string]$persistedTheme.logoPath) `
++      -FaviconPath ([string]$persistedTheme.faviconPath) `
++      -SocialCardPath ([string]$persistedTheme.socialCardPath)
++    Info "Preserved existing website theme and branding during managed update."
+   }
+ }
+ 
+diff --git a/Tests/Test-Install-UEToolSuite.ps1 b/Tests/Test-Install-UEToolSuite.ps1
+index db1d09b52cd012a1fb60ea19910a32232874c462..7e402ae0b24c015a2c61f5b4b46b660b151c9860 100644
+--- a/Tests/Test-Install-UEToolSuite.ps1
++++ b/Tests/Test-Install-UEToolSuite.ps1
+@@ -767,6 +767,20 @@ try {
+   $adoptSnapshotMatches = @(Get-ChildItem -LiteralPath (Join-Path $adoptWebsiteRepo ".ue-tools-installer-backups") -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*website*" })
+   Assert-Condition "case5h pre-adopt website snapshot backup created" ($adoptSnapshotMatches.Count -gt 0) "backup count=$($adoptSnapshotMatches.Count)" "adopt snapshot backup missing"
+ 
++  Step "Case 5i: managed website update preserves theme, branding, and local customizations"
++  $managedPreserveRepo = New-TargetRepo "managed website preserve target"
++  $managedPreserveInstall = Invoke-Installer -TargetRoot $managedPreserveRepo -ExtraArgs @("-SkipTests", "-SkipDocs", "-WebsiteTheme", "ocean", "-WebsiteLogoPath", $svgLogoPath)
++  Assert-Condition "case5i initial themed install exits cleanly" ($managedPreserveInstall.Code -eq 0) "exit=0" "exit=$($managedPreserveInstall.Code)"
++  $managedPreserveIndexPath = Join-Path $managedPreserveRepo "website\src\pages\index.tsx"
++  Add-Content -LiteralPath $managedPreserveIndexPath -Value "`n// project-owned customization"
++  $managedPreserveUpdate = Invoke-Installer -TargetRoot $managedPreserveRepo -ExtraArgs @("-SkipTests", "-SkipDocs")
++  Assert-Condition "case5i managed update exits cleanly" ($managedPreserveUpdate.Code -eq 0) "exit=0" "exit=$($managedPreserveUpdate.Code)"
++  Assert-FileContains "case5i managed update preserves ocean theme" (Join-Path $managedPreserveRepo "website\theme-presets\active-theme.css") "--ifm-color-primary: #0d7ea2;"
++  Assert-FileContains "case5i managed update preserves configured theme id" (Join-Path $managedPreserveRepo "website\docusaurus.config.ts") "suiteThemeId: 'ocean'"
++  Assert-FileContains "case5i managed update preserves custom logo reference" (Join-Path $managedPreserveRepo "website\docusaurus.config.ts") "src: 'img/branding/project-logo.svg'"
++  Assert-FileContains "case5i managed update preserves locally edited website file" $managedPreserveIndexPath "// project-owned customization"
++  Assert-Condition "case5i managed update reports preserved theme and branding" ($managedPreserveUpdate.Output -like "*Preserved existing website theme and branding during managed update.*") "preserve message emitted" "preserve message missing"
++
+   Step "Case 6: NoBackup replaces managed paths without writing backup output"
+   $noBackupRepo = New-TargetRepo "no backup target"
+   Write-Utf8NoBomFile -Path (Join-Path $noBackupRepo ".gitattributes") -Content "custom attributes`n"
+diff --git a/Tests/Test-UpdateCommands.ps1 b/Tests/Test-UpdateCommands.ps1
+index a187495029384ec8bb0186742ddab62e49959c09..30aabfb0bed7d8b3bbf60437f2931a3792a9cdfd 100644
+--- a/Tests/Test-UpdateCommands.ps1
++++ b/Tests/Test-UpdateCommands.ps1
+@@ -33,12 +33,58 @@ $marker.bootstrap.releaseTag = 'v1.0.2'
+   $env:UE_TOOLS_UPDATE_SOURCE_ROOT = $sourceRoot
+   Import-Module (Join-Path $repoRoot "payload\Scripts\UETools\UEToolSuite.Update.psm1") -Force
+   $status = Get-UEToolSuiteVersionStatus -RepoRoot $projectRoot
+-  Assert-Condition "version command discovers newer package" ($status.ProjectVersion -eq '1.0.1' -and $status.LatestVersion -eq '1.0.2' -and $status.UpdateAvailable) "1.0.1 -> 1.0.2" "unexpected status"
++  Assert-Condition "version command discovers newer package" ($status.ProjectVersion -eq '1.0.1' -and $status.LatestVersion -eq '1.0.2' -and $status.UpdateAvailable -and -not $status.ProjectAhead) "1.0.1 -> 1.0.2" "unexpected status"
+   $versionOutput = @(Invoke-UEToolSuiteVersionCommand -RepoRoot $projectRoot) -join "`n"
+   Assert-TextContains "version output names latest release" $versionOutput "Latest published version: 1.0.2"
+-  Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @('--yes')
++
++  $global:UEToolSuiteTestUpdatePrompt = ""
++  function global:Read-Host {
++    param([string]$Prompt)
++    $global:UEToolSuiteTestUpdatePrompt = $Prompt
++    return "n"
++  }
++  try {
++    $declinedOutput = @(Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @()) -join "`n"
++  }
++  finally {
++    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
++  }
++  $declinedMarker = Get-Content -LiteralPath (Join-Path $projectRoot ".ue-tools\global-cli.json") -Raw | ConvertFrom-Json
++  Assert-Condition "interactive update prompts with target tag" ($global:UEToolSuiteTestUpdatePrompt -like "*v1.0.2*[y/N]*") "prompt=$global:UEToolSuiteTestUpdatePrompt" "prompt=$global:UEToolSuiteTestUpdatePrompt"
++  Assert-TextContains "declined update reports cancellation" $declinedOutput "update cancelled. No files were changed."
++  Assert-Condition "declined update leaves project version unchanged" ([string]$declinedMarker.version -eq '1.0.1') "version=1.0.1" "version=$([string]$declinedMarker.version)"
++
++  function global:Read-Host { param([string]$Prompt); return "y" }
++  try {
++    Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @()
++  }
++  finally {
++    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
++  }
++  $interactiveUpdated = Get-Content -LiteralPath (Join-Path $projectRoot ".ue-tools\global-cli.json") -Raw | ConvertFrom-Json
++  Assert-Condition "interactive yes installs the published release" ([string]$interactiveUpdated.version -eq '1.0.2') "version=1.0.2" "version=$([string]$interactiveUpdated.version)"
++
++  $interactiveUpdated.version = '1.0.1'
++  $interactiveUpdated.bootstrap.releaseTag = 'v1.0.1'
++  [IO.File]::WriteAllText((Join-Path $projectRoot ".ue-tools\global-cli.json"), (($interactiveUpdated | ConvertTo-Json -Depth 4) + "`n"), [Text.UTF8Encoding]::new($false))
++  function global:Read-Host { throw "--yes must bypass interactive confirmation" }
++  try {
++    Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @('--yes')
++  }
++  finally {
++    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
++  }
+   $updated = Get-Content -LiteralPath (Join-Path $projectRoot ".ue-tools\global-cli.json") -Raw | ConvertFrom-Json
+-  Assert-Condition "explicit update invokes release installer" ([string]$updated.version -eq '1.0.2') "version=1.0.2" "version=$([string]$updated.version)"
++  Assert-Condition "--yes update invokes release installer without prompting" ([string]$updated.version -eq '1.0.2') "version=1.0.2" "version=$([string]$updated.version)"
++  Remove-Variable -Name UEToolSuiteTestUpdatePrompt -Scope Global -ErrorAction SilentlyContinue
++
++  $updated.version = '1.0.3'
++  $updated.bootstrap.releaseTag = 'v1.0.3'
++  [IO.File]::WriteAllText((Join-Path $projectRoot ".ue-tools\global-cli.json"), (($updated | ConvertTo-Json -Depth 4) + "`n"), [Text.UTF8Encoding]::new($false))
++  $aheadStatus = Get-UEToolSuiteVersionStatus -RepoRoot $projectRoot
++  Assert-Condition "version status reports project ahead of published release" (-not $aheadStatus.UpdateAvailable -and $aheadStatus.ProjectAhead) "project=1.0.3 published=1.0.2" "unexpected ahead status"
++  $aheadOutput = @(Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @()) -join "`n"
++  Assert-TextContains "project-ahead update performs check only" $aheadOutput "No published update is available: 1.0.3 is newer than latest published 1.0.2."
+   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan
+   if ($script:FailCount -gt 0) { exit 1 }
+ }
+diff --git a/payload/Scripts/UETools/UEToolSuite.Update.psm1 b/payload/Scripts/UETools/UEToolSuite.Update.psm1
+index 846fff0768b78bfe979ba1cbc727d4fa8e88a724..0f87f85bcace26489471bf11b531950454177fab 100644
+--- a/payload/Scripts/UETools/UEToolSuite.Update.psm1
++++ b/payload/Scripts/UETools/UEToolSuite.Update.psm1
+@@ -55,10 +55,13 @@ function Get-UEToolSuiteVersionStatus {
+   $repositoryUrl = [string]$marker.bootstrap.repositoryUrl
+   if ([string]::IsNullOrWhiteSpace($repositoryUrl)) { throw "The project marker does not declare an update repository." }
+   $latest = Get-UEToolSuiteLatestRelease -RepositoryUrl $repositoryUrl
++  $projectVersion = [version]([string]$marker.version)
++  $latestVersion = [version]$latest.Version
+   [pscustomobject]@{
+     ProjectVersion = [string]$marker.version
+     LatestVersion = [string]$latest.Version
+-    UpdateAvailable = ([version]$latest.Version -gt [version]([string]$marker.version))
++    UpdateAvailable = ($latestVersion -gt $projectVersion)
++    ProjectAhead = ($projectVersion -gt $latestVersion)
+     RepositoryUrl = $repositoryUrl
+     ReleaseTag = [string]$latest.Tag
+     SourceRoot = $latest.SourceRoot
+@@ -73,7 +76,7 @@ function Invoke-UEToolSuiteVersionCommand {
+   Write-Output "Project version: $($status.ProjectVersion)"
+   Write-Output "Latest published version: $($status.LatestVersion)"
+   if ($status.UpdateAvailable) { Write-Output "Update available. Run 'ue update'." }
+-  elseif ([version]$status.ProjectVersion -gt [version]$status.LatestVersion) { Write-Output "This project version has not been published yet." }
++  elseif ($status.ProjectAhead) { Write-Output "This project version is newer than the latest published release." }
+   else { Write-Output "This project is up to date." }
+ }
+ 
+@@ -93,7 +96,12 @@ function Invoke-UEToolSuiteUpdateCommand {
+   }
+   $status = Get-UEToolSuiteVersionStatus -RepoRoot $RepoRoot
+   if (-not $status.UpdateAvailable) {
+-    Write-Output "UE Tool Suite $($status.ProjectVersion) is already the latest published version."
++    if ($status.ProjectAhead) {
++      Write-Output "No published update is available: $($status.ProjectVersion) is newer than latest published $($status.LatestVersion)."
++    }
++    else {
++      Write-Output "UE Tool Suite $($status.ProjectVersion) is already the latest published version."
++    }
+     return
+   }
+ 
+@@ -103,7 +111,8 @@ function Invoke-UEToolSuiteUpdateCommand {
+     if ($ci.Count -gt 0) { throw "UE Tool Suite update requires confirmation. Re-run with --yes only when the update is explicitly approved." }
+     $answer = [string](Read-Host "Update this project and install $($status.ReleaseTag) for this user now? [y/N]")
+     if ($answer.Trim().ToLowerInvariant() -notin @('y','yes')) {
+-      throw "UE Tool Suite update was declined. No files were changed."
++      Write-Output "UE Tool Suite update cancelled. No files were changed."
++      return
+     }
+   }
+ 
