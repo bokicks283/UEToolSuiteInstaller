@@ -1,0 +1,38 @@
+diff --git a/Tests/Test-UpdateCommands.ps1 b/Tests/Test-UpdateCommands.ps1
+index 1f78ead..78be966 100644
+--- a/Tests/Test-UpdateCommands.ps1
++++ b/Tests/Test-UpdateCommands.ps1
+@@ -6,13 +6,13 @@ try {
+     return "n"
+   }
+   try {
+-    $declinedOutput = @(Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @()) -join "`n"
++    $declinedOutput = @(Invoke-UEToolSuiteUpdateCommand -RepoRoot $projectRoot -CommandArguments @("")) -join "`n"
+   }
+   finally {
+     Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+   }
+   $declinedMarker = Get-Content -LiteralPath (Join-Path $projectRoot ".ue-tools\global-cli.json") -Raw | ConvertFrom-Json
+-  Assert-Condition "interactive update prompts with target tag" ($global:UEToolSuiteTestUpdatePrompt -like "*v1.0.2*[y/N]*") "prompt=$global:UEToolSuiteTestUpdatePrompt" "prompt=$global:UEToolSuiteTestUpdatePrompt"
++  Assert-Condition "interactive update ignores blank forwarded argument and prompts with target tag" ($global:UEToolSuiteTestUpdatePrompt -like "*v1.0.2*[y/N]*") "prompt=$global:UEToolSuiteTestUpdatePrompt" "prompt=$global:UEToolSuiteTestUpdatePrompt"
+   Assert-TextContains "declined update reports cancellation" $declinedOutput "update cancelled. No files were changed."
+   Assert-Condition "declined update leaves project version unchanged" ([string]$declinedMarker.version -eq '1.0.1') "version=1.0.1" "version=$([string]$declinedMarker.version)"
+ }
+diff --git a/payload/Scripts/UETools/UEToolSuite.Update.psm1 b/payload/Scripts/UETools/UEToolSuite.Update.psm1
+index 3b63f7d..34df644 100644
+--- a/payload/Scripts/UETools/UEToolSuite.Update.psm1
++++ b/payload/Scripts/UETools/UEToolSuite.Update.psm1
+@@ -7,7 +7,12 @@ function Invoke-UEToolSuiteUpdateCommand {
+ 
+   $yes = $false
+   foreach ($arg in @($CommandArguments)) {
+-    switch (([string]$arg).Trim().ToLowerInvariant()) {
++    $normalizedArg = ([string]$arg).Trim().ToLowerInvariant()
++    if ([string]::IsNullOrWhiteSpace($normalizedArg)) {
++      continue
++    }
++
++    switch ($normalizedArg) {
+       { $_ -in @('-y','--yes','-yes','/yes') } { $yes = $true; continue }
+       default { throw "Unknown update option '$arg'. Usage: ue update [--yes]" }
+     }
