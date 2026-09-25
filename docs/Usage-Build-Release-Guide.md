@@ -171,7 +171,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-Installe
 Output:
 
 ```text
-dist/UEToolSuiteInstaller-1.0.3-win-x64.exe
+dist/UEToolSuiteInstaller-1.0.4-win-x64.exe
 ```
 
 The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps1`, and `payload/`. Users still need PowerShell 7 installed because the installed UE tools run on `pwsh`.
@@ -196,7 +196,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1
 ```
 
-The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.0.3`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
+The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.0.4`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
 
 5. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
 

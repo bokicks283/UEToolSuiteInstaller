@@ -94,7 +94,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTes
 ## Build `.exe` Installer
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.3
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.0.4
 ```
 
 Output:
@@ -107,7 +107,7 @@ After updating the versioned manifests, committing the release, and pushing `mai
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass `
   -File .\Scripts\Publish-GitHubRelease.ps1 `
-  -Version 1.0.3
+  -Version 1.0.4
 ```
 
 This local command runs the release test gates, builds the installer, pushes the annotated version tag, and creates the GitHub Release. The CLI bootstrap only requires the pushed version tag; it does not depend on GitHub Actions or a GitHub Release.
