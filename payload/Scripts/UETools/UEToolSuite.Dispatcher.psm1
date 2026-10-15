@@ -88,10 +88,15 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
   switch ($DomainName.ToLowerInvariant()) {
     "build" {
       return @(
-        "Usage: ue-tools build [UnrealSync options]"
+        "Usage: ue-tools build [UnrealSync options] | choices | show | use -Target <name> -Config <value>"
+        "Values: run 'ue build choices' for this project's targets and configurations."
+        "Selection: -Target/-Config override the private saved selection for one run."
         "Examples:"
         "  ue-tools build -DryRun"
         "  ue-tools build -NoBuild -NoRegen"
+        "  ue-tools build choices"
+        "  ue-tools build use -Target MyGameEditor -Config DebugGame"
+        "  ue-tools build show"
         "  ue-tools build -Config Debug -Platform Win64"
         "Notes:"
         "  - Dispatcher always passes -Force to Unreal sync."
@@ -299,6 +304,29 @@ function Invoke-UEToolSuiteDispatcher {
       return
     }
     "build" {
+      if ($remaining.Count -gt 0 -and ([string]$remaining[0]).ToLowerInvariant() -in @('choices','show','use')) {
+        $subcommand = ([string]$remaining[0]).ToLowerInvariant()
+        $tail = [string[]](Get-UEToolSuiteDispatcherTailArguments -Values $remaining -Skip 1)
+        $params = ConvertTo-UEToolSuiteUnrealBuildParameters -RepoRoot $RepoRoot -CommandArguments $tail
+        $allowed = if ($subcommand -eq 'use') { @('RepoRoot','UProjectPath','WorkspacePath','Target','Config') } else { @('RepoRoot','UProjectPath','WorkspacePath') }
+        foreach ($key in @($params.Keys)) { if ($key -notin $allowed) { throw "Option -$key is not supported by 'ue build $subcommand'." } }
+        switch ($subcommand) {
+          'choices' {
+            foreach ($choice in @(Get-UEToolSuiteBuildChoices -RepoRoot $params.RepoRoot -UProjectPath $params.UProjectPath -WorkspacePath $params.WorkspacePath)) { "{0}: {1}" -f $choice.Target, ($choice.Configurations -join ', ') }
+          }
+          'show' {
+            $resolved = Resolve-UEToolSuiteBuildSelection -RepoRoot $params.RepoRoot -UProjectPath $params.UProjectPath -WorkspacePath $params.WorkspacePath -UseSaved
+            "Build selection: $($resolved.Target) $($resolved.Platform) $($resolved.Config)"
+            if ($resolved.Saved) { 'Source: project-local saved selection' } else { 'Source: default' }
+          }
+          'use' {
+            if (-not $params.Target -and -not $params.Config) { throw "Pass -Target and/or -Config. Run 'ue build choices' to see valid values." }
+            $resolved = Set-UEToolSuiteBuildSelection -RepoRoot $params.RepoRoot -UProjectPath $params.UProjectPath -WorkspacePath $params.WorkspacePath -Target $params.Target -Config $params.Config
+            "Saved build selection: $($resolved.Target) $($resolved.Platform) $($resolved.Config)"
+          }
+        }
+        return
+      }
       foreach ($arg in @($remaining)) {
         if (Test-UEToolSuiteDispatcherHelpToken -Token $arg) {
           @(Get-UEToolSuiteDispatcherDomainHelpText -DomainName "build") | Write-Output

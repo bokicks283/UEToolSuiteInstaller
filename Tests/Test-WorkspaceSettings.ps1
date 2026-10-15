@@ -52,6 +52,37 @@ try{
   $oldNoAutorun=$env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN
   try{
     $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN='1';$unrealModule=Import-Module $unrealModulePath -Force -DisableNameChecking -PassThru
+    $buildFixture=New-Fixture 'build selection' $engine
+    $sourceDir=Join-Path $buildFixture.Root 'Source';New-Item -ItemType Directory -Force -Path $sourceDir|Out-Null
+    foreach($name in @('Game','GameEditor')){[IO.File]::WriteAllText((Join-Path $sourceDir "$name.Target.cs"),'// test target',[Text.UTF8Encoding]::new($false))}
+    $scriptDir=Join-Path $buildFixture.Root 'Scripts';New-Item -ItemType Directory -Force -Path $scriptDir|Out-Null
+    [IO.File]::WriteAllText((Join-Path $scriptDir 'ue-tools.ps1'),'# test launcher',[Text.UTF8Encoding]::new($false))
+    $original=Get-Content -LiteralPath $buildFixture.Workspace -Raw
+    $generatedBuild=ConvertFrom-UEToolSuiteJsoncText $original $buildFixture.Workspace
+    $generatedBuild.tasks.tasks=@([ordered]@{label='GameEditor Win64 DebugGame Build';type='shell';command='Engine\Build\BatchFiles\Build.bat';args=@('GameEditor','Win64','DebugGame',(Join-Path $buildFixture.Root 'Game.uproject'),'-waitmutex');problemMatcher='$msCompile';options=[ordered]@{cwd=$engine}},[ordered]@{label='GameEditor Win64 Development Build';type='shell';command='Engine\Build\BatchFiles\Build.bat';args=@('GameEditor','Win64','Development',(Join-Path $buildFixture.Root 'Game.uproject'),'-waitmutex');problemMatcher='$msCompile';options=[ordered]@{cwd=$engine}})
+    $generatedBuild.launch.configurations=@([ordered]@{name='Debug Game';preLaunchTask='GameEditor Win64 DebugGame Build'})
+    Write-JsonFile $buildFixture.Workspace $generatedBuild
+    $generatedText=Get-Content -LiteralPath $buildFixture.Workspace -Raw
+    [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $buildFixture.Root -WorkspacePath $buildFixture.Workspace -PristineOverride $generatedBuild -PreviousWorkspaceContent $generatedText -NonInteractive)
+    $adapted=Read-UEToolSuiteWorkspaceJsonFile $buildFixture.Workspace
+    $task=$adapted.tasks.tasks[0]
+    Assert-True 'generated debug task uses suite build and preserves launch label' ($task.command -eq 'pwsh' -and $task.args -contains 'DebugGame' -and $task.args -contains 'GameEditor' -and $task.args -contains '-NoRegen' -and $adapted.launch.configurations[0].preLaunchTask -eq $task.label)
+    $selected=Set-UEToolSuiteBuildSelection -RepoRoot $buildFixture.Root -Target GameEditor -Config DebugGame
+    $saved=Resolve-UEToolSuiteBuildSelection -RepoRoot $buildFixture.Root -UseSaved
+    $override=Resolve-UEToolSuiteBuildSelection -RepoRoot $buildFixture.Root -Config Development -UseSaved
+    $hookDefault=Resolve-UEToolSuiteBuildSelection -RepoRoot $buildFixture.Root
+    Assert-True 'saved selection persists and one-run override leaves it intact' ($selected.Config -eq 'DebugGame' -and $saved.Config -eq 'DebugGame' -and $override.Config -eq 'Development' -and (Get-UEToolSuiteBuildSelection $buildFixture.Root).config -eq 'DebugGame')
+    Assert-True 'hook selection ignores private saved default' ($hookDefault.Target -eq 'GameEditor' -and $hookDefault.Config -eq 'Development')
+    $invalidRejected=$false;try{[void](Resolve-UEToolSuiteBuildSelection -RepoRoot $buildFixture.Root -Target Missing -Config DebugGame)}catch{$invalidRejected=$_.Exception.Message -match 'Available targets'}
+    Assert-True 'unknown target reports available choices' $invalidRejected
+    $invalidConfigRejected=$false;try{[void](Resolve-UEToolSuiteBuildSelection -RepoRoot $buildFixture.Root -Target GameEditor -Config Shipping)}catch{$invalidConfigRejected=$_.Exception.Message -match 'Available: DebugGame, Development'}
+    Assert-True 'generated Editor choices reject unavailable configuration' $invalidConfigRejected
+    $launcher=Join-Path $script:repoRoot 'payload\Scripts\ue-tools.ps1'
+    $choiceOutput=(& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $launcher -RepoRoot $buildFixture.Root build choices 2>&1 | Out-String);$choiceCode=$LASTEXITCODE
+    Assert-True 'public build choices lists project targets' ($choiceCode -eq 0 -and $choiceOutput -match 'GameEditor:') $choiceOutput
+    $useOutput=(& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $launcher -RepoRoot $buildFixture.Root build use -Target Game -Config DebugGame 2>&1 | Out-String);$useCode=$LASTEXITCODE
+    $showOutput=(& pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $launcher -RepoRoot $buildFixture.Root build show 2>&1 | Out-String);$showCode=$LASTEXITCODE
+    Assert-True 'public build use persists selection and show reports it' ($useCode -eq 0 -and $showCode -eq 0 -and $showOutput -match 'Game Win64 DebugGame') ($useOutput+$showOutput)
     $teamPath='.ue-tools/workspace-settings/team.jsonc'
     $teamPlans=@(
       Get-UEToolSuiteUnrealSyncActionPlan @([pscustomobject]@{Status='A';Path=$teamPath;OldPath=$null})

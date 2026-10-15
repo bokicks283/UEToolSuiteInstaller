@@ -308,6 +308,7 @@ function Invoke-UnrealSyncAt {
       '-workspacepath' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -WorkspacePath' }; $params.WorkspacePath = [string]$Args[$i + 1]; $i += 2; continue }
       '-uprojectpath' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -UProjectPath' }; $params.UProjectPath = [string]$Args[$i + 1]; $i += 2; continue }
       '-config' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Config' }; $params.Config = [string]$Args[$i + 1]; $i += 2; continue }
+      '-target' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Target' }; $params.Target = [string]$Args[$i + 1]; $i += 2; continue }
       '-platform' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -Platform' }; $params.Platform = [string]$Args[$i + 1]; $i += 2; continue }
       '-reporoot' { if (($i + 1) -ge $Args.Count) { throw 'Missing value for -RepoRoot' }; $params.RepoRoot = [string]$Args[$i + 1]; $i += 2; continue }
       default { throw "Unknown UnrealSync option '$token'." }
@@ -900,6 +901,23 @@ try {
   Assert-OutputContains "case 13 status recovery command reported" $res.Output "Run: ue settings status -WorkspacePath"
   Assert-Condition "case 13 workspace unchanged" ($workspaceBefore13 -eq $workspaceAfter13) "workspace bytes unchanged" "workspace was modified"
   Assert-Condition "case 13 ledger unchanged" ($stateBefore13 -eq $stateAfter13) "ledger bytes unchanged" "ledger was modified"
+
+  Step "Case 14: explicit DebugGame Game target reaches Build.bat"
+  $case14 = New-ActionPlanRepo -Name 'case 14 explicit debug game target'
+  Write-TextFileLf -Path (Join-Path $case14.RepoDir 'Source\ActionPlan.Target.cs') -Content '// fixture Game target'
+  Write-TextFileLf -Path (Join-Path $case14.RepoDir 'Source\ActionPlanEditor.Target.cs') -Content '// fixture Editor target'
+  $engine14 = Join-Path $case14.RepoDir 'Fake Engine'
+  New-FakeBuildBat -EngineRoot $engine14 -ExitCode 0
+  $capture14 = Join-Path $case14.RepoDir 'build-capture.txt'
+  $res = Invoke-UnrealSyncAt -WorkingDir $case14.RepoDir -Args @('-Force','-NoRegen','-NonInteractive','-Target','ActionPlan','-Config','DebugGame') -Environment @{
+    UE_SYNC_TEST_FALLBACK_CAPTURE = $capture14
+    UE_ENGINE_DIR = $engine14
+    UE_ENGINE_ROOT = $null
+    UNREAL_ENGINE_DIR = $null
+    UE_ENGINE_DISABLE_COMMON_INSTALL_SCAN = $null
+  }
+  Assert-Code 'case 14 build exits successfully' $res.Code 0
+  Assert-Condition 'case 14 Build.bat receives Game DebugGame' ((Test-Path -LiteralPath $capture14 -PathType Leaf) -and ((Get-Content -LiteralPath $capture14 -Raw) -match 'ARGS=ActionPlan Win64 DebugGame ')) 'Game DebugGame arguments captured' 'missing or wrong build arguments'
 
   Step "Summary"
   Write-Log ("PASS={0} FAIL={1}" -f $script:PassCount, $script:FailCount) Cyan

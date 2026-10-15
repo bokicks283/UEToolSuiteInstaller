@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "payloadVersion": "1.0.6",
+  "payloadVersion": "1.0.7",
   "generatedUtc": "2026-06-22T01:13:19Z",
   "files": [
     {
@@ -61,7 +61,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Build.md",
       "category": "docs",
-      "sha256": "a9338fde449ced22819857bceb5933f078eb86f6cf8b981bac324edb6bfc63d5"
+      "sha256": "25f885a7d5067cddc1d6b2961ce8096efb8efae69da248f513dfd6f200ddd4dc"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Docs.md",
@@ -86,7 +86,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/CLI/README.md",
       "category": "docs",
-      "sha256": "db2c58318b7eb983b6dc772249ead06f303e1a7bae659a77fafee6b9271da9b3"
+      "sha256": "c8cbbe6492a88f583a23e955d905e64fe8564893b893614d7d5ce1219dcbcf5d"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Settings.md",

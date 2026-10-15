@@ -410,6 +410,24 @@ function Get-UEToolSuiteWorkspacePlan {
 
 function ConvertTo-UEToolSuiteWorkspaceFileText { param($Value,[string]$NewLine="`r`n") return (($Value|ConvertTo-Json -Depth 100) -replace "`r?`n",$NewLine)+$NewLine }
 
+function Set-UEToolSuiteGeneratedBuildTaskCommands {
+  param([Parameter(Mandatory)][System.Collections.IDictionary]$Workspace,[Parameter(Mandatory)]$Context)
+  if (-not $Workspace.Contains('tasks') -or -not ($Workspace.tasks -is [System.Collections.IDictionary])) { return }
+  $scriptPath = Join-Path $Context.RepoRoot 'Scripts\ue-tools.ps1'
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) { return }
+  foreach ($task in @($Workspace.tasks.tasks)) {
+    if (-not ($task -is [System.Collections.IDictionary])) { continue }
+    if ([string]$task.label -notmatch ' (Build|Rebuild)$' -or [string]$task.command -notmatch '(?i)(^|[\\/])Build\.bat$') { continue }
+    $args = @($task.args)
+    if ($args.Count -lt 4 -or [string]$args[1] -ne 'Win64' -or [string]$args[3] -ne $Context.Project.UProjectPath) { continue }
+    $task.command = 'pwsh'
+    $task.args = @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$scriptPath,'build','-NoRegen','-NonInteractive','-Target',[string]$args[0],'-Platform',[string]$args[1],'-Config',[string]$args[2],'-UProjectPath',[string]$args[3],'-WorkspacePath',$Context.WorkspacePath)
+    $task.type = 'process'
+    if (-not ($task.options -is [System.Collections.IDictionary])) { $task.options = [ordered]@{} }
+    $task.options.cwd = $Context.RepoRoot
+  }
+}
+
 function Invoke-UEToolSuiteAtomicTextTransaction {
   [CmdletBinding()]
   param([Parameter(Mandatory)][System.Collections.IDictionary]$Writes)
@@ -467,6 +485,7 @@ function Invoke-UEToolSuiteWorkspaceSync {
   $candidatePristine=if($state -and (Test-UEToolSuiteWorkspaceValueEqual $live $state.effective)){$state.pristine}else{$live}
   $previousPristine=if($state){$state.pristine}else{$null};$plan=Get-UEToolSuiteWorkspacePlan $candidatePristine $previousPristine $layers $context
   if($plan.HasConflicts){Write-UEToolSuiteWorkspacePlanSummary $plan -DryRun:$DryRun;throw "Workspace settings synchronization has $($plan.Conflicts.Count) conflict(s); nothing was written."}
+  Set-UEToolSuiteGeneratedBuildTaskCommands -Workspace $plan.Effective -Context $context
   $stateMatches = (
     $null -ne $state -and
     (Test-UEToolSuiteWorkspaceValueEqual $state.pristine $candidatePristine) -and

@@ -1,5 +1,25 @@
 # Execution plans
 
+## Build selection and generated VS Code tasks (2026-10-14)
+
+Goal: support project targets and debug configurations from `ue build`, a private saved selection, discoverable choices, and generated VS Code Build tasks that pass through UETools settings sync.
+
+Boundaries: CLI dispatcher, Unreal runtime, workspace reconciliation, scratch tests, command documentation, and managed payload packaging.
+
+Invariants: explicit flags override saved values only for one invocation; hooks ignore private selection; generated task labels and launch references remain stable; task adaptation participates in the workspace provenance transaction; conflicts stop before building; American Cartel is read-only acceptance evidence.
+
+Steps:
+
+- [x] Add focused scratch tests for selection, validation, and generated task integration.
+- [x] Implement target/configuration resolution and private saved selection.
+- [x] Adapt generated Build tasks during workspace reconciliation.
+- [x] Update CLI help and documentation.
+- [x] Run focused suites, packaging contracts, and review the diff.
+- [ ] Run release gates, commit and publish 1.0.7, then verify the release asset.
+
+Validation: `workspace-settings` 45 passed; `ue-sync-regeneration` 75 passed; packaging contracts 597 passed; full nonmutating runner 13 suites passed; exclusive `ue-sync-automated` and `binary-guard-fixes` passed. PowerShell parser checks and `git diff --check` passed. American Cartel read-only `build choices`, `build show`, and DebugGame Editor dry run passed; live build and first workspace adoption remain untested.
+
+
 Use a plan for work crossing three or more boundaries:
 
 - React UI

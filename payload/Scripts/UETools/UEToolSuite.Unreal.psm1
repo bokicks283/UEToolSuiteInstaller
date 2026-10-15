@@ -1,4 +1,6 @@
 $settingsModulePath = Join-Path $PSScriptRoot 'UEToolSuite.Settings.psm1'
+$projectContextPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'Unreal\ProjectContext.ps1'
+if (Test-Path -LiteralPath $projectContextPath -PathType Leaf) { . $projectContextPath }
 if (Test-Path -LiteralPath $settingsModulePath -PathType Leaf) {
   Import-Module -Name $settingsModulePath -Global -DisableNameChecking
 }
@@ -367,6 +369,7 @@ function ConvertTo-UEToolSuiteUnrealBuildParameters {
     "workspacepath" = "WorkspacePath"
     "uprojectpath" = "UProjectPath"
     "config" = "Config"
+    "target" = "Target"
     "platform" = "Platform"
   }
 
@@ -436,6 +439,79 @@ function Invoke-UEToolSuiteUnrealBuild {
   Invoke-UEToolSuiteUnrealRuntime @parameters
 }
 
+function Get-UEToolSuiteBuildChoices {
+  param([Parameter(Mandatory)][string]$RepoRoot, [string]$UProjectPath, [string]$WorkspacePath)
+  $project = Get-ProjectContext -RepoRoot $RepoRoot -UProjectPath $UProjectPath -WorkspacePath $WorkspacePath
+  $targets = @(Get-ChildItem -LiteralPath (Join-Path $project.RepoRoot 'Source') -Filter '*.Target.cs' -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.Name -replace '\.Target\.cs$','' } | Sort-Object -Unique)
+  if ($targets.Count -eq 0) { $targets = @("$($project.ProjectName)Editor") }
+  $generated = @{}
+  if ($project.WorkspacePath -and (Test-Path -LiteralPath $project.WorkspacePath -PathType Leaf)) {
+    $workspace = ConvertFrom-UEToolSuiteJsoncText (Get-Content -LiteralPath $project.WorkspacePath -Raw) $project.WorkspacePath
+    foreach ($task in @($workspace.tasks.tasks)) {
+      if ($task.label -notmatch ' Build$') { continue }
+      $args = @($task.args)
+      if ([string]$task.command -match '(?i)(^|[\\/])Build\.bat$' -and $args.Count -ge 3) {
+        $name = [string]$args[0]; $config = [string]$args[2]
+      }
+      elseif ([string]$task.command -eq 'pwsh' -and $args -contains '-Target' -and $args -contains '-Config') {
+        $name = [string]$args[[array]::IndexOf($args,'-Target') + 1]
+        $config = [string]$args[[array]::IndexOf($args,'-Config') + 1]
+      }
+      else { continue }
+      if ($name -notin $targets) { continue }
+      if (-not $generated.ContainsKey($name)) { $generated[$name] = [System.Collections.Generic.List[string]]::new() }
+      if ($config -notin $generated[$name]) { $generated[$name].Add($config) }
+    }
+  }
+  foreach ($name in ($targets | Sort-Object)) {
+    $fallback = if ($name -match 'Editor$') { @('Debug','DebugGame','Development') } else { @('Debug','DebugGame','Development','Shipping','Test') }
+    [pscustomobject]@{ Target = $name; Configurations = if ($generated.ContainsKey($name)) { @($generated[$name].ToArray()) } else { $fallback } }
+  }
+}
+
+function Get-UEToolSuiteBuildSelectionPath { param([string]$RepoRoot) Join-Path $RepoRoot '.ue-tools\local\build-selection.json' }
+
+function Get-UEToolSuiteBuildSelection {
+  param([string]$RepoRoot)
+  $path = Get-UEToolSuiteBuildSelectionPath $RepoRoot
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+  $selection = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+  if ($selection.schemaVersion -ne 1 -or [string]::IsNullOrWhiteSpace([string]$selection.target) -or [string]::IsNullOrWhiteSpace([string]$selection.config)) { throw "Invalid saved build selection: $path" }
+  return $selection
+}
+
+function Resolve-UEToolSuiteBuildSelection {
+  param([string]$RepoRoot,[string]$UProjectPath,[string]$WorkspacePath,[string]$Target,[string]$Config,[string]$Platform='Win64',[switch]$UseSaved)
+  $project = Get-ProjectContext -RepoRoot $RepoRoot -UProjectPath $UProjectPath -WorkspacePath $WorkspacePath
+  $saved = if ($UseSaved) { Get-UEToolSuiteBuildSelection $project.RepoRoot } else { $null }
+  $resolvedTarget = if ($Target) { $Target } elseif ($saved) { [string]$saved.target } else { "$($project.ProjectName)Editor" }
+  $resolvedConfig = if ($Config) { $Config } elseif ($saved) { [string]$saved.config } else { 'Development' }
+  $choices = @(Get-UEToolSuiteBuildChoices -RepoRoot $project.RepoRoot -UProjectPath $project.UProjectPath -WorkspacePath $project.WorkspacePath)
+  $choice = @($choices | Where-Object { $_.Target -ieq $resolvedTarget })
+  if ($choice.Count -ne 1) { throw "Unknown build target '$resolvedTarget'. Available targets: $($choices.Target -join ', '). Run 'ue build choices'." }
+  if ($resolvedConfig -notin @('Debug','DebugGame','Development','Shipping','Test')) { throw "Unknown build configuration '$resolvedConfig'. Choose Debug, DebugGame, Development, Shipping, or Test. Run 'ue build choices'." }
+  if ($choice[0].Configurations.Count -gt 0 -and $resolvedConfig -notin $choice[0].Configurations) { throw "Configuration '$resolvedConfig' is not generated for target '$resolvedTarget'. Available: $($choice[0].Configurations -join ', '). Run 'ue build choices'." }
+  $resolvedConfig = @('Debug','DebugGame','Development','Shipping','Test') | Where-Object { $_ -ieq $resolvedConfig } | Select-Object -First 1
+  return [pscustomobject]@{ Target = $choice[0].Target; Config = $resolvedConfig; Platform = $Platform; Saved = $saved }
+}
+
+function Set-UEToolSuiteBuildSelection {
+  param([string]$RepoRoot,[string]$UProjectPath,[string]$WorkspacePath,[string]$Target,[string]$Config)
+  $project = Get-ProjectContext -RepoRoot $RepoRoot -UProjectPath $UProjectPath -WorkspacePath $WorkspacePath
+  $resolved = Resolve-UEToolSuiteBuildSelection -RepoRoot $project.RepoRoot -UProjectPath $project.UProjectPath -WorkspacePath $project.WorkspacePath -Target $Target -Config $Config -UseSaved
+  $path = Get-UEToolSuiteBuildSelectionPath $project.RepoRoot
+  $parent = Split-Path -Parent $path
+  if (-not (Test-Path -LiteralPath $parent -PathType Container)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+  $value = [ordered]@{ schemaVersion = 1; target = $resolved.Target; config = $resolved.Config }
+  $temporary = Join-Path $parent ('.build-selection-' + [guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    [IO.File]::WriteAllText($temporary, (($value | ConvertTo-Json) + "`n"), [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($temporary, $path, $true)
+  }
+  finally { if (Test-Path -LiteralPath $temporary -PathType Leaf) { Remove-Item -LiteralPath $temporary -Force } }
+  return $resolved
+}
+
 Export-ModuleMember -Function `
   Get-UEToolSuiteUnrealChangedFileRecords, `
   Test-UEToolSuiteUnrealCppPath, `
@@ -452,6 +528,7 @@ Export-ModuleMember -Function `
   Get-UEToolSuiteUnrealWorkspaceProtectionPaths, `
   New-UEToolSuiteUnrealProjectFileArtifactSnapshot, `
   ConvertTo-UEToolSuiteUnrealBuildParameters, `
+  Get-UEToolSuiteBuildChoices, Get-UEToolSuiteBuildSelection, Resolve-UEToolSuiteBuildSelection, Set-UEToolSuiteBuildSelection, `
   Invoke-UEToolSuiteUnrealBuild, `
   Invoke-UEToolSuiteUnrealRuntime
 
@@ -487,8 +564,9 @@ param(
   # Optional: explicitly point at a .uproject file when the repo has more than one
   [string]$UProjectPath,
 
-  [ValidateSet("Development", "Debug")]
-  [string]$Config = "Development",
+  [string]$Target,
+
+  [string]$Config,
 
   [ValidateSet("Win64")]
   [string]$Platform = "Win64"
@@ -1374,13 +1452,13 @@ $($candidateText -join "`n")
 }
 
 
-function Build-Editor([string]$engineRoot, [string]$uprojectPath, [string]$projectName, [string]$platform, [string]$config) {
+function Build-Target([string]$engineRoot, [string]$uprojectPath, [string]$target, [string]$platform, [string]$config) {
   $buildBat = Join-Path $engineRoot "Engine\Build\BatchFiles\Build.bat"
   if (-not (Test-Path $buildBat)) { throw "Build.bat not found: $buildBat" }
 
-  $target = "${projectName}Editor"
   Info "Building $target ($platform $config) using engine root: $engineRoot"
   & $buildBat $target $platform $config -Project="`"$uprojectPath`"" -WaitMutex | Out-Host
+  if ($LASTEXITCODE -ne 0) { throw "Build failed for $target ($platform $config), exit code $LASTEXITCODE." }
 }
 
 function Test-BlueprintOnlyProject {
@@ -1635,6 +1713,11 @@ if ($shouldRunBuild -and (Test-BlueprintOnlyProject -ProjectContext $projectCont
   $shouldRunBuild = $false
 }
 
+if ($shouldRunBuild) {
+  $selectedBuild = Resolve-UEToolSuiteBuildSelection -RepoRoot $projectContext.RepoRoot -UProjectPath $uprojectPath -WorkspacePath $projectContext.WorkspacePath -Target $Target -Config $Config -Platform $Platform -UseSaved:$manual
+  Info "Build selection: $($selectedBuild.Target) $($selectedBuild.Platform) $($selectedBuild.Config)"
+}
+
 Info "UProject Path: $uprojectPath"
 if (-not $manual) {
   Text "Checking UE sync actions between $OldRev and $NewRev..."
@@ -1780,7 +1863,7 @@ else {
 }
 
 if ($shouldRunBuild) {
-  Build-Editor $engineRoot $uprojectPath $projectName $Platform $Config
+  Build-Target $engineRoot $uprojectPath $selectedBuild.Target $selectedBuild.Platform $selectedBuild.Config
 }
 else {
   Warn "Skipping build..."
