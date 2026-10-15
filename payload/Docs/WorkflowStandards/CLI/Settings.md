@@ -301,6 +301,7 @@ Rules:
 - Invalid `~` escapes are rejected.
 - The empty pointer means the whole workspace and is used by interactive capture/adoption.
 - Capture a known array at its container path, such as `/tasks/tasks`, rather than by numeric element index.
+- When an existing item in a known keyed array changes, capture owns only its changed properties. For example, `/launch/configurations` uses `name` to find the launch configuration and can own only `preLaunchTask` while leaving generated engine paths alone.
 
 Unknown object-array shapes are rejected because UETools cannot safely identify entries. They require an explicit identity strategy in a manually reviewed overlay.
 
@@ -360,6 +361,8 @@ All overlays use schema version 1:
 | `removeStringItem` | Keep one string absent from a string array. |
 | `upsertKeyedItem` | Add or update one object-array item by identity. |
 | `removeKeyedItem` | Keep one identified object-array item absent. |
+| `setKeyedProperty` | Set one property of an existing identified object-array item. |
+| `removeKeyedProperty` | Keep one property of an existing identified object-array item absent. |
 | `removeSemantic` | Remove an item identified from portable runtime/project meaning. |
 
 Known object-array identities are:
@@ -373,6 +376,14 @@ Known object-array identities are:
 | `/inputs` | `id` |
 
 Object ownership is leaf-grained. Owning `/settings/files.exclude/Build` does not own the whole `/settings` object. Duplicate, contradictory, overlapping, ambiguous, and identity-colliding operations fail before a write.
+
+For a launch configuration that contains a machine-specific generated command, Team capture can own only a portable task reference:
+
+```powershell
+ue settings capture -Scope Team -Path /launch/configurations -DryRun -NonInteractive
+```
+
+Review the preview and rerun without `-DryRun`. A changed `preLaunchTask` on an existing named configuration becomes `setKeyedProperty` with `path` `/launch/configurations`, `identityKey` `name`, `identityValue` set to the configuration name, `propertyPath` `/preLaunchTask`, and only the task label in `value`. The named item must exist during sync. Missing or duplicate identities stop the write; changes to unowned sibling properties do not conflict.
 
 ## Portable Engine-folder removal
 

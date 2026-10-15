@@ -171,7 +171,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-Installe
 Output:
 
 ```text
-dist/UEToolSuiteInstaller-1.0.7-win-x64.exe
+dist/UEToolSuiteInstaller-1.1.0-win-x64.exe
 ```
 
 The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps1`, and `payload/`. Users still need PowerShell 7 installed because the installed UE tools run on `pwsh`.
@@ -179,6 +179,8 @@ The exe is self-contained and includes the .NET runtime, `Install-UEToolSuite.ps
 ## Publish A New Version
 
 The local release publisher replaces the former tag-triggered GitHub Actions workflow. It fails before creating a tag unless the worktree is clean, `HEAD` exactly matches `origin/main`, every release manifest matches the requested version, GitHub CLI authentication works, and the version is unused.
+
+Release versions follow Semantic Versioning (`MAJOR.MINOR.PATCH`): increment MAJOR for an incompatible installed CLI, overlay, or installer contract; MINOR for a backward-compatible capability; PATCH for a backward-compatible fix. The `v`-prefixed Git tag and installer asset use the same version. Existing version tags are immutable. Compare the proposed version with the latest published tag before updating manifests. This guide's numbered examples illustrate a past release; use the manifest's current version and the next appropriate version for new releases.
 
 1. Run `pwsh -File .\Scripts\Set-UEToolSuiteVersion.ps1 -Version <next-version>`. This updates the release-coupled manifests, tests, and current documentation transactionally.
 2. Commit the completed release changes and push `main`.
@@ -196,7 +198,7 @@ pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass `
 pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1
 ```
 
-The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.0.7`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
+The command runs the full non-mutating suite, both exclusive release suites, builds the installer, creates and pushes annotated tag `v1.1.0`, and creates the GitHub Release with the versioned installer asset. An existing tag may be resumed only when it already points to the current release commit; published releases and tags pointing elsewhere are never overwritten.
 
 5. Download the release artifact on a clean Windows machine and run a smoke install into a scratch UE 5 project.
 

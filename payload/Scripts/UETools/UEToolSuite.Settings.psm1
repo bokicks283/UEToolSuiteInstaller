@@ -225,7 +225,7 @@ function Test-UEToolSuitePortableTeamValue {
       if ([string]$key -match '(?i)(password|passwd|secret|token|credential|api[-_]?key|account)') {
         throw "Team operation '$OperationPath' contains sensitive field '$key'."
       }
-      if ([string]$key -in @('op','path','selector','identityKey')) { continue }
+      if ([string]$key -in @('op','path','propertyPath','selector','identityKey')) { continue }
       Test-UEToolSuitePortableTeamValue -Value $Value[$key] -OperationPath $OperationPath
     }
     return
@@ -263,6 +263,8 @@ function Get-UEToolSuiteWorkspaceOperationIdentity {
     'addStringItem' { return "string|$path|$($Operation.value)" }
     'removeStringItem' { return "string|$path|$($Operation.value)" }
     'upsertKeyedItem' { return "keyed|$path|$($Operation.identityKey)|$($Operation.identityValue)" }
+    'setKeyedProperty' { return "keyedProperty|$path|$($Operation.identityKey)|$($Operation.identityValue)|$($Operation.propertyPath)" }
+    'removeKeyedProperty' { return "keyedProperty|$path|$($Operation.identityKey)|$($Operation.identityValue)|$($Operation.propertyPath)" }
     'removeKeyedItem' { return "keyed|$path|$($Operation.identityKey)|$($Operation.identityValue)" }
     'removeSemantic' { return "semantic|$path|$($Operation.selector)" }
     default { throw "Unknown workspace settings operation '$op' at '$path'." }
@@ -274,12 +276,16 @@ function Assert-UEToolSuiteWorkspaceLayersValid {
   param([Parameter(Mandatory)][object[]]$Layers)
   $seen = @{}
   $propertyOwners = @()
+  $keyedOwners = @()
   foreach ($layer in $Layers) {
     $localSeen = @{}
     foreach ($op in @($layer.Overlay.operations)) {
       $path = [string]$op.path; [void](ConvertFrom-UEToolSuiteJsonPointer $path)
       $identity = Get-UEToolSuiteWorkspaceOperationIdentity $op
       if ($identity.StartsWith('property|')) {
+        foreach ($owner in $keyedOwners) {
+          if ($path -eq $owner.Path -or $path.StartsWith($owner.Path + '/')) { throw "Overlapping incompatible property ownership between '$path' and keyed property at '$($owner.Path)'." }
+        }
         foreach ($owner in $propertyOwners) {
           if ($owner.Path -ne $path -and ($path.StartsWith($owner.Path + '/') -or $owner.Path.StartsWith($path + '/'))) {
             throw "Overlapping incompatible property ownership between '$($owner.Path)' ($($owner.Scope)) and '$path' ($($layer.Scope)). Own object leaves separately."
@@ -304,6 +310,24 @@ function Assert-UEToolSuiteWorkspaceLayersValid {
         if ($script:UEToolSuiteWorkspaceArrayIdentities.ContainsKey($path) -and $script:UEToolSuiteWorkspaceArrayIdentities[$path] -ne [string]$op.identityKey) {
           throw "Array '$path' uses identity '$($script:UEToolSuiteWorkspaceArrayIdentities[$path])', not '$($op.identityKey)'."
         }
+      }
+      if ([string]$op.op -in @('setKeyedProperty','removeKeyedProperty')) {
+        if (-not $script:UEToolSuiteWorkspaceArrayIdentities.ContainsKey($path) -or [string]$op.identityKey -cne $script:UEToolSuiteWorkspaceArrayIdentities[$path] -or [string]::IsNullOrWhiteSpace([string]$op.identityValue)) {
+          throw "Keyed property operation at '$path' requires a declared array identity and a nonempty identityValue."
+        }
+        $segments=@(ConvertFrom-UEToolSuiteJsonPointer ([string]$op.propertyPath))
+        if ($segments.Count -eq 0 -or $segments[0] -ceq [string]$op.identityKey) { throw "Invalid keyed property path '$($op.propertyPath)' at '$path'." }
+        foreach ($owner in $propertyOwners) {
+          if ($owner.Path -eq $path -or $owner.Path.StartsWith($path + '/')) { throw "Overlapping incompatible property ownership between '$($owner.Path)' and keyed property at '$path'." }
+        }
+      }
+      if ([string]$op.op -in @('upsertKeyedItem','removeKeyedItem','setKeyedProperty','removeKeyedProperty')) {
+        $leaf=if([string]$op.op -in @('setKeyedProperty','removeKeyedProperty')){[string]$op.propertyPath}else{''}
+        foreach($owner in $keyedOwners){
+          if($owner.Path -cne $path -or $owner.IdentityValue -cne [string]$op.identityValue){continue}
+          if($owner.Leaf -cne $leaf -and ($owner.Leaf -eq '' -or $leaf -eq '' -or $owner.Leaf.StartsWith($leaf+'/') -or $leaf.StartsWith($owner.Leaf+'/'))){throw "Overlapping keyed ownership at '$path' for '$($op.identityValue)'."}
+        }
+        $keyedOwners += [pscustomobject]@{Path=$path;IdentityValue=[string]$op.identityValue;Leaf=$leaf}
       }
       if ([string]$op.op -eq 'removeSemantic' -and ([string]$op.selector -ne 'activeUnrealEngineRoot')) {
         throw "Unknown semantic selector '$($op.selector)' at '$path'."
@@ -373,6 +397,8 @@ function Invoke-UEToolSuiteWorkspaceOperation {
     'addStringItem' { $r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path; $items=if($r.Exists){@($r.Value)}else{@()}; if(@($items|Where-Object{[string]$_ -ceq [string]$Operation.value}).Count -eq 0){$items+= [string]$Operation.value}; Set-UEToolSuiteWorkspacePointerValue $Workspace $path @($items); return }
     'removeStringItem' { $r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path; if($r.Exists){$items=@($r.Value|Where-Object{[string]$_ -cne [string]$Operation.value});Set-UEToolSuiteWorkspacePointerValue $Workspace $path @($items)}; return }
     'upsertKeyedItem' { $r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path;$items=if($r.Exists){@($r.Value)}else{@()};$idx=Get-UEToolSuiteArrayIndexByIdentity $items ([string]$Operation.identityKey) ([string]$Operation.identityValue) $path $Context;if($idx -ge 0){$items[$idx]=Copy-UEToolSuiteWorkspaceValue $Operation.value}else{$items+=Copy-UEToolSuiteWorkspaceValue $Operation.value};Set-UEToolSuiteWorkspacePointerValue $Workspace $path @($items);return }
+    'setKeyedProperty' { $r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path;if(-not$r.Exists){throw "Keyed array '$path' is missing."};$items=@($r.Value);$idx=Get-UEToolSuiteArrayIndexByIdentity $items ([string]$Operation.identityKey) ([string]$Operation.identityValue) $path $Context;if($idx-lt0){throw "Keyed item '$($Operation.identityValue)' is missing at '$path'."};Set-UEToolSuiteWorkspacePointerValue -Root ($items[$idx]) -Path ([string]$Operation.propertyPath) -Value $Operation.value;return }
+    'removeKeyedProperty' { $r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path;if(-not$r.Exists){throw "Keyed array '$path' is missing."};$items=@($r.Value);$idx=Get-UEToolSuiteArrayIndexByIdentity $items ([string]$Operation.identityKey) ([string]$Operation.identityValue) $path $Context;if($idx-lt0){throw "Keyed item '$($Operation.identityValue)' is missing at '$path'."};[void](Remove-UEToolSuiteWorkspacePointerValue -Root ($items[$idx]) -Path ([string]$Operation.propertyPath));return }
     'removeKeyedItem' { $r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path;if($r.Exists){$items=@($r.Value);$idx=Get-UEToolSuiteArrayIndexByIdentity $items ([string]$Operation.identityKey) ([string]$Operation.identityValue) $path $Context;if($idx -ge 0){$items=@($items|ForEach-Object -Begin{$j=0}-Process{if($j -ne $idx){$_};$j++});Set-UEToolSuiteWorkspacePointerValue $Workspace $path @($items)}};return }
     'removeSemantic' { $match=Get-UEToolSuiteSemanticMatches $Workspace $Context $Operation;if($match.Indices.Count -eq 1){$r=Get-UEToolSuiteWorkspacePointerResult $Workspace $path;$idx=$match.Indices[0];$items=@($r.Value|ForEach-Object -Begin{$j=0}-Process{if($j -ne $idx){$_};$j++});Set-UEToolSuiteWorkspacePointerValue $Workspace $path @($items)};return }
     default { throw "Unknown workspace operation '$($Operation.op)'." }
@@ -386,7 +412,7 @@ function Get-UEToolSuiteWorkspacePlan {
   $effective=Copy-UEToolSuiteWorkspaceValue $Pristine;$conflicts=@();$changes=@();$seen=@{}
   foreach($layer in $Layers){foreach($op in @($layer.Overlay.operations)){
     $identity=Get-UEToolSuiteWorkspaceOperationIdentity $op
-    $nonRemoval=[string]$op.op -in @('set','mergeObject','addStringItem','upsertKeyedItem')
+    $nonRemoval=[string]$op.op -in @('set','mergeObject','addStringItem','upsertKeyedItem','setKeyedProperty','removeKeyedProperty')
     if($nonRemoval -and $null -ne $PreviousPristine){
       $old=Get-UEToolSuiteWorkspacePointerResult $PreviousPristine ([string]$op.path);$new=Get-UEToolSuiteWorkspacePointerResult $Pristine ([string]$op.path)
       if([string]$op.op -eq 'upsertKeyedItem'){
@@ -394,6 +420,14 @@ function Get-UEToolSuiteWorkspacePlan {
         $oldIndex=Get-UEToolSuiteArrayIndexByIdentity $oldItems ([string]$op.identityKey) ([string]$op.identityValue) ([string]$op.path) $Context
         $newIndex=Get-UEToolSuiteArrayIndexByIdentity $newItems ([string]$op.identityKey) ([string]$op.identityValue) ([string]$op.path) $Context
         $old=[pscustomobject]@{Exists=($oldIndex-ge0);Value=$(if($oldIndex-ge0){$oldItems[$oldIndex]}else{$null})};$new=[pscustomobject]@{Exists=($newIndex-ge0);Value=$(if($newIndex-ge0){$newItems[$newIndex]}else{$null})}
+      }
+      elseif([string]$op.op -in @('setKeyedProperty','removeKeyedProperty')){
+        $oldItems=@();$newItems=@();if($old.Exists){$oldItems=@($old.Value)};if($new.Exists){$newItems=@($new.Value)}
+        $oldIndex=Get-UEToolSuiteArrayIndexByIdentity $oldItems ([string]$op.identityKey) ([string]$op.identityValue) ([string]$op.path) $Context
+        $newIndex=Get-UEToolSuiteArrayIndexByIdentity $newItems ([string]$op.identityKey) ([string]$op.identityValue) ([string]$op.path) $Context
+        $old=if($oldIndex-ge0){Get-UEToolSuiteWorkspacePointerResult -Root ($oldItems[$oldIndex]) -Path ([string]$op.propertyPath)}else{[pscustomobject]@{Exists=$false;Value=$null}}
+        $new=if($newIndex-ge0){Get-UEToolSuiteWorkspacePointerResult -Root ($newItems[$newIndex]) -Path ([string]$op.propertyPath)}else{[pscustomobject]@{Exists=$false;Value=$null}}
+        if($oldIndex-lt0 -or $newIndex-lt0){$conflicts += [pscustomobject]@{Path=[string]$op.path;PreviousUE=$null;NewUE=$null;Layer=$layer.Scope;Operation=$op;Resolution='The keyed item is missing from a regenerated workspace.'};continue}
       }
       elseif([string]$op.op -eq 'addStringItem'){
         $oldItems=if($old.Exists){@($old.Value)}else{@()};$newItems=if($new.Exists){@($new.Value)}else{@()};$oldPresent=@($oldItems|Where-Object{[string]$_ -ceq [string]$op.value}).Count-gt0;$newPresent=@($newItems|Where-Object{[string]$_ -ceq [string]$op.value}).Count-gt0;$old=[pscustomobject]@{Exists=$oldPresent;Value=$oldPresent};$new=[pscustomobject]@{Exists=$newPresent;Value=$newPresent}
@@ -511,16 +545,26 @@ function Get-UEToolSuiteWorkspaceArrayChanges {
     if($Path -eq '/folders'){$semantic=[ordered]@{op='removeSemantic';path='/folders';selector='activeUnrealEngineRoot'};try{$probe=Copy-UEToolSuiteWorkspaceValue ([ordered]@{folders=@($item)});if((Get-UEToolSuiteSemanticMatches $probe $Context $semantic).Indices.Count -eq 1){$ops+=$semantic;continue}}catch{}}
     $ops += [ordered]@{op='removeKeyedItem';path=$Path;identityKey=$key;identityValue=$id}
   }}
-  foreach($item in $afterItems){$id=[string]$item[$key];$idx=Get-UEToolSuiteArrayIndexByIdentity $beforeItems $key $id $Path $Context;if($idx -lt 0 -or -not(Test-UEToolSuiteWorkspaceValueEqual $beforeItems[$idx] $item)){$ops += [ordered]@{op='upsertKeyedItem';path=$Path;identityKey=$key;identityValue=$id;value=Copy-UEToolSuiteWorkspaceValue $item}}}
+  foreach($item in $afterItems){$id=[string]$item[$key];$idx=Get-UEToolSuiteArrayIndexByIdentity $beforeItems $key $id $Path $Context
+    if($idx -lt 0){$ops += [ordered]@{op='upsertKeyedItem';path=$Path;identityKey=$key;identityValue=$id;value=Copy-UEToolSuiteWorkspaceValue $item};continue}
+    if(-not(Test-UEToolSuiteWorkspaceValueEqual $beforeItems[$idx] $item)){
+      $changes=@(Get-UEToolSuiteWorkspaceDiffAtPath $beforeItems[$idx] $item '' $Context -ArrayAsValue)
+      foreach($change in $changes){
+        if([string]$change.op -eq 'set'){$ops += [ordered]@{op='setKeyedProperty';path=$Path;identityKey=$key;identityValue=$id;propertyPath=[string]$change.path;value=Copy-UEToolSuiteWorkspaceValue $change.value}}
+        elseif([string]$change.op -eq 'removeProperty'){$ops += [ordered]@{op='removeKeyedProperty';path=$Path;identityKey=$key;identityValue=$id;propertyPath=[string]$change.path}}
+        else{$ops += [ordered]@{op='upsertKeyedItem';path=$Path;identityKey=$key;identityValue=$id;value=Copy-UEToolSuiteWorkspaceValue $item};break}
+      }
+    }
+  }
   return @($ops)
 }
 
 function Get-UEToolSuiteWorkspaceDiffAtPath {
-  param($Before,$After,[string]$Path,$Context)
+  param($Before,$After,[string]$Path,$Context,[switch]$ArrayAsValue)
   $a=Get-UEToolSuiteWorkspacePointerResult $Before $Path;$b=Get-UEToolSuiteWorkspacePointerResult $After $Path
   if(-not$a.Exists -and -not$b.Exists){return @()};if($a.Exists -and -not$b.Exists){return @([ordered]@{op='removeProperty';path=$Path})}
-  if($b.Value -is [System.Collections.IList]){return @(Get-UEToolSuiteWorkspaceArrayChanges -Before $(if($a.Exists){$a.Value}else{@()}) -After $b.Value -Path $Path -Context $Context)}
-  if($b.Value -is [System.Collections.IDictionary]){$ops=@();$keys=@();if($a.Exists -and $a.Value -is [System.Collections.IDictionary]){$keys+=@($a.Value.Keys)};$keys+=@($b.Value.Keys);foreach($key in @($keys|Sort-Object -Unique)){$escaped=([string]$key -replace '~','~0') -replace '/','~1';$child=if($Path-eq''){"/$escaped"}else{"$Path/$escaped"};$ops+=Get-UEToolSuiteWorkspaceDiffAtPath $Before $After $child $Context};return @($ops)}
+  if($b.Value -is [System.Collections.IList]){if($ArrayAsValue){if(-not$a.Exists -or -not(Test-UEToolSuiteWorkspaceValueEqual $a.Value $b.Value)){return @([ordered]@{op='set';path=$Path;value=Copy-UEToolSuiteWorkspaceValue $b.Value})};return @()};return @(Get-UEToolSuiteWorkspaceArrayChanges -Before $(if($a.Exists){$a.Value}else{@()}) -After $b.Value -Path $Path -Context $Context)}
+  if($b.Value -is [System.Collections.IDictionary]){$ops=@();$keys=@();if($a.Exists -and $a.Value -is [System.Collections.IDictionary]){$keys+=@($a.Value.Keys)};$keys+=@($b.Value.Keys);foreach($key in @($keys|Sort-Object -Unique)){$escaped=([string]$key -replace '~','~0') -replace '/','~1';$child=if($Path-eq''){"/$escaped"}else{"$Path/$escaped"};$ops+=Get-UEToolSuiteWorkspaceDiffAtPath $Before $After $child $Context -ArrayAsValue:$ArrayAsValue};return @($ops)}
   if(-not$a.Exists -or -not(Test-UEToolSuiteWorkspaceValueEqual $a.Value $b.Value)){return @([ordered]@{op='set';path=$Path;value=Copy-UEToolSuiteWorkspaceValue $b.Value})};return @()
 }
 

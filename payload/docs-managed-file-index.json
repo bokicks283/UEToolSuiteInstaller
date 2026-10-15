@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "payloadVersion": "1.0.7",
+  "payloadVersion": "1.1.0",
   "generatedUtc": "2026-06-22T01:13:19Z",
   "files": [
     {
@@ -91,7 +91,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Settings.md",
       "category": "docs",
-      "sha256": "3a547235181e92295a18ad42b25115d2bdfaab847df33b636adf80f845b14082"
+      "sha256": "8d959658d6555c40413c4073d4c7da1bb22fca32a537f6e7bb2889da54036b1d"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CodingStandards/_category_.json",

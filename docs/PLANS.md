@@ -1,5 +1,20 @@
 # Execution plans
 
+## Keyed workspace property capture and 1.1.0 release (2026-10-15)
+
+Goal: capture a changed `preLaunchTask` without taking ownership of a generated launch configuration's machine-specific fields, using a reusable keyed-array property operation.
+
+Boundaries: settings runtime, workspace regression tests, managed command documentation, packaging/version manifests, and release publishing.
+
+Steps:
+
+- [x] Reproduce whole-item Team capture failure with a focused regression test.
+- [x] Add keyed-property capture, application, and leaf-level conflict checks.
+- [x] Run targeted settings, Unreal sync regeneration, and packaging suites and review the diff.
+- [ ] Bump to SemVer 1.1.0, run release gates, publish and verify the tag and asset.
+
+Invariants: Team never captures machine paths from unowned sibling fields; missing or duplicate keyed items stop before write; regenerated owned leaf changes conflict; generated sibling changes remain available.
+
 ## Build selection and generated VS Code tasks (2026-10-14)
 
 Goal: support project targets and debug configurations from `ue build`, a private saved selection, discoverable choices, and generated VS Code Build tasks that pass through UETools settings sync.

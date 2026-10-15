@@ -49,6 +49,26 @@ try{
   $badPointerRejected=$false;try{[void](Get-UEToolSuiteWorkspaceCaptureOperations $wholeBefore $wholeAfter @('/settings/bad~2escape') $ctx)}catch{$badPointerRejected=$_.Exception.Message -match "must be '~0' or '~1'"}
   Assert-True 'invalid JSON Pointer escapes are rejected with guidance' $badPointerRejected
 
+  $keyedBefore=[ordered]@{launch=[ordered]@{configurations=@([ordered]@{name='Game Debug';type='cppdbg';program='S:\Private\Game.exe';preLaunchTask='Old Build'})}}
+  $keyedAfter=Copy-UEToolSuiteWorkspaceValue $keyedBefore;$keyedAfter.launch.configurations[0].preLaunchTask='New Build'
+  $keyedOps=@(Get-UEToolSuiteWorkspaceCaptureOperations $keyedBefore $keyedAfter @('/launch/configurations') $ctx)
+  Assert-True 'capture owns only a changed property of a named configuration' ($keyedOps.Count -eq 1 -and $keyedOps[0].op -eq 'setKeyedProperty' -and $keyedOps[0].identityValue -eq 'Game Debug' -and $keyedOps[0].propertyPath -eq '/preLaunchTask' -and $keyedOps[0].value -eq 'New Build' -and -not (($keyedOps|ConvertTo-Json -Depth 20) -match 'Private'))
+  $keyedLayer=[pscustomobject]@{Scope='Team';Path='test';Overlay=[ordered]@{schemaVersion=1;scope='Team';operations=$keyedOps}}
+  $keyedPlan=Get-UEToolSuiteWorkspacePlan $keyedBefore $keyedBefore @($keyedLayer) $ctx
+  Assert-True 'keyed property overlay preserves generated sibling fields' (-not $keyedPlan.HasConflicts -and $keyedPlan.Effective.launch.configurations[0].program -eq 'S:\Private\Game.exe' -and $keyedPlan.Effective.launch.configurations[0].preLaunchTask -eq 'New Build')
+  $keyedRegenerated=Copy-UEToolSuiteWorkspaceValue $keyedBefore;$keyedRegenerated.launch.configurations[0].program='D:\Other\Game.exe'
+  $keyedRegenPlan=Get-UEToolSuiteWorkspacePlan $keyedRegenerated $keyedBefore @($keyedLayer) $ctx
+  Assert-True 'unowned keyed sibling can regenerate without conflict' (-not $keyedRegenPlan.HasConflicts -and $keyedRegenPlan.Effective.launch.configurations[0].program -eq 'D:\Other\Game.exe')
+  $keyedRegenerated.launch.configurations[0].preLaunchTask='Engine New Build'
+  $keyedConflict=Get-UEToolSuiteWorkspacePlan $keyedRegenerated $keyedBefore @($keyedLayer) $ctx
+  Assert-True 'regenerated owned keyed property conflicts' $keyedConflict.HasConflicts ((@($keyedConflict.Conflicts)|ConvertTo-Json -Depth 10)+" before=$($keyedBefore.launch.configurations[0].preLaunchTask) after=$($keyedRegenerated.launch.configurations[0].preLaunchTask)")
+  $keyedMissing=[ordered]@{launch=[ordered]@{configurations=@()}};$missingRejected=$false
+  try{$missingRejected=(Get-UEToolSuiteWorkspacePlan $keyedMissing $keyedBefore @($keyedLayer) $ctx).HasConflicts}catch{$missingRejected=$_.Exception.Message -match 'missing'}
+  Assert-True 'missing keyed item stops application' $missingRejected
+  $keyedOverlap=[pscustomobject]@{Scope='Team';Path='test';Overlay=[ordered]@{schemaVersion=1;scope='Team';operations=@($keyedOps[0],[ordered]@{op='upsertKeyedItem';path='/launch/configurations';identityKey='name';identityValue='Game Debug';value=$keyedAfter.launch.configurations[0]})}}
+  $overlapRejected=$false;try{Assert-UEToolSuiteWorkspaceLayersValid @($keyedOverlap)}catch{$overlapRejected=$_.Exception.Message -match 'Overlapping keyed ownership'}
+  Assert-True 'whole item and keyed property ownership cannot overlap' $overlapRejected
+
   $oldNoAutorun=$env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN
   try{
     $env:UE_TOOLS_UNREAL_RUNTIME_NO_AUTORUN='1';$unrealModule=Import-Module $unrealModulePath -Force -DisableNameChecking -PassThru
@@ -124,6 +144,18 @@ try{
   Assert-True 'interactive whole-workspace capture detects a removed Engine folder' ($interactiveCapture.ExitCode -eq 0 -and $interactiveCapture.Output -match 'REMOVAL removeSemantic /folders' -and $interactiveCapture.Output -match 'Capture \[Team\]: removeSemantic /folders' -and -not(Test-Path $captureCtx.Paths.Team)) $interactiveCapture.Output
   Invoke-UEToolSuiteWorkspaceCapture -RepoRoot $capture.Root -WorkspacePath $capture.Workspace -Scope Team -Path /folders -NonInteractive;$capturedOverlay=Read-UEToolSuiteWorkspaceJsonFile $captureCtx.Paths.Team
   Assert-True 'capture records portable Engine removal rather than absolute path' (@($capturedOverlay.operations|Where-Object{$_.op -eq 'removeSemantic' -and $_.selector -eq 'activeUnrealEngineRoot'}).Count -eq 1 -and (Get-Content $captureCtx.Paths.Team -Raw) -notmatch [regex]::Escape($engine))
+
+  $launchCapture=New-Fixture 'launch-capture' $engine
+  $launchPristine=Read-UEToolSuiteWorkspaceJsonFile $launchCapture.Workspace
+  $launchPristine.launch.configurations=@([ordered]@{name='Game Debug';type='cppdbg';program='S:\Private\Game.exe';preLaunchTask='Old Build'})
+  Write-JsonFile $launchCapture.Workspace $launchPristine
+  [void](Invoke-UEToolSuiteWorkspaceSync -RepoRoot $launchCapture.Root -WorkspacePath $launchCapture.Workspace -PreviousWorkspaceContent (Get-Content -LiteralPath $launchCapture.Workspace -Raw) -NonInteractive)
+  $launchEdited=Read-UEToolSuiteWorkspaceJsonFile $launchCapture.Workspace;$launchEdited.launch.configurations[0].preLaunchTask='New Build';Write-JsonFile $launchCapture.Workspace $launchEdited
+  Invoke-UEToolSuiteWorkspaceCapture -RepoRoot $launchCapture.Root -WorkspacePath $launchCapture.Workspace -Scope Team -Path /launch/configurations -NonInteractive
+  $launchContext=Resolve-UEToolSuiteWorkspaceSettingsContext $launchCapture.Root $launchCapture.Workspace
+  $launchOverlay=Read-UEToolSuiteWorkspaceJsonFile $launchContext.Paths.Team
+  $launchEffective=Read-UEToolSuiteWorkspaceJsonFile $launchCapture.Workspace
+  Assert-True 'Team capture persists only named launch property through public workflow' (@($launchOverlay.operations).Count -eq 1 -and $launchOverlay.operations[0].op -eq 'setKeyedProperty' -and $launchEffective.launch.configurations[0].preLaunchTask -eq 'New Build' -and (Get-Content -LiteralPath $launchContext.Paths.Team -Raw) -notmatch 'S:\\Private')
 
   $private=New-Fixture 'privacy' $engine;$privateCtx=Resolve-UEToolSuiteWorkspaceSettingsContext $private.Root $private.Workspace;Write-JsonFile $privateCtx.Paths.Team ([ordered]@{schemaVersion=1;scope='Team';operations=@([ordered]@{op='set';path='/settings/tool.path';value='C:\Private\tool.exe'})});$rejected=$false;try{Assert-UEToolSuiteWorkspaceLayersValid (Get-UEToolSuiteWorkspaceLayers $privateCtx)}catch{$rejected=$true};Assert-True 'team layer rejects machine absolute path' $rejected
   Write-JsonFile $privateCtx.Paths.Team ([ordered]@{schemaVersion=1;scope='Team';operations=@()});Write-JsonFile $privateCtx.Paths.User ([ordered]@{schemaVersion=1;scope='User';operations=@([ordered]@{op='set';path='/settings/tool.path';value='C:\Private\tool.exe'})});$accepted=$true;try{Assert-UEToolSuiteWorkspaceLayersValid (Get-UEToolSuiteWorkspaceLayers $privateCtx)}catch{$accepted=$false};Assert-True 'user layer permits machine absolute path' $accepted
