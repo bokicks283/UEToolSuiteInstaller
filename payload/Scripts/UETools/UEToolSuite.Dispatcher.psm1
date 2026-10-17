@@ -51,6 +51,7 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     "  update [--yes]          Update this project to the latest published release."
     "  build [sync options]    Run Unreal build/sync flow."
     "  settings <command>      Synchronize owned VS Code workspace settings."
+    "  mp <command>            Run local manual multiplayer sessions."
     ""
     "Domain commands:"
     "  docs <args...>          Route to docs tooling."
@@ -68,6 +69,7 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     "  ue-tools update"
     "  ue-tools build -DryRun"
     "  ue-tools settings sync -DryRun"
+    "  ue-tools mp play -Map /Game/Maps/Arena"
     "  ue-tools docs help"
     "  ue-tools ai prompt -Task `"Investigate UnrealSync failures`" -IncludePrivate"
     "  ue-tools git status"
@@ -117,6 +119,9 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
     "settings" {
       $settingsTopic = if ($null -ne $TopicArguments -and $TopicArguments.Count -gt 0) { [string]$TopicArguments[0] } else { "" }
       return @(Get-UEToolSuiteSettingsHelpText -Subcommand $settingsTopic)
+    }
+    "mp" {
+      return @("Usage: ue mp play [-Map /Game/Maps/YourMap] [-UProjectPath path] [-WorkspacePath path] | stop | logs")
     }
     "docs" {
       return @(
@@ -360,6 +365,10 @@ function Invoke-UEToolSuiteDispatcher {
     }
     "settings" {
       Invoke-UEToolSuiteSettingsCommand -RepoRoot $RepoRoot -CommandArguments $remaining
+      return
+    }
+    "mp" {
+      Invoke-UEToolSuiteMpCommand -RepoRoot $RepoRoot -CommandArguments $remaining
       return
     }
     "docs" {

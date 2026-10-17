@@ -47,6 +47,7 @@ The automatic bootstrap requires Git, PowerShell 7, and a published Git tag matc
 | `version` | Fetch the latest stable package tag and compare it with this project's declared version. | This page |
 | `update` | Download and install the latest stable release into this project after confirmation. | This page |
 | `build` | Run Unreal project-file regeneration, settings reconciliation, and the selected target build. | [`ue build`](./Build.md) |
+| `mp` | Launch and manage a local host/client session for manual multiplayer testing. | [`ue mp`](./Multiplayer.md) |
 | `settings` | Manage provenance-aware `.code-workspace` ownership with Team, User, and Project layers. | [`ue settings`](./Settings.md) |
 | `docs` | Create, organize, validate, run, and administer the local Docusaurus documentation site. | [`ue docs`](./Docs.md) |
 | `ai` | Generate a repository-aware AI startup prompt. | [`ue ai`](./AI.md) |

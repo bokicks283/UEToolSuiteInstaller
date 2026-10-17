@@ -19,6 +19,7 @@ if ($MyInvocation.InvocationName -ne '.') {
       "UEToolSuite.Core.psm1",
       "UEToolSuite.Settings.psm1",
       "UEToolSuite.Unreal.psm1",
+      "UEToolSuite.Multiplayer.psm1",
       "UEToolSuite.Docs.psm1",
       "UEToolSuite.Art.psm1",
       "UEToolSuite.AI.psm1",

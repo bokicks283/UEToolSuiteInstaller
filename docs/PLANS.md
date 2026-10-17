@@ -1,5 +1,21 @@
 # Execution plans
 
+## Minimal multiplayer development launcher (2026-10-16)
+
+Goal: launch two windowed Unreal game processes for manual listen-server testing, and manage only their recorded session.
+
+Boundaries: dispatcher and runtime module, managed manifest, CLI documentation, scratch process tests.
+
+Steps:
+
+- [x] Add focused tests for map validation, Steam configuration, and stale process ownership.
+- [x] Implement `mp play`, `mp stop`, and `mp logs` with shared project and engine discovery.
+- [x] Document manual testing and run focused plus packaging checks.
+
+Validation: focused headless test passed; packaging contracts passed (599 assertions). Unreal launch and connection remain for manual project testing.
+
+Invariant: a stale or mismatched process record never authorizes termination.
+
 ## Keyed workspace property capture and 1.1.0 release (2026-10-15)
 
 Goal: capture a changed `preLaunchTask` without taking ownership of a generated launch configuration's machine-specific fields, using a reusable keyed-array property operation.

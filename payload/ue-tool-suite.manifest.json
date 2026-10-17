@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "payloadVersion": "1.1.0",
+  "payloadVersion": "1.2.0",
   "bootstrap": {
     "repositoryUrl": "https://github.com/bokicks283/UEToolSuiteInstaller.git"
   },
@@ -31,6 +31,7 @@
       "Scripts/UETools/UEToolSuite.Settings.psm1",
       "Scripts/UETools/UEToolSuite.Update.psm1",
       "Scripts/UETools/UEToolSuite.Unreal.psm1",
+      "Scripts/UETools/UEToolSuite.Multiplayer.psm1",
       "Scripts/Unreal/ProjectContext.ps1",
       "Scripts/Docs/VSCodeBridge/extension.js",
       "Scripts/Docs/VSCodeBridge/package.json"

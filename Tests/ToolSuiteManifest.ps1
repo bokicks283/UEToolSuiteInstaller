@@ -45,6 +45,13 @@ function Get-UEToolSuiteTestManifest {
 
   @(
     (New-UEToolSuiteTestEntry `
+      -Id "multiplayer-launcher" `
+      -Name "Multiplayer Launcher" `
+      -Path "Tests/Test-MultiplayerLauncher.ps1" `
+      -Category "runtime" `
+      -Description "Checks manual multiplayer CLI validation and session safety without launching Unreal.")
+
+    (New-UEToolSuiteTestEntry `
       -Id "installer" `
       -Name "Installer Regression Suite" `
       -Path "Tests/Test-Install-UEToolSuite.ps1" `
