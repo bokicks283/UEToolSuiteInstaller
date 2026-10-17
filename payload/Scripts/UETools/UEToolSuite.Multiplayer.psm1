@@ -14,6 +14,12 @@ function Get-UEToolSuiteMpSession {
   catch { throw "Invalid multiplayer session record '$path': $($_.Exception.Message)" }
 }
 
+function ConvertTo-UEToolSuiteMpStartUtc {
+  param([Parameter(Mandatory)]$Value)
+  if ($Value -is [datetime]) { return $Value.ToUniversalTime() }
+  return [datetime]::Parse([string]$Value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+}
+
 function Test-UEToolSuiteMpProcessOwned {
   param([Parameter(Mandatory)]$Record)
   try {
@@ -22,20 +28,97 @@ function Test-UEToolSuiteMpProcessOwned {
     $expected = [IO.Path]::GetFullPath([string]$Record.Executable)
     if (-not [string]::Equals([IO.Path]::GetFullPath([string]$process.ExecutablePath), $expected, [StringComparison]::OrdinalIgnoreCase)) { return $false }
     $actualStart = if ($process.CreationDate -is [datetime]) { $process.CreationDate.ToUniversalTime() } else { [Management.ManagementDateTimeConverter]::ToDateTime([string]$process.CreationDate).ToUniversalTime() }
-    $expectedStart = [datetime]::Parse([string]$Record.StartUtc, [Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+    $expectedStart = ConvertTo-UEToolSuiteMpStartUtc -Value $Record.StartUtc
     return ([Math]::Abs(($actualStart - $expectedStart).TotalSeconds) -lt 2)
   }
   catch { return $false }
 }
 
 function Assert-UEToolSuiteMpLocalMode {
-  param([Parameter(Mandatory)][string]$RepoRoot)
+  param([Parameter(Mandatory)][string]$RepoRoot, [string]$Network)
+  if ($Network -eq 'LAN') { return }
   $config = Join-Path $RepoRoot 'Config\DefaultEngine.ini'
   if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return }
   $text = Get-Content -LiteralPath $config -Raw
   if ($text -match '(?im)^\s*DefaultPlatformService\s*=\s*Steam\s*$' -or
       $text -match '(?im)^\s*\+?NetDriverDefinitions\s*=.*SteamNetDriver') {
     throw 'This project configures Steam networking in DefaultEngine.ini. Two local game instances may require separate Steam accounts or project-specific session settings. The mp launcher does not override networking configuration; use your project-supported local mode and retry.'
+  }
+}
+
+function ConvertTo-UEToolSuiteMpPlayOptions {
+  param([string[]]$Arguments = @())
+  $options = @{}
+  for ($i = 0; $i -lt $Arguments.Count; $i += 2) {
+    $key = [string]$Arguments[$i]
+    if ($key -notin @('-Map','-UProjectPath','-WorkspacePath','-Network') -or $i + 1 -ge $Arguments.Count -or [string]::IsNullOrWhiteSpace([string]$Arguments[$i + 1])) {
+      throw 'Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path]'
+    }
+    if ($options.ContainsKey($key.ToLowerInvariant())) { throw "Duplicate mp option: $key" }
+    $options[$key.ToLowerInvariant()] = [string]$Arguments[$i + 1]
+  }
+  $network = $options['-network']
+  if ($network -and $network -ine 'LAN') { throw "Unsupported network mode '$network'. Supported mode: LAN. Omit -Network for the existing project configuration." }
+  [pscustomobject]@{
+    Map = $options['-map']
+    UProjectPath = $options['-uprojectpath']
+    WorkspacePath = $options['-workspacepath']
+    Network = $(if ($network) { 'LAN' } else { $null })
+  }
+}
+
+function Get-UEToolSuiteMpLaunchArguments {
+  param(
+    [Parameter(Mandatory)][string]$UProjectPath,
+    [string]$HostMap,
+    [Parameter(Mandatory)][string]$HostLog,
+    [Parameter(Mandatory)][string]$ClientLog,
+    [string]$Network,
+    $WindowLayout
+  )
+  $project = '"' + $UProjectPath + '"'
+  $common = '-game -windowed -UEToolSuiteMP -log -nosplash'
+  $networkArguments = if ($Network -eq 'LAN') {
+    ' -ini:Engine:[OnlineSubsystem]:DefaultPlatformService=Null -ini:Engine:[OnlineSubsystemSteam]:bEnabled=false -NetDriverOverrides=/Script/OnlineSubsystemUtils.IpNetDriver'
+  } else { '' }
+  $hostWindow = ''
+  $clientWindow = ''
+  if ($null -ne $WindowLayout) {
+    $windowSettings = ',[/Script/EngineSettings.GeneralProjectSettings]:bUseBorderlessWindow=false'
+    $hostWindow = ' -ini:Game:[/Script/EngineSettings.GeneralProjectSettings]:ProjectDisplayedTitle=MP_HOST' + $windowSettings + [string]$WindowLayout.Host
+    $clientWindow = ' -ini:Game:[/Script/EngineSettings.GeneralProjectSettings]:ProjectDisplayedTitle=MP_CLIENT' + $windowSettings + [string]$WindowLayout.Client
+  }
+  [pscustomobject]@{
+    Host = "$project $common " + $(if ($HostMap) { $HostMap } else { '?listen' }) + " -port=7777 -abslog=`"$HostLog`"$networkArguments$hostWindow"
+    Client = "$project 127.0.0.1:7777 $common -abslog=`"$ClientLog`"$networkArguments$clientWindow"
+  }
+}
+
+function Get-UEToolSuiteMpWindowLayout {
+  param([object[]]$Screens = @())
+  if ($Screens.Count -lt 2) { return [pscustomobject]@{ Host = ''; Client = '' } }
+  $primary = @($Screens | Where-Object { $_.Primary } | Select-Object -First 1)
+  $hostScreen = if ($primary.Count) { $primary[0] } else { $Screens[0] }
+  $clientScreen = @($Screens | Where-Object { -not [object]::ReferenceEquals($_, $hostScreen) } | Select-Object -First 1)[0]
+  if (-not $clientScreen -or [object]::ReferenceEquals($hostScreen, $clientScreen)) { $clientScreen = $Screens[1] }
+  $positions = @()
+  foreach ($screen in @($hostScreen, $clientScreen)) {
+    $area = $screen.WorkingArea
+    $width = [Math]::Min(1280, [Math]::Max(1, [int]$area.Width - 40))
+    $height = [Math]::Min(720, [Math]::Max(1, [int]$area.Height - 40))
+    $positions += " -WinX=$([int]$area.X + 20) -WinY=$([int]$area.Y + 20) -ResX=$width -ResY=$height"
+  }
+  [pscustomobject]@{ Host = $positions[0]; Client = $positions[1] }
+}
+
+function Get-UEToolSuiteMpScreens {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+    return @([System.Windows.Forms.Screen]::AllScreens)
+  }
+  catch {
+    Write-Warning "Could not read monitor layout; game windows will still start in windowed mode: $($_.Exception.Message)"
+    return @()
   }
 }
 
@@ -60,7 +143,7 @@ function Invoke-UEToolSuiteMpCommand {
   $tail = @($CommandArguments | Select-Object -Skip 1)
   $statePath = Get-UEToolSuiteMpStatePath -RepoRoot $RepoRoot
   if ($verb -in @('help','--help','-help','-h')) {
-    'Usage: ue mp play [-Map /Game/Maps/YourMap] [-UProjectPath path] [-WorkspacePath path] | stop | logs'
+    'Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path] | stop | logs'
     return
   }
   if ($verb -in @('stop','logs')) {
@@ -72,31 +155,24 @@ function Invoke-UEToolSuiteMpCommand {
       "Client log: $($session.ClientLog)"
       return
     }
-    foreach ($record in @($session.Client, $session.Host)) {
+    foreach ($role in @('Client', 'Host')) {
+      $record = $session.$role
       if (Test-UEToolSuiteMpProcessOwned -Record $record) {
         Stop-Process -Id ([int]$record.Pid) -ErrorAction Stop
-        "Stopped owned process $($record.Pid)."
+        "Stopped owned $role process $($record.Pid)."
       }
-      else { "Process $($record.Pid) is absent or no longer matches this session; skipped." }
+      else { "$role process $($record.Pid) is absent or no longer matches this session; skipped." }
     }
     Remove-Item -LiteralPath $statePath -Force
     return
   }
   if ($verb -ne 'play') { throw "Unknown mp subcommand '$verb'. Run 'ue mp help'." }
-  $options = @{}
-  for ($i = 0; $i -lt $tail.Count; $i += 2) {
-    $key = [string]$tail[$i]
-    if ($key -notin @('-Map','-UProjectPath','-WorkspacePath') -or $i + 1 -ge $tail.Count -or [string]::IsNullOrWhiteSpace([string]$tail[$i + 1])) {
-      throw 'Usage: ue mp play [-Map /Game/Maps/YourMap] [-UProjectPath path] [-WorkspacePath path]'
-    }
-    if ($options.ContainsKey($key.ToLowerInvariant())) { throw "Duplicate mp option: $key" }
-    $options[$key.ToLowerInvariant()] = [string]$tail[$i + 1]
-  }
-  $map = $options['-map']
+  $options = ConvertTo-UEToolSuiteMpPlayOptions -Arguments $tail
+  $map = $options.Map
   if ($map) { $hostMap = ConvertTo-UEToolSuiteMpMapArgument -Map $map }
   else { $hostMap = $null }
-  $context = Get-ProjectContext -RepoRoot $RepoRoot -UProjectPath $options['-uprojectpath'] -WorkspacePath $options['-workspacepath']
-  Assert-UEToolSuiteMpLocalMode -RepoRoot $RepoRoot
+  $context = Get-ProjectContext -RepoRoot $RepoRoot -UProjectPath $options.UProjectPath -WorkspacePath $options.WorkspacePath
+  Assert-UEToolSuiteMpLocalMode -RepoRoot $RepoRoot -Network $options.Network
   $existing = Get-UEToolSuiteMpSession -RepoRoot $RepoRoot
   if ($existing) { throw "A multiplayer session record already exists at '$statePath'. Run 'ue mp stop' before playing again." }
   $attempts = [Collections.Generic.List[string]]::new()
@@ -109,10 +185,10 @@ function Invoke-UEToolSuiteMpCommand {
   New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null
   $hostLog = Join-Path $sessionDir 'host.log'
   $clientLog = Join-Path $sessionDir 'client.log'
-  $project = '"' + $context.UProjectPath + '"'
-  $common = '-game -windowed -log -nosplash'
-  $hostArgs = "$project $common " + $(if ($hostMap) { $hostMap } else { '?listen' }) + " -port=7777 -abslog=`"$hostLog`""
-  $clientArgs = "$project 127.0.0.1:7777 $common -abslog=`"$clientLog`""
+  $windowLayout = Get-UEToolSuiteMpWindowLayout -Screens @(Get-UEToolSuiteMpScreens)
+  $launch = Get-UEToolSuiteMpLaunchArguments -UProjectPath $context.UProjectPath -HostMap $hostMap -HostLog $hostLog -ClientLog $clientLog -Network $options.Network -WindowLayout $windowLayout
+  $hostArgs = $launch.Host
+  $clientArgs = $launch.Client
   $hostProcess = $null
   $clientProcess = $null
   try {
@@ -147,4 +223,4 @@ function Invoke-UEToolSuiteMpCommand {
   }
 }
 
-Export-ModuleMember -Function Invoke-UEToolSuiteMpCommand, Get-UEToolSuiteMpStatePath, Get-UEToolSuiteMpSession, Test-UEToolSuiteMpProcessOwned, Assert-UEToolSuiteMpLocalMode, ConvertTo-UEToolSuiteMpMapArgument
+Export-ModuleMember -Function Invoke-UEToolSuiteMpCommand, Get-UEToolSuiteMpStatePath, Get-UEToolSuiteMpSession, Test-UEToolSuiteMpProcessOwned, Assert-UEToolSuiteMpLocalMode, ConvertTo-UEToolSuiteMpMapArgument, ConvertTo-UEToolSuiteMpPlayOptions, Get-UEToolSuiteMpLaunchArguments, Get-UEToolSuiteMpWindowLayout

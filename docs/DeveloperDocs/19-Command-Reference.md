@@ -22,6 +22,12 @@ This file lists commands that are explicitly visible from the current repository
 | Narrow named suite | repo root | `pwsh` | `pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -Name docs-tools -FailFast` | Runs the selected suite only | Usually yes |
 | Mutating exclusive suite | repo root | `pwsh` | `pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\Tests\Run-UEToolSuiteTests.ps1 -IncludeExclusive -Name ue-sync-automated -FailFast` | Can mutate test fixtures and expects exclusive access | No |
 
+## Multiplayer launcher
+
+`ue mp play -Map /Game/Map/YourGameplayMap -Network LAN` launches a windowed listen host and local client with the Null online subsystem, Steam disabled, and `IpNetDriver` selected through process arguments. The same three overrides are passed to both processes. `-Network LAN` is explicit and case-insensitive; without it, existing Steam configuration safety checks still apply. `ue mp logs` reports separate logs, and `ue mp stop` checks recorded process identity before stopping either process. The launcher never edits project configuration. This LAN path tests local networking, not Steam sessions; gameplay validation is manual.
+
+The multiplayer module requests process-local `MP_HOST`/`MP_CLIENT` game titles and a framed window through `Game` configuration overrides. On a multi-screen system, it passes `-WinX`, `-WinY`, `-ResX`, and `-ResY` to request separate screen positions. `-windowed` and `-UEToolSuiteMP` are passed on every launch. `mp stop` compares UTC process start times correctly after JSON loading while retaining its recorded PID and executable checks. Projects can use the marker when applying saved video options to honor command-line window mode and resolution overrides only for multiplayer tool launches. Title and placement still require manual Unreal validation.
+
 ## Docs CLI commands
 
 These commands run inside an installed repo through `Scripts/ue-tools.ps1`, which imports `UEToolSuite.Docs.psm1` and dispatches to `Invoke-DocsToolsMain`.
@@ -59,9 +65,9 @@ These commands run inside an installed repo through `Scripts/ue-tools.ps1`, whic
 
 | Purpose | Working dir | Exact command | Side effects |
 |---|---|---|---|
-| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.2.0` | Publishes GUI EXE under `dist/` |
-| Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.2.0 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
-| Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.2.0` | Runs release gates, builds installer, pushes annotated tag, and creates release |
+| Build GUI installer EXE | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-InstallerExe.ps1 -Version 1.3.0` | Publishes GUI EXE under `dist/` |
+| Validate local release preflight | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.3.0 -ValidateOnly` | Fetches `origin/main`; does not test, build, tag, or publish |
+| Publish GitHub Release locally | repo root | `pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Publish-GitHubRelease.ps1 -Version 1.3.0` | Runs release gates, builds installer, pushes annotated tag, and creates release |
 
 ## Verification and troubleshooting commands
 

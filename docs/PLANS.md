@@ -1,5 +1,62 @@
 # Execution plans
 
+## Multiplayer launcher 1.3.0 release (2026-10-17)
+
+Goal: publish the validated LAN and window-role launcher updates with a matching installer version.
+
+- [x] Review the two repository diffs and commit the game-side opt-in on `fix/client-bugs`.
+- [x] Bump all release-coupled versions to 1.3.0 and rerun focused and packaging tests.
+- [ ] Commit and push suite `main`, run the release preflight and publisher, then verify tag and asset.
+
+Manual acceptance: the user confirmed the updated multiplayer launch succeeded. The game-side opt-in stays in the CrimeGame repository; the reusable suite only passes a generic marker.
+
+## Multiplayer title visibility and window-mode diagnosis (2026-10-17)
+
+Goal: correct the launcher title override and establish why windowed startup requests do not persist in the user's game.
+
+- [x] Reproduce the wrong config category with a focused argument regression.
+- [x] Use Unreal's `Game` config category for the title and framed-window setting.
+- [x] Trace the project's saved video settings application without changing its files.
+- [x] Run focused and packaging checks; user will verify actual game windows manually.
+
+Finding: the project calls `UGameUserSettings::ApplySettings(false)` after loading saved display options, which explicitly disables command-line override checking. A reusable launcher cannot force that project to keep windowed mode with startup arguments alone.
+
+Validation: focused multiplayer script passed; packaging contracts passed (599 assertions); no gameplay launch. Visual title and window mode remain for manual verification.
+
+Follow-up: the game deliberately makes its options save authoritative during normal launches. With the user's later authorization, the launcher now passes `-UEToolSuiteMP` and the game checks that marker to let `ApplySettings` honor Unreal's window arguments only in multiplayer tool processes. The options save remains unchanged. The focused launcher test, packaging contracts (599 assertions), and `AmericanCartelEditor Win64 Development` build passed. Manual window verification remains pending.
+
+## Multiplayer launcher window layout and session stop (2026-10-17)
+
+Goal: make host/client roles visually clear, place windows on separate screens when available, and correctly stop the recorded processes after session JSON loading.
+
+Boundaries: multiplayer runtime, scratch process tests, managed CLI docs and index.
+
+Steps:
+
+- [x] Reproduce the JSON UTC start-time mismatch and add role/layout/stop regression cases.
+- [x] Add process-specific title and monitor launch arguments with safe session matching.
+- [x] Run focused and packaging checks; leave Unreal gameplay to the user.
+
+Validation: focused multiplayer suite PASS=1 FAIL=0 (including a real background process and JSON session round trip), packaging contracts PASS=599 FAIL=0, and `git diff --check` passed. Title and monitor placement remain for manual Unreal verification.
+
+Invariant: stop only targets the recorded PID when executable and UTC start time still match.
+
+## Explicit LAN mode for multiplayer launcher (2026-10-17)
+
+Goal: allow `ue mp play -Network LAN` for local debugging of Steam-configured projects using the three manually verified process arguments.
+
+Boundaries: multiplayer runtime and dispatcher help, scratch regression tests, managed CLI documentation and docs index.
+
+Steps:
+
+- [x] Reproduce the missing LAN option and Steam rejection with focused tests.
+- [x] Add explicit LAN parsing and shared host/client argument construction.
+- [x] Update CLI and developer docs, then run focused and packaging checks.
+
+Validation: multiplayer launcher suite PASS=1 FAIL=0; packaging contracts PASS=599 FAIL=0; public help and unsupported mode error checked; `git diff --check` passed. Unreal gameplay remains for manual validation.
+
+Invariant: calls without `-Network` retain existing launch arguments and Steam validation; no project configuration files are written.
+
 ## Minimal multiplayer development launcher (2026-10-16)
 
 Goal: launch two windowed Unreal game processes for manual listen-server testing, and manage only their recorded session.

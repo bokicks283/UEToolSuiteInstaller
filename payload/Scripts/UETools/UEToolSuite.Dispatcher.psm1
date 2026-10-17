@@ -69,7 +69,7 @@ function Get-UEToolSuiteDispatcherRootHelpText {
     "  ue-tools update"
     "  ue-tools build -DryRun"
     "  ue-tools settings sync -DryRun"
-    "  ue-tools mp play -Map /Game/Maps/Arena"
+    "  ue-tools mp play -Map /Game/Maps/Arena -Network LAN"
     "  ue-tools docs help"
     "  ue-tools ai prompt -Task `"Investigate UnrealSync failures`" -IncludePrivate"
     "  ue-tools git status"
@@ -121,7 +121,7 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
       return @(Get-UEToolSuiteSettingsHelpText -Subcommand $settingsTopic)
     }
     "mp" {
-      return @("Usage: ue mp play [-Map /Game/Maps/YourMap] [-UProjectPath path] [-WorkspacePath path] | stop | logs")
+      return @("Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path] | stop | logs")
     }
     "docs" {
       return @(
