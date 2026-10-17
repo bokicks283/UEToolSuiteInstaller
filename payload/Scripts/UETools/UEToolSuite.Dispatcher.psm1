@@ -121,7 +121,7 @@ function Get-UEToolSuiteDispatcherDomainHelpText {
       return @(Get-UEToolSuiteSettingsHelpText -Subcommand $settingsTopic)
     }
     "mp" {
-      return @("Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path] | stop | logs")
+      return @("Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path] | summary [-Top N] [-LogDir path] | stop | logs")
     }
     "docs" {
       return @(

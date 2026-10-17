@@ -10,6 +10,21 @@ Goal: publish the validated LAN and window-role launcher updates with a matching
 
 Manual acceptance: the user confirmed the updated multiplayer launch succeeded. The game-side opt-in stays in the CrimeGame repository; the reusable suite only passes a generic marker.
 
+## Multiplayer log summary command (2026-10-17)
+
+Goal: add `ue mp summary [-Top N] [-LogDir path]` to summarize recorded host/client logs without changing source logs.
+
+Boundaries: multiplayer runtime, focused synthetic tests, dispatcher help, managed CLI docs, payload packaging.
+
+Steps:
+
+- [x] Add focused tests for streamed counts, normalization, ensures, malformed/missing logs, history, and existing commands.
+- [x] Implement deterministic bounded grouping and current/recent session selection.
+- [x] Update CLI help and managed documentation.
+- [x] Run focused multiplayer and packaging-contract checks; review the diff.
+
+Invariants: never modify input logs; explicit historical directories are supported; only volatile identifiers normalize, while distinct RPCs, classes, rows, and failure reasons remain separate.
+
 ## Multiplayer title visibility and window-mode diagnosis (2026-10-17)
 
 Goal: correct the launcher title override and establish why windowed startup requests do not persist in the user's game.

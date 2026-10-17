@@ -59,6 +59,55 @@ try {
   @{ Host = @{ Pid = 2147483647; Executable = 'C:\missing.exe'; StartUtc = [datetime]::UtcNow.ToString('o') }; Client = @{ Pid = 2147483646; Executable = 'C:\missing.exe'; StartUtc = [datetime]::UtcNow.ToString('o') }; HostLog = 'C:\Logs\host.log'; ClientLog = 'C:\Logs\client.log' } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $statePath
   $logs = @(Invoke-UEToolSuiteMpCommand -RepoRoot $scratch -CommandArguments @('logs')) -join ' '
   if ($logs -notlike '*C:\Logs\host.log*' -or $logs -notlike '*C:\Logs\client.log*') { throw 'Session logs output changed.' }
+  $fixtureDir = Join-Path $scratch 'historical-session'
+  New-Item -ItemType Directory -Path $fixtureDir -Force | Out-Null
+  $hostFixture = @(
+    '[2026.10.17-15.00.00:000][  0] LogNet: Warning: No owning connection for actor BP_Vehicle_ClubLug_C_UAID_123 Function ServerUpdateState will not be processed.'
+    '[2026.10.17-15.00.01:000][  0] LogNet: Warning: No owning connection for actor BP_Vehicle_ClubLug_C_UAID_999 Function ServerUpdateState will not be processed.'
+    '[2026.10.17-15.00.02:000][  0] LogNet: Warning: No owning connection for actor BP_Vehicle_ClubLug_C_UAID_999 Function ServerSetColor will not be processed.'
+    '[2026.10.17-15.00.03:000][  0] LogDataTable: Error: Row Item_Gun missing from table DT_Items'
+    '[2026.10.17-15.00.04:000][  0] LogNet: Error: RPC dispatch failed for actor BP_Truck_C Function ServerSetColor'
+    '[2026.10.17-15.00.05:000][  0] LogScript: Warning: Handled ensure: World is tearing down'
+    '  WBP_World_InteractionPrompt_C'
+    '  /Game/UI/WBP_World_InteractionPrompt.WBP_World_InteractionPrompt_C'
+  ) -join "`n"
+  $clientFixture = @(
+    '[2026.10.17-15.00.06:000][  0] LogNet: Warning: No owning connection for actor BP_Vehicle_ClubLug_C_UAID_321 Function ServerUpdateState will not be processed.'
+    'garbage without a log severity'
+  ) -join "`n"
+  $hostPath = Join-Path $fixtureDir 'host.log'
+  $clientPath = Join-Path $fixtureDir 'client.log'
+  Set-Content -LiteralPath $hostPath -Value $hostFixture -Encoding utf8NoBOM
+  Set-Content -LiteralPath $clientPath -Value $clientFixture -Encoding utf8NoBOM
+  $beforeHostHash = (Get-FileHash -LiteralPath $hostPath).Hash
+  $summary = Get-UEToolSuiteMpLogSummary -LogDir $fixtureDir -Top 15
+  if ($summary.Processes.Count -ne 2 -or $summary.Processes[0].Role -cne 'Host' -or $summary.Processes[1].Role -cne 'Client') { throw 'Historical host/client log separation failed.' }
+  if ($summary.Processes[0].LineCount -ne 8 -or $summary.Processes[0].WarningCount -ne 3 -or $summary.Processes[0].ErrorCount -ne 2 -or $summary.Processes[0].EnsureCount -ne 1) { throw 'Summary severity or line counts failed.' }
+  $summaryText = Format-UEToolSuiteMpLogSummary -Summary $summary
+  if (-not $summaryText.Contains('2x Warning: No owning connection') -or -not $summaryText.Contains('ServerUpdateState') -or -not $summaryText.Contains('Item_Gun') -or -not $summaryText.Contains('ServerSetColor') -or -not (($summary.Processes[0].Issues | ForEach-Object { $_.Message }) -join ' ').Contains('WBP_World_InteractionPrompt_C')) { throw 'Summary grouping or representative details were lost.' }
+  if ((Get-FileHash -LiteralPath $hostPath).Hash -cne $beforeHostHash) { throw 'Summary modified its original log.' }
+  $manyPath = Join-Path $fixtureDir 'many.log'
+  $writer = [IO.StreamWriter]::new($manyPath, $false, [Text.UTF8Encoding]::new($false))
+  try { for ($i = 0; $i -lt 25000; $i++) { $writer.WriteLine("[2026.10.17-15.00.00:000][  0] LogNet: Warning: No owning connection for actor BP_Vehicle_C_UAID_$i Function ServerUpdateState will not be processed.") } }
+  finally { $writer.Dispose() }
+  $large = Get-UEToolSuiteMpLogFileSummary -Path $manyPath -Role 'Client' -Top 3
+  if ($large.LineCount -ne 25000 -or $large.WarningCount -ne 25000 -or $large.Issues[0].Count -ne 25000) { throw 'Large repeated warning stream was not aggregated.' }
+  $missing = Get-UEToolSuiteMpLogFileSummary -Path (Join-Path $fixtureDir 'missing.log') -Role 'Host' -Top 3
+  if (-not $missing.Error -or $missing.LineCount -ne 0) { throw 'Missing log was not reported gracefully.' }
+  $malformedPath = Join-Path $fixtureDir 'malformed.log'
+  Set-Content -LiteralPath $malformedPath -Value "[2026.10.17-15.00.00:000] LogScript: Warning: Handled ensure: bad`n  WBP_First_C`n  WBP_Second_C" -Encoding utf8NoBOM
+  $malformed = Get-UEToolSuiteMpLogFileSummary -Path $malformedPath -Role 'Host' -Top 10
+  if ($malformed.LineCount -ne 3 -or $malformed.EnsureCount -ne 1 -or $malformed.Issues.Count -ne 1 -or -not $malformed.Issues[0].Message.Contains('WBP_First_C') -or -not $malformed.Issues[0].Message.Contains('WBP_Second_C')) { throw 'Multiline ensure records were not captured correctly.' }
+  try { ConvertTo-UEToolSuiteMpSummaryOptions -Arguments @('-Top','3','-top','4') | Out-Null; throw 'Duplicate summary option was accepted.' }
+  catch { if ($_.Exception.Message -eq 'Duplicate summary option was accepted.') { throw } }
+  if ((ConvertTo-UEToolSuiteMpSummaryOptions -Arguments @('-top','3')).Top -ne 3) { throw 'Summary options are not case-insensitive.' }
+  Set-Content -LiteralPath (Join-Path $fixtureDir 'host.log') -Value '[broken' -Encoding utf8NoBOM
+  $historicalState = @{ Host = @{ Pid = 2147483647; Executable = 'C:\missing.exe'; StartUtc = [datetime]::UtcNow.ToString('o') }; Client = @{ Pid = 2147483646; Executable = 'C:\missing.exe'; StartUtc = [datetime]::UtcNow.ToString('o') }; HostLog = 'C:\Missing\host.log'; ClientLog = 'C:\Missing\client.log'; LogDir = $fixtureDir } | ConvertTo-Json -Depth 3
+  Set-Content -LiteralPath $statePath -Value $historicalState
+  $fallback = @(Invoke-UEToolSuiteMpCommand -RepoRoot $scratch -CommandArguments @('summary', '-Top', '5')) -join ' '
+  if ($fallback -notlike '*HOST*' -or $fallback -notlike '*CLIENT*') { throw 'Recorded historical log directory fallback failed.' }
+  $explicit = @(Invoke-UEToolSuiteMpCommand -RepoRoot $scratch -CommandArguments @('summary', '-LogDir', $fixtureDir, '-Top', '2')) -join ' '
+  if ($explicit -notlike '*historical-session*') { throw 'Explicit historical summary directory was ignored.' }
   $stopped = @(Invoke-UEToolSuiteMpCommand -RepoRoot $scratch -CommandArguments @('stop')) -join ' '
   if ($stopped -notlike '*skipped*' -or (Test-Path -LiteralPath $statePath)) { throw 'Stale session cleanup changed.' }
   $workerScript = Join-Path $scratch 'mp-worker.ps1'

@@ -10,8 +10,18 @@ From a project repository with one discoverable `.uproject`, run:
 ```powershell
 ue mp play -Map /Game/Maps/Arena
 ue mp logs
+ue mp summary
 ue mp stop
 ```
+
+Summarize the current or most recently recorded host/client logs with:
+
+```powershell
+ue mp summary -Top 15
+ue mp summary -LogDir "C:\path\to\mp-logs\session"
+```
+
+`summary` reads logs incrementally and never changes them. It reports file size, line and severity counts, repeated issues, available first/last timestamps, representative messages, and one-off errors/ensures. It groups runtime actor IDs and memory addresses while retaining distinct RPC names and other message details. Missing or unreadable host/client files are reported in the summary. `-Top` accepts 1 through 100 and defaults to 10. `-LogDir` selects a historical session directory containing `host.log` and `client.log`; without it, the command uses the recorded session directory or the newest directory under `.ue-tools/local/mp-logs/`.
 
 For a Steam-configured project, explicitly select local LAN networking:
 

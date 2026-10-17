@@ -14,6 +14,129 @@ function Get-UEToolSuiteMpSession {
   catch { throw "Invalid multiplayer session record '$path': $($_.Exception.Message)" }
 }
 
+function ConvertTo-UEToolSuiteMpIssueKey {
+  param([Parameter(Mandatory)][string]$Message)
+  $key = $Message.Trim()
+  $key = [regex]::Replace($key, '(?i)\b[A-Za-z0-9_]+_UAID_[A-F0-9-]+', '<ACTOR>')
+  $key = [regex]::Replace($key, '(?i)0x[0-9a-f]{6,}', '<ADDRESS>')
+  $key = [regex]::Replace($key, '(?i)(?<=\bBP_[A-Za-z0-9_]+)_C_[A-F0-9]{8,}(?=\b|\s|\.)', '<ID>')
+  return $key
+}
+
+function Get-UEToolSuiteMpLogFileSummary {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][ValidateSet('Host','Client')][string]$Role, [ValidateRange(1,100)][int]$Top = 10)
+  $issues = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
+  $lineCount = 0L; $warningCount = 0L; $errorCount = 0L; $ensureCount = 0L; $fatalCount = 0L
+  $fileSize = 0L; $parseError = $null
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    $parseError = 'Log file is missing.'
+  } else {
+    try {
+      $fileSize = (Get-Item -LiteralPath $Path -ErrorAction Stop).Length
+      $reader = [IO.StreamReader]::new($Path, [Text.Encoding]::UTF8, $true)
+      try {
+        $active = $null
+        while ($null -ne ($line = $reader.ReadLine())) {
+          $lineCount++
+          if ($active -and ($active.Group.Severity -eq 'Ensure' -or $active.Message -match 'ensure') -and $line -match '^\s+(?:at\s|/Game/|\w+\s+\(|WBP_[A-Za-z0-9_]+)') {
+            $active.Message += "`n$line"
+            $active.Group.Message = $active.Message
+            $active.Group.Key = ConvertTo-UEToolSuiteMpIssueKey -Message $active.Message
+            $newKey = $active.Group.Severity + '|' + $active.Group.Key
+            if ($newKey -cne $active.Key) {
+              if ($issues.ContainsKey($newKey)) {
+                $existing = $issues[$newKey]
+                if (-not [object]::ReferenceEquals($existing, $active.Group)) { $existing.Count += $active.Group.Count }
+                if (-not $existing.First -or ($active.Group.First -and $active.Group.First -lt $existing.First)) { $existing.First = $active.Group.First }
+                if (-not $existing.Last -or ($active.Group.Last -and $active.Group.Last -gt $existing.Last)) { $existing.Last = $active.Group.Last }
+                $active.Group = $existing
+              } else { $issues[$newKey] = $active.Group }
+              $issues.Remove($active.Key)
+              $active.Key = $newKey
+            }
+            continue
+          }
+          $active = $null
+          $match = [regex]::Match($line, '^(?:\[(?<time>[^\]]+)\].*?)?\b(?<severity>Fatal error|Fatal|handled ensure|Ensure|Error|Warning)\s*:\s*(?<message>.*)$', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+          if (-not $match.Success) { continue }
+          $severity = $match.Groups['severity'].Value
+          if ($severity -match 'fatal') { $fatalCount++; $kind = 'Fatal' }
+          elseif ($severity -match 'ensure' -or $match.Groups['message'].Value -match '^Handled ensure') { $ensureCount++; $kind = 'Ensure' }
+          elseif ($severity -match 'error') { $errorCount++; $kind = 'Error' }
+          else { $warningCount++; $kind = 'Warning' }
+          $message = $match.Groups['message'].Value.Trim()
+          if (-not $message) { $message = $line.Trim() }
+          $key = $kind + '|' + (ConvertTo-UEToolSuiteMpIssueKey -Message $message)
+          if (-not $issues.ContainsKey($key)) {
+            $issues[$key] = [pscustomobject]@{ Severity = $kind; Key = (ConvertTo-UEToolSuiteMpIssueKey -Message $message); Count = 0L; First = $null; Last = $null; Message = $message; TimestampPattern = $match.Groups['time'].Value }
+          }
+          $group = $issues[$key]; $group.Count++
+          $timestamp = $match.Groups['time'].Value
+          if ($timestamp) { if (-not $group.First) { $group.First = $timestamp }; $group.Last = $timestamp }
+          $active = [pscustomobject]@{ Message = $message; Group = $group; Key = $key }
+        }
+      } finally { $reader.Dispose() }
+    } catch { $parseError = "Could not read log: $($_.Exception.Message)" }
+  }
+  $ordered = @($issues.Values | Sort-Object @{Expression='Count';Descending=$true}, @{Expression='Severity';Descending=$false}, @{Expression='Key';Descending=$false})
+  [pscustomobject]@{ Role=$Role; Path=$Path; SizeBytes=$fileSize; LineCount=$lineCount; WarningCount=$warningCount; ErrorCount=$errorCount; EnsureCount=$ensureCount; FatalCount=$fatalCount; Issues=@($ordered | Select-Object -First $Top); ImportantOneOffs=@($ordered | Where-Object { $_.Severity -in @('Error','Ensure','Fatal') -and $_.Count -eq 1 }); Error=$parseError }
+}
+
+function Get-UEToolSuiteMpLogSummary {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$LogDir, [ValidateRange(1,100)][int]$Top = 10)
+  $resolved = [IO.Path]::GetFullPath($LogDir)
+  $hostSummary = Get-UEToolSuiteMpLogFileSummary -Path (Join-Path $resolved 'host.log') -Role Host -Top $Top
+  $clientSummary = Get-UEToolSuiteMpLogFileSummary -Path (Join-Path $resolved 'client.log') -Role Client -Top $Top
+  $processes = [System.Collections.ArrayList]::new()
+  [void]$processes.Add($hostSummary)
+  [void]$processes.Add($clientSummary)
+  return [pscustomobject]@{ LogDir=$resolved; Processes=$processes.ToArray(); Top=$Top }
+}
+
+function Format-UEToolSuiteMpLogSummary {
+  param([Parameter(Mandatory)]$Summary)
+  $lines = [Collections.Generic.List[string]]::new()
+  $lines.Add('UE Multiplayer Log Summary'); $lines.Add("Session: $($Summary.LogDir)")
+  foreach ($process in $Summary.Processes) {
+    $lines.Add(''); $lines.Add($process.Role.ToUpperInvariant())
+    $lines.Add(('Log: {0} ({1:N1} MB)' -f $process.Path, ($process.SizeBytes / 1MB)))
+    $lines.Add("Lines: $($process.LineCount)")
+    $lines.Add("Warnings: $($process.WarningCount)  Errors: $($process.ErrorCount)  Ensures: $($process.EnsureCount)  Fatal: $($process.FatalCount)")
+    if ($process.Error) { $lines.Add("Log status: $($process.Error)"); continue }
+    $lines.Add('Top issues:')
+    if (-not $process.Issues.Count) { $lines.Add('  (none)') }
+    foreach ($issue in $process.Issues) {
+      $timestamp = if ($issue.First) { " [$($issue.First) .. $($issue.Last)]" } else { '' }
+      $lines.Add(('  {0}x {1}: {2}{3}' -f $issue.Count, $issue.Severity, $issue.Key, $timestamp))
+      $lines.Add(('      {0}' -f ($issue.Message -replace "`n", ' | ')))
+    }
+    if ($process.ImportantOneOffs.Count) {
+      $lines.Add('Important one-off errors:')
+      foreach ($issue in $process.ImportantOneOffs) { $lines.Add(('  {0}: {1}' -f $issue.Severity, ($issue.Message -replace "`n", ' | '))) }
+    }
+  }
+  return $lines -join "`n"
+}
+
+function ConvertTo-UEToolSuiteMpSummaryOptions {
+  param([string[]]$Arguments = @())
+  $options = @{ Top = 10; LogDir = $null }
+  $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  for ($i=0; $i -lt $Arguments.Count; $i += 2) {
+    if ($i + 1 -ge $Arguments.Count) { throw 'Usage: ue mp summary [-Top 10] [-LogDir path]' }
+    $option = $Arguments[$i].ToLowerInvariant()
+    if (-not $seen.Add($option)) { throw "Duplicate summary option '$($Arguments[$i])'." }
+    switch ($option) {
+      '-top' { $value=0; if (-not [int]::TryParse($Arguments[$i+1], [ref]$value) -or $value -lt 1 -or $value -gt 100) { throw '-Top must be an integer from 1 through 100.' }; $options.Top=$value; break }
+      '-logdir' { if ([string]::IsNullOrWhiteSpace($Arguments[$i+1])) { throw '-LogDir requires a directory.' }; $options.LogDir=$Arguments[$i+1]; break }
+      default { throw "Unsupported summary option '$($Arguments[$i])'. Usage: ue mp summary [-Top 10] [-LogDir path]" }
+    }
+  }
+  [pscustomobject]$options
+}
+
 function ConvertTo-UEToolSuiteMpStartUtc {
   param([Parameter(Mandatory)]$Value)
   if ($Value -is [datetime]) { return $Value.ToUniversalTime() }
@@ -143,7 +266,28 @@ function Invoke-UEToolSuiteMpCommand {
   $tail = @($CommandArguments | Select-Object -Skip 1)
   $statePath = Get-UEToolSuiteMpStatePath -RepoRoot $RepoRoot
   if ($verb -in @('help','--help','-help','-h')) {
-    'Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path] | stop | logs'
+    'Usage: ue mp play [-Map /Game/Maps/YourMap] [-Network LAN] [-UProjectPath path] [-WorkspacePath path] | summary [-Top N] [-LogDir path] | stop | logs'
+    return
+  }
+  if ($verb -eq 'summary') {
+    $options = ConvertTo-UEToolSuiteMpSummaryOptions -Arguments $tail
+    $session = Get-UEToolSuiteMpSession -RepoRoot $RepoRoot
+    $logDir = $options.LogDir
+    if (-not $logDir -and $session) {
+      if ($session.LogDir -and (Test-Path -LiteralPath ([string]$session.LogDir) -PathType Container)) { $logDir = [string]$session.LogDir }
+      elseif ($session.HostLog) { $logDir = Split-Path -Parent ([string]$session.HostLog) }
+      elseif ($session.ClientLog) { $logDir = Split-Path -Parent ([string]$session.ClientLog) }
+    }
+    if (-not $logDir) {
+      $logsRoot = Join-Path $RepoRoot '.ue-tools\local\mp-logs'
+      if (Test-Path -LiteralPath $logsRoot -PathType Container) {
+        $recent = Get-ChildItem -LiteralPath $logsRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
+        if ($recent) { $logDir = $recent.FullName }
+      }
+    }
+    if (-not $logDir) { throw 'No multiplayer log directory is available. Run ue mp play first or pass -LogDir.' }
+    $summary = Get-UEToolSuiteMpLogSummary -LogDir $logDir -Top $options.Top
+    Format-UEToolSuiteMpLogSummary -Summary $summary
     return
   }
   if ($verb -in @('stop','logs')) {
@@ -223,4 +367,4 @@ function Invoke-UEToolSuiteMpCommand {
   }
 }
 
-Export-ModuleMember -Function Invoke-UEToolSuiteMpCommand, Get-UEToolSuiteMpStatePath, Get-UEToolSuiteMpSession, Test-UEToolSuiteMpProcessOwned, Assert-UEToolSuiteMpLocalMode, ConvertTo-UEToolSuiteMpMapArgument, ConvertTo-UEToolSuiteMpPlayOptions, Get-UEToolSuiteMpLaunchArguments, Get-UEToolSuiteMpWindowLayout
+Export-ModuleMember -Function Invoke-UEToolSuiteMpCommand, Get-UEToolSuiteMpStatePath, Get-UEToolSuiteMpSession, Get-UEToolSuiteMpLogFileSummary, Get-UEToolSuiteMpLogSummary, Format-UEToolSuiteMpLogSummary, ConvertTo-UEToolSuiteMpSummaryOptions, Test-UEToolSuiteMpProcessOwned, Assert-UEToolSuiteMpLocalMode, ConvertTo-UEToolSuiteMpMapArgument, ConvertTo-UEToolSuiteMpPlayOptions, Get-UEToolSuiteMpLaunchArguments, Get-UEToolSuiteMpWindowLayout

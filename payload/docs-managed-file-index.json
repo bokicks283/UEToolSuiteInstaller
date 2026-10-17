@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "payloadVersion": "1.3.0",
+  "payloadVersion": "1.4.0",
   "generatedUtc": "2026-06-22T01:13:19Z",
   "files": [
     {
@@ -86,7 +86,7 @@
     {
       "relativePath": "Docs/WorkflowStandards/CLI/Multiplayer.md",
       "category": "docs",
-      "sha256": "ba3552ea1be579306b450191b56167f5ec9630d542056b665f9d0279c1bf649d"
+      "sha256": "ad9d19c20d2cb1b78d172578a178ec11568eb001f97a03813faf3faee310603f"
     },
     {
       "relativePath": "Docs/WorkflowStandards/CLI/README.md",
